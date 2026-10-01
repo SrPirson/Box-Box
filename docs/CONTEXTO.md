@@ -24,9 +24,8 @@ ELM327 + GPS) con el portátil del muro de BOX, por WebSocket y con baja latenci
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
 | Último commit | `f7d15bd` Cuentas, equipos con invitación, administración y estadísticas de vueltas |
-| **Sin subir** | **2 commits** (`183ab04`, `f7d15bd`) → hacer `git push` (token fine-grained, *Contents: Read and write*) |
-| Despliegue | **Aún no desplegado.** `render.yaml` listo (Blueprint) |
-| Base de datos | Elegida **Neon Postgres (gratis)**. Falta crear el proyecto y la `DATABASE_URL` |
+| Despliegue | https://cencerro-racing.onrender.com · servicio `srv-davb06flk1mc739c6vlg` (Frankfurt, free). Creado a mano con el conector, no ligado al Blueprint |
+| Base de datos | **Postgres de Render** `cencerro-racing-db` (free, **caduca el 31/10/2026**: pasar a plan de pago antes) |
 | Tests | `npm test` → 8 en verde (ELM327, alertas, cronometraje, integración API + tiempo real) |
 
 ## Cómo arrancar
@@ -48,7 +47,7 @@ npm test
 Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" ──▶ portátiles BOX / otros miembros
   ELM327 BLE / simulador       │ api.js   REST: cuentas, equipos, admin, stats
   GPS · batería · red          │ live.js  piloto al volante, presencia, vueltas, muestreo 1 Hz
-  cola offline (ráfaga)        └ db.js    Neon Postgres (prod) · PGlite (local)
+  cola offline (ráfaga)        └ db.js    Postgres Render (prod) · PGlite (local)
 ```
 
 - **Autenticación**: contraseñas con scrypt y tokens HMAC de 30 días (stdlib, sin librerías). Al cambiar
@@ -70,7 +69,7 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 |---|---|
 | React + Vite (no Next.js) | Es una SPA; Next no aportaba nada |
 | Render (no Vercel) | Vercel no mantiene WebSockets abiertos |
-| Neon Postgres gratis | El disco de Render free se borra; SQLite habría exigido plan de pago |
+| Postgres de Render | El disco de Render free se borra y PGlite no cabe en 512 MB (OOM) |
 | `ADMIN_EMAIL` por variable de entorno | Que nadie se haga admin por registrarse el primero |
 | Una instancia en Render | El estado en vivo de cada equipo vive en memoria |
 | ENTRA YA EN BOX con pulsación mantenida de 400 ms | Evita envíos accidentales sin usar diálogos |
@@ -78,8 +77,7 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 
 ## Pendiente / próximos pasos
 
-1. **Subir y desplegar**: `git push` → crear proyecto en Neon → Render, New → Blueprint
-   (`DATABASE_URL`, `ADMIN_EMAIL`).
+1. **Base de datos antes del 31/10/2026**: pasar `cencerro-racing-db` a `basic_256mb` o se borra.
 2. **Media de vuelta representativa**: hoy la media incluye vueltas de relevo y de boxes, que la
    distorsionan (en la prueba subió de 30 s a 46 s). Propuesta: excluir las vueltas de más del 107 % de
    la mejor, o usar la mediana. **Pendiente de decidir con el usuario.**

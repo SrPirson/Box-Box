@@ -25,12 +25,24 @@ const Panel = ({ title, children }) => (
   </section>
 );
 
-const Field = ({ label, ...p }) => (
-  <label className="flex flex-col gap-1.5">
-    <span className="text-[13px] font-semibold uppercase tracking-[0.06em] text-fg-2">{label}</span>
-    <input className={input} {...p} />
-  </label>
-);
+function Field({ label, type, ...p }) {
+  const [shown, setShown] = useState(false);
+  const isPass = type === 'password';
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-[13px] font-semibold uppercase tracking-[0.06em] text-fg-2">{label}</span>
+      {isPass ? (
+        <div className="relative">
+          <input className={`${input} pr-11`} type={shown ? 'text' : 'password'} {...p} />
+          <button type="button" onClick={() => setShown(!shown)} aria-label={shown ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={shown}
+            className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted hover:text-fg">
+            <Icon name={shown ? 'eyeOff' : 'eye'} />
+          </button>
+        </div>
+      ) : <input className={input} type={type} {...p} />}
+    </label>
+  );
+}
 
 const ErrorText = ({ children }) => children ? <p role="alert" className="rounded-[4px] bg-crit-soft px-3 py-2 text-[14px] font-semibold text-crit">{children}</p> : null;
 

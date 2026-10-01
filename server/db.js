@@ -1,4 +1,4 @@
-// Postgres: Neon en producción (DATABASE_URL); PGlite embebido en local para desarrollar sin servicios externos.
+// Postgres: Render en producción (DATABASE_URL); PGlite embebido en local para desarrollar sin servicios externos.
 import { join } from 'node:path';
 
 const url = process.env.DATABASE_URL;

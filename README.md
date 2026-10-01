@@ -15,7 +15,7 @@ npm run dev        # desarrollo: Vite en :5173 + `npm run server` en otra termin
 npm test           # parser ELM327, alertas, cronometraje y test de integración de la API
 ```
 
-Variables de entorno (producción): `DATABASE_URL` (Neon Postgres), `AUTH_SECRET` (firma de sesiones),
+Variables de entorno (producción): `DATABASE_URL` (Postgres de Render), `AUTH_SECRET` (firma de sesiones),
 `ADMIN_EMAIL` (esa cuenta será administradora). `render.yaml` las declara.
 
 ## Estructura
@@ -26,7 +26,7 @@ Variables de entorno (producción): `DATABASE_URL` (Neon Postgres), `AUTH_SECRET
 | `server/api.js` | Registro/login, equipos e invitaciones, administración, estadísticas |
 | `server/live.js` | Sala por equipo: piloto al volante, presencia, relevo de telemetría, vueltas y muestreo a 1 Hz |
 | `server/laps.js` | Detección del cruce de meta con interpolación del instante |
-| `server/auth.js` · `server/db.js` | scrypt + tokens HMAC · Postgres (Neon) o PGlite local, con el esquema |
+| `server/auth.js` · `server/db.js` | scrypt + tokens HMAC · Postgres (Render) o PGlite local, con el esquema |
 | `src/lib/elm327.js` | Init AT, decodificación de PIDs (comentada), driver serializado por `>`, transporte BLE |
 | `src/lib/gateway.js` | Bucle OBD/sim + GPS + batería + red → paquete JSON; cola offline con ráfaga al reconectar |
 | `src/lib/limits.js` | Umbrales de alerta y evaluación aviso/crítico (compartido con el servidor) |
