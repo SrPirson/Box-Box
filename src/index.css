@@ -1,17 +1,78 @@
 @import 'tailwindcss';
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
-@theme {
-  --color-neon-green: #39ff14;
-  --color-neon-red: #ff2052;
-  --color-neon-yellow: #ffe600;
-  --color-neon-blue: #00e5ff;
-  --color-neon-orange: #ff8a00;
-  --color-neon-pink: #ff3df2;
+/* ── Tokens (ver docs/investigacion-ux-ui.md §2). Color = significado: neutros para todo,
+      estado solo cuando hay estado, un único acento para selección y foco. ── */
+:root, [data-theme='light'] {
+  color-scheme: light;
+  --bg: #eceff3; --panel: #ffffff; --raised: #f6f7f9; --sunken: #e2e6eb;
+  --border: #c5ccd5; --border-strong: #8e98a5;
+  --text: #0e1318; --text-2: #3c4550; --muted: #5c6672;
+  --accent: #4b4fd8; --accent-soft: #e7e8fb;
+  --ok: #11793a; --warn: #8f5b00; --crit: #c4142b; --info: #0b5bd3; --pending: #5c6672;
+  --ok-solid: #11793a; --on-ok: #fff; --warn-solid: #f5b81c; --on-warn: #0e1318; --crit-solid: #c4142b; --on-crit: #fff;
+  --ok-soft: #e3f4e8; --warn-soft: #fdf1d3; --crit-soft: #fbe3e5; --info-soft: #e2ecfb;
+  --arc-track: #e2e6eb; --arc-ok: #1f9d4f; --arc-warn: #b87c00; --arc-crit: #c4142b;
+}
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b0e12; --panel: #12161c; --raised: #1a2029; --sunken: #07090c;
+  --border: #2a313b; --border-strong: #3d4653;
+  --text: #e8ecf1; --text-2: #a6b0bd; --muted: #7d8896;
+  --accent: #8f96ff; --accent-soft: #1e2140;
+  --ok: #3ccf6e; --warn: #f5b81c; --crit: #ff5a52; --info: #4ea1ff; --pending: #8b96a6;
+  --ok-solid: #3ccf6e; --on-ok: #0b0e12; --warn-solid: #f5b81c; --on-warn: #0b0e12; --crit-solid: #ff5a52; --on-crit: #0b0e12;
+  --ok-soft: #12291b; --warn-soft: #2e2510; --crit-soft: #331516; --info-soft: #13233a;
+  --arc-track: #232a33; --arc-ok: #3ccf6e; --arc-warn: #f5b81c; --arc-crit: #ff5a52;
+}
+/* Piloto: máximo contraste. Claro = negro sobre blanco (sol directo); oscuro = OLED puro sin deslumbrar. */
+[data-theme='light'] .pilot { --bg: #fff; --panel: #fff; --text: #000; --border: #000; }
+[data-theme='dark'] .pilot { --bg: #000; --panel: #000; --raised: #0d1014; --text: #d0d5dc; --border: #3d4653; }
+
+@theme inline {
+  --font-sans: 'Barlow Condensed', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --color-bg: var(--bg); --color-panel: var(--panel); --color-raised: var(--raised); --color-sunken: var(--sunken);
+  --color-line: var(--border); --color-line-strong: var(--border-strong);
+  --color-fg: var(--text); --color-fg-2: var(--text-2); --color-muted: var(--muted);
+  --color-accent: var(--accent); --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok); --color-warn: var(--warn); --color-crit: var(--crit); --color-info: var(--info); --color-pending: var(--pending);
+  --color-ok-solid: var(--ok-solid); --color-on-ok: var(--on-ok);
+  --color-warn-solid: var(--warn-solid); --color-on-warn: var(--on-warn);
+  --color-crit-solid: var(--crit-solid); --color-on-crit: var(--on-crit);
+  --color-ok-soft: var(--ok-soft); --color-warn-soft: var(--warn-soft); --color-crit-soft: var(--crit-soft); --color-info-soft: var(--info-soft);
 }
 
 html, body, #root { height: 100%; }
-body { font-family: ui-sans-serif, system-ui, 'Roboto Condensed', sans-serif; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
-button { touch-action: manipulation; user-select: none; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-weight: 500; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; user-select: none; cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-@keyframes blink { 50% { opacity: 0.25; } }
-.blink { animation: blink 0.6s steps(1) infinite; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums slashed-zero; letter-spacing: -0.02em; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* Alarma: parpadea solo el contorno a 1 Hz (WCAG 2.3.1), el texto queda fijo y legible. */
+@keyframes pulse-ring { 50% { outline-color: transparent; } }
+@keyframes pulse-dot { 50% { opacity: 0.2; } }
+.alarm-ring { outline: 2px solid var(--crit); outline-offset: -2px; animation: pulse-ring 1s steps(1) infinite; }
+.pulse { animation: pulse-dot 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .alarm-ring, .pulse { animation: none; } }
+
+/* ── Leaflet integrado en el tema ── */
+.leaflet-container { background: var(--sunken); font-family: var(--font-sans); }
+.leaflet-bar a { background: var(--panel); color: var(--text); border-color: var(--border); }
+.leaflet-bar a:hover { background: var(--raised); }
+.leaflet-control-attribution { background: color-mix(in srgb, var(--panel) 75%, transparent) !important; color: var(--muted); font-size: 10px; }
+.leaflet-control-attribution a { color: var(--text-2); }
+[data-theme='dark'] .tiles-sat { filter: saturate(0.75) brightness(0.8) contrast(1.1); }
+.trail { stroke: var(--accent); }
+.car-icon { background: none; border: none; }
+.car-dot {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  font: 700 12px var(--font-mono); background: var(--ok-solid); color: var(--on-ok);
+  border: 2px solid var(--panel); box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+.car-dot[data-state='warn'] { background: var(--warn-solid); color: var(--on-warn); }
+.car-dot[data-state='crit'] { background: var(--crit-solid); color: var(--on-crit); }
+.car-dot[data-sel='true'] { outline: 3px solid var(--accent); outline-offset: 1px; }

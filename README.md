@@ -16,8 +16,14 @@ npm test           # parser PIDs ELM327 + driver
 | `server/index.js` | Sirve `dist/` y reenvía eventos por canal (sala Socket.io), solo WebSocket |
 | `src/lib/elm327.js` | Init AT, decodificación de PIDs (comentada), driver serializado por `>`, transporte BLE |
 | `src/lib/gateway.js` | Bucle OBD/sim + GPS + batería + red → paquete JSON; cola offline con ráfaga al reconectar |
+| `src/lib/limits.js` | Umbrales de alerta por coche (viajan en cada paquete) y evaluación aviso/crítico |
 | `src/lib/store.js` | Config por dispositivo (localStorage), socket compartido, TTS |
-| `src/views/*.jsx` | Piloto, Box, Config |
+| `src/lib/theme.js` | Tema claro/oscuro/sistema |
+| `src/views/*.jsx` | Piloto, Box (+ `TrackMap.jsx`), Config (pestañas Coche / Equipo) |
+| `docs/investigacion-ux-ui.md` | Investigación UX/UI: paleta, tipografía, layout, alarmas |
+
+Mapas: plantillas Esri (oscuro, claro, satélite, híbrido) y OpenStreetMap (callejero), todas sin API key.
+Esri sin cuenta solo cubre uso no comercial; OSM no permite descarga masiva de teselas.
 
 Eventos: `telemetry`, `telemetry:batch`, `pilot` (botones del piloto), `msg` (BOX→coche), `ack` (respuesta).
 

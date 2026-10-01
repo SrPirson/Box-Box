@@ -76,7 +76,11 @@ export async function start() {
   }
 
   watchId ??= navigator.geolocation?.watchPosition(
-    (p) => (gps = { lat: p.coords.latitude, lng: p.coords.longitude, speed: p.coords.speed == null ? null : Math.round(p.coords.speed * 3.6), acc: Math.round(p.coords.accuracy) }),
+    (p) => {
+      // (0, 0) es el valor de "sin fix" de algunos navegadores/emuladores: no es una posición real.
+      if (!p.coords.latitude && !p.coords.longitude) return;
+      gps = { lat: p.coords.latitude, lng: p.coords.longitude, speed: p.coords.speed == null ? null : Math.round(p.coords.speed * 3.6), acc: Math.round(p.coords.accuracy) };
+    },
     () => {},
     { enableHighAccuracy: true, maximumAge: 0 },
   );
@@ -97,6 +101,7 @@ export async function start() {
       gps: gps ?? (cfg.source === 'sim' ? simGps() : null),
       phoneBattery: battery ? Math.round(battery.level * 100) : null,
       net: { online: navigator.onLine, type: navigator.connection?.effectiveType ?? null, socket: s.connected },
+      limits: getConfig().limits,
     };
     if (s.connected && queue.length) flush(s); // señal recuperada: ráfaga con lo pendiente
     if (s.connected) s.emit('telemetry', packet);

@@ -1,21 +1,24 @@
-// Vista PILOTO (móvil en el salpicadero): rejilla de botones gigantes + overlay prioritario de BOX.
+// Vista PILOTO (móvil en el salpicadero): minimalista, máximo contraste, objetivos táctiles para guantes.
+// Único ajuste visible: tema claro (sol) / oscuro (noche).
 import { useState } from 'react';
+import Icon from '../icons.jsx';
 import { useSocket, speak } from '../lib/store.js';
 import { useGateway, start, stop, lastGps } from '../lib/gateway.js';
+import { toggleTheme, useTheme } from '../lib/theme.js';
 
+// Cada acción tiene un color fijo para memoria muscular. Solo AVERÍA va rellena: es la única que llama.
 const ACTIONS = [
-  { type: 'breakdown', label: 'AVERÍA / LLAMAR MECÁNICO', cls: 'border-neon-red text-neon-red', critical: true },
-  { type: 'pit', label: 'SALGO A BOX', cls: 'border-neon-green text-neon-green' },
-  { type: 'fuel', label: 'REPOSTAR Y CAMBIO', cls: 'border-neon-blue text-neon-blue' },
-  { type: 'damage', label: 'PINCHAZO / DAÑO', cls: 'border-neon-orange text-neon-orange' },
-  { type: 'rain', label: 'LLUVIA EN PISTA', cls: 'border-neon-pink text-neon-pink' },
-  { type: 'sc', label: 'SAFETY CAR', cls: 'border-neon-yellow text-neon-yellow' },
+  { type: 'breakdown', label: 'Avería · llamar mecánico', icon: 'wrench', critical: true, cls: 'bg-crit-solid text-on-crit border-crit-solid' },
+  { type: 'pit', label: 'Salgo a box', icon: 'pitIn', cls: 'text-ok border-ok' },
+  { type: 'fuel', label: 'Repostar y cambio', icon: 'fuel', cls: 'text-info border-info' },
+  { type: 'damage', label: 'Pinchazo / daño', icon: 'damage', cls: 'text-crit border-crit' },
+  { type: 'rain', label: 'Lluvia en pista', icon: 'rain', cls: 'text-accent border-accent' },
+  { type: 'sc', label: 'Safety car', icon: 'car', cls: 'text-warn border-warn' },
 ];
 
-const LED = { on: 'bg-neon-green', connecting: 'bg-neon-yellow blink', error: 'bg-neon-red', off: 'bg-neon-red' };
-
-export default function Pilot() {
+export default function Pilot({ onNav }) {
   const gw = useGateway();
+  const theme = useTheme();
   const [inbox, setInbox] = useState([]); // mensajes pendientes de responder (el primero se muestra)
   const [sent, setSent] = useState(null);
 
@@ -27,13 +30,13 @@ export default function Pilot() {
   const { socket, connected, cfg } = useSocket({
     msg: (m) => (m.to === 'all' || m.to === cfg.dorsal) && push(m),
     // Aviso crítico de otro coche del equipo (avería): se muestra igual, sin acuse a BOX.
-    pilot: (e) => e.critical && e.car !== cfg.dorsal && push({ id: null, text: `COCHE ${e.car}: ${e.label}` }),
+    pilot: (e) => e.critical && e.car !== cfg.dorsal && push({ id: null, ts: e.ts, text: `Coche ${e.car}: ${e.label}` }),
   });
 
   const fire = (a) => {
-    socket.emit('pilot', { car: cfg.dorsal, type: a.type, label: a.label, critical: !!a.critical, gps: lastGps(), ts: Date.now() });
+    socket.emit('pilot', { car: cfg.dorsal, type: a.type, label: a.label.toUpperCase(), critical: !!a.critical, gps: lastGps(), ts: Date.now() });
     const noPhone = a.critical && !cfg.phone;
-    setSent({ type: a.type, text: noPhone ? 'AVISO ENVIADO · SIN TELÉFONO EN CONFIG' : 'ENVIADO ✓' });
+    setSent({ type: a.type, text: noPhone ? 'Aviso enviado · falta teléfono' : 'Enviado' });
     setTimeout(() => setSent(null), 2500);
     if (a.critical && cfg.phone) location.href = `tel:${cfg.phone.replace(/[^\d+]/g, '')}`;
   };
@@ -47,44 +50,68 @@ export default function Pilot() {
 
   const o = gw.data?.obd ?? {};
   return (
-    <div className="flex h-full flex-col bg-black">
-      {/* Indicadores flotantes de estado */}
-      <div className="flex shrink-0 items-center gap-4 px-3 py-2 font-mono text-lg font-bold whitespace-nowrap">
-        <button onClick={gw.obd === 'on' ? stop : start} className="flex items-center gap-2 rounded border border-white/20 px-3 py-1">
-          <span className={`h-4 w-4 rounded-full ${LED[gw.obd]}`} />
-          OBD {cfg.source === 'sim' && <span className="text-neon-yellow">SIM</span>}
+    <div className="pilot flex h-full flex-col bg-bg text-fg">
+      {/* Estado: solo lo que el piloto puede usar de un vistazo */}
+      <div className="num flex h-14 shrink-0 items-center gap-3 whitespace-nowrap border-b border-line px-3 text-lg font-bold sm:gap-4">
+        <button onClick={gw.obd === 'on' ? stop : start} className="flex h-10 items-center gap-2 rounded-md border-2 border-line px-3"
+          aria-label={gw.obd === 'on' ? 'Detener telemetría' : 'Iniciar telemetría'}>
+          <span className={`h-3.5 w-3.5 rounded-full ${gw.obd === 'on' ? 'bg-ok' : gw.obd === 'connecting' ? 'pulse bg-warn-solid' : 'bg-crit'}`} />
+          {cfg.source === 'sim' ? 'SIM' : 'OBD'}
         </button>
-        <span className="flex items-center gap-2"><span className={`h-4 w-4 rounded-full ${connected ? 'bg-neon-green' : 'bg-neon-red blink'}`} />BOX</span>
-        <span className={o.coolant > 100 ? 'text-neon-red blink' : ''}>{o.coolant ?? '--'}°C</span>
-        <span className="text-neon-blue">{o.rpm ?? '----'} rpm</span>
-        <span className="ml-auto text-sm text-white/50">#{cfg.dorsal}{gw.queued > 0 && ` · cola ${gw.queued}`}</span>
+        <span className="flex items-center gap-2" title="Conexión con BOX">
+          <span className={`h-3.5 w-3.5 rounded-full ${connected ? 'bg-ok' : 'pulse bg-crit'}`} />BOX
+        </span>
+        <span className={o.coolant > cfg.limits.tempCrit ? 'text-crit' : ''}>{o.coolant ?? '—'}°</span>
+        <span className="hidden min-[430px]:inline">{o.rpm ?? '—'}<span className="text-sm text-muted"> rpm</span></span>
+        <span className="ml-auto text-muted">#{cfg.dorsal}</span>
+        <button onClick={toggleTheme} className="grid h-10 w-10 place-items-center" aria-label="Cambiar tema">
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={22} />
+        </button>
+        <button onClick={() => onNav('config')} className="grid h-10 w-10 place-items-center text-muted" aria-label="Configuración">
+          <Icon name="sliders" size={22} />
+        </button>
       </div>
-      {gw.error && <div className="bg-neon-red px-3 py-1 font-bold text-black">{gw.error}</div>}
+      {gw.error && <div role="alert" className="bg-crit-solid px-3 py-2 text-lg font-bold text-on-crit">{gw.error}</div>}
+      {gw.queued > 0 && <div className="num bg-warn-soft px-3 py-1 text-warn">Sin cobertura · {gw.queued} paquetes en cola</div>}
 
       {/* Rejilla táctil para guantes */}
-      <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-3 gap-2 p-2 landscape:grid-cols-3 landscape:grid-rows-2">
-        {ACTIONS.map((a) => (
-          <button key={a.type} onClick={() => fire(a)}
-            className={`rounded-2xl border-4 p-2 text-2xl font-black leading-tight active:scale-95 sm:text-4xl ${a.cls} ${sent?.type === a.type ? 'bg-white/25' : 'bg-white/5'}`}>
-            {sent?.type === a.type ? sent.text : a.label}
-          </button>
-        ))}
+      <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-3 gap-3 p-3 landscape:grid-cols-3 landscape:grid-rows-2">
+        {ACTIONS.map((a) => {
+          const done = sent?.type === a.type;
+          return (
+            <button key={a.type} onClick={() => fire(a)}
+              className={`flex flex-col items-center justify-center gap-2 rounded-md border-[3px] p-2 text-center text-[26px] font-bold uppercase leading-[1.05] tracking-[0.02em] transition-transform active:scale-[0.97] sm:text-4xl ${a.cls} ${done ? 'opacity-70' : ''}`}>
+              <Icon name={done ? 'check' : a.icon} size={36} stroke={2.5} />
+              {done ? sent.text : a.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Interrupción prioritaria de BOX */}
       {inbox[0] && (
-        <div className="fixed inset-0 z-[2000] flex flex-col bg-black p-3">
-          <button onClick={() => speak(inbox[0].text)} className="flex flex-1 items-center justify-center text-center text-5xl font-black uppercase leading-tight text-neon-yellow sm:text-7xl">
+        <div role="alertdialog" aria-label="Mensaje de BOX" className="fixed inset-0 z-[2000] flex flex-col bg-bg p-3">
+          <div className="num flex items-center justify-between text-lg text-muted">
+            <span>{inbox[0].id ? 'BOX' : 'EQUIPO'} · {new Date(inbox[0].ts ?? Date.now()).toLocaleTimeString('es-ES')}</span>
+            {inbox.length > 1 && <span>+{inbox.length - 1} en cola</span>}
+          </div>
+          <button onClick={() => speak(inbox[0].text)} aria-label="Repetir mensaje"
+            className="flex flex-1 items-center justify-center text-center text-[clamp(44px,14vmin,96px)] font-bold uppercase leading-[0.95]">
             {inbox[0].text}
           </button>
-          {inbox.length > 1 && <div className="pb-2 text-center text-white/50">+{inbox.length - 1} mensajes en cola</div>}
           <div className="grid h-1/2 grid-rows-3 gap-3 landscape:h-2/5 landscape:grid-cols-3 landscape:grid-rows-1">
-            <button onClick={() => reply('OK')} className="rounded-2xl bg-neon-green text-3xl font-black text-black sm:text-5xl">RECIBIDO (OK)</button>
-            <button onClick={() => reply('NO')} className="rounded-2xl bg-neon-red text-3xl font-black text-black sm:text-5xl">NEGATIVO (NO)</button>
-            <button onClick={() => reply('PROBLEMA')} className="rounded-2xl bg-neon-yellow text-3xl font-black text-black sm:text-5xl">PROBLEMA</button>
+            <ReplyButton onClick={() => reply('OK')} cls="bg-ok-solid text-on-ok" icon="check">Recibido (OK)</ReplyButton>
+            <ReplyButton onClick={() => reply('NO')} cls="bg-crit-solid text-on-crit" icon="x">Negativo (NO)</ReplyButton>
+            <ReplyButton onClick={() => reply('PROBLEMA')} cls="bg-warn-solid text-on-warn" icon="alert">Problema</ReplyButton>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+const ReplyButton = ({ cls, icon, children, ...p }) => (
+  <button {...p} className={`flex items-center justify-center gap-3 rounded-md border-[3px] border-fg dark:border-transparent text-4xl font-bold uppercase tracking-[0.02em] active:scale-[0.98] sm:text-5xl ${cls}`}>
+    <Icon name={icon} size={36} stroke={3} />{children}
+  </button>
+);

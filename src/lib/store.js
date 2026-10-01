@@ -1,19 +1,24 @@
 // Configuración persistente por dispositivo + conexión Socket.io compartida.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { io } from 'socket.io-client';
+import { LIMITS } from './limits.js';
 
 const KEY = 'cencerro.config';
-const DEFAULTS = {
+export const DEFAULTS = {
   dorsal: '7',
   phone: '',           // teléfono del mecánico para la llamada GSM
   channel: 'equipo',   // sala multidifusión: todos los coches y BOX del mismo canal se ven
   serverUrl: '',       // vacío = mismo servidor que sirve la app
   source: 'sim',       // 'sim' | 'ble'
   pollMs: 250,         // ciclo de lectura OBD + envío (200-500 ms)
+  limits: LIMITS,      // umbrales de alerta de este coche (viajan en cada paquete)
 };
 
 let config = DEFAULTS;
-try { config = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch {}
+try {
+  const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+  config = { ...DEFAULTS, ...saved, limits: { ...LIMITS, ...saved.limits } };
+} catch {}
 const subs = new Set();
 const subscribe = (cb) => (subs.add(cb), () => subs.delete(cb));
 

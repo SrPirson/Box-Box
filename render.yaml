@@ -1,0 +1,15 @@
+# Blueprint de Render: Dashboard → New → Blueprint → elegir este repo.
+services:
+  - type: web
+    name: cencerro-racing
+    runtime: node
+    region: frankfurt          # la más cercana a España: menos latencia
+    plan: free                 # se duerme tras 15 min sin tráfico; cambiar a "starter" los días de carrera
+    numInstances: 1            # los canales viven en memoria: más de una instancia los separaría
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node server/index.js
+    healthCheckPath: /
+    autoDeploy: true           # cada push a main redepliega
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
