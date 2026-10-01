@@ -34,7 +34,7 @@ function Field({ label, type, ...p }) {
       {isPass ? (
         <div className="relative">
           <input className={`${input} pr-11`} type={shown ? 'text' : 'password'} {...p} />
-          <button type="button" onClick={() => setShown(!shown)} aria-label={shown ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={shown}
+          <button type="button" tabIndex={-1} onClick={() => setShown(!shown)} aria-label={shown ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={shown}
             className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted hover:text-fg">
             <Icon name={shown ? 'eyeOff' : 'eye'} />
           </button>
