@@ -1,0 +1,25 @@
+{
+  "name": "cencerro-racing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "server": "node server/index.js",
+    "build": "vite build",
+    "start": "vite build && node server/index.js",
+    "test": "node --test src/lib/*.test.js"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.2"
+  }
+}

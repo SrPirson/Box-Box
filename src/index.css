@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-neon-green: #39ff14;
+  --color-neon-red: #ff2052;
+  --color-neon-yellow: #ffe600;
+  --color-neon-blue: #00e5ff;
+  --color-neon-orange: #ff8a00;
+  --color-neon-pink: #ff3df2;
+}
+
+html, body, #root { height: 100%; }
+body { font-family: ui-sans-serif, system-ui, 'Roboto Condensed', sans-serif; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; user-select: none; }
+
+@keyframes blink { 50% { opacity: 0.25; } }
+.blink { animation: blink 0.6s steps(1) infinite; }
