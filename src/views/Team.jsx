@@ -53,14 +53,19 @@ function CarCard({ team, save }) {
           <SavedInput className="num" type="tel" placeholder="+34 600 000 000" value={team.phone} onSave={(phone) => save({ phone })} />
         </Field>
       </div>
-      <div className="flex flex-wrap items-center gap-3 rounded-[4px] bg-sunken px-3 py-2.5">
-        <Icon name="finish" size={18} className="text-muted" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold uppercase tracking-[0.04em]">Línea de meta</div>
-          <div className="text-[13px] text-muted">{team.track?.line ? 'Definida: las vueltas se cronometran solas.' : 'Sin definir. Dibújala en el mapa de BOX con «Definir meta».'}</div>
+      {[
+        ['line', 'finish', 'Línea de meta', 'Definida: cada cruce cierra una vuelta.', team.track?.path ? 'Sin definir: hace de meta el primer punto del trazado.' : 'Sin definir. Dibújala en el mapa de BOX con «Definir meta».'],
+        ['path', 'route', 'Trazado del circuito', 'Dibujado: BOX avisa si el coche se sale y solo cuenta vueltas completas.', 'Sin dibujar. Dibújalo en el mapa de BOX con «Dibujar trazado».'],
+      ].map(([key, icon, name, yes, no]) => (
+        <div key={key} className="flex flex-wrap items-center gap-3 rounded-[4px] bg-sunken px-3 py-2.5">
+          <Icon name={icon} size={18} className="text-muted" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-semibold uppercase tracking-[0.04em]">{name}</div>
+            <div className="text-[13px] text-muted">{team.track?.[key] ? yes : no}</div>
+          </div>
+          {team.track?.[key] && <ConfirmButton label="Borrar" confirm="Sí, borrar" onConfirm={() => save({ track: { ...team.track, [key]: undefined } })} />}
         </div>
-        {team.track?.line && <ConfirmButton label="Borrar" confirm="Sí, borrar" onConfirm={() => save({ track: null })} />}
-      </div>
+      ))}
     </Card>
   );
 }
@@ -72,6 +77,7 @@ const ALERT_ROWS = [
   { id: 'rpm', name: 'Régimen motor', cond: 'Aviso visual desde · crítico en el limitador', unit: 'rpm', warn: 'rpmWarn', crit: 'rpmCrit', step: 100 },
   { id: 'stale', name: 'Sin datos del coche', cond: 'Segundos sin recibir telemetría', unit: 's', warn: 'staleWarn', crit: 'staleCrit', step: 1 },
   { id: 'phone', name: 'Batería del móvil', cond: 'Por debajo de', unit: '%', warn: 'phoneWarn', crit: 'phoneCrit', step: 1 },
+  { id: 'off', name: 'Fuera del trazado', cond: 'Metros desde el trazado dibujado (descontando el error del GPS)', unit: 'm', warn: 'offWarn', crit: 'offCrit', step: 5 },
 ];
 
 // Borrador local: las alertas se comparten con todo el equipo, así que se guardan de una vez y solo si son coherentes.

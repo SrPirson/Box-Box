@@ -58,6 +58,14 @@ let watchId = null;
 let running = false;
 const watched = new WeakSet();
 let wakeLock = null;
+// Pantalla siempre encendida mientras este móvil conduce. El sistema suelta el bloqueo al ocultar la app
+// (llamada, cambio de app, botón de apagado), así que se vuelve a pedir en cuanto se ve de nuevo.
+async function keepAwake() {
+  if (running && document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) {
+    wakeLock = await navigator.wakeLock?.request('screen').catch(() => null);
+  }
+}
+addEventListener('visibilitychange', keepAwake);
 let loopId = 0; // cada start() abre un bucle nuevo; el anterior, si sigue esperando, se retira
 
 export async function start() {
@@ -88,7 +96,6 @@ export async function start() {
     { enableHighAccuracy: true, maximumAge: 0 },
   );
   battery ??= await navigator.getBattery?.().catch(() => null);
-  wakeLock = await navigator.wakeLock?.request('screen').catch(() => null); // pantalla siempre encendida en el salpicadero
 
   // Tomar el volante: desde ahora la telemetría del coche es la de este móvil.
   const sock = getSocket();
@@ -102,11 +109,18 @@ export async function start() {
 
   running = true;
   set({ obd: 'on' });
+  keepAwake();
   const id = ++loopId;
+  let obd = {};
+  let readAt = -Infinity;
+  let sentFix = null;
   while (running && id === loopId) {
-    const t0 = performance.now();
-    let obd;
-    try { obd = await read(); } catch { obd = {}; }
+    // El OBD se lee al ritmo del intervalo; con intervalos largos, cada fix nuevo del GPS se envía al momento
+    // (con la última lectura OBD) para que BOX siga la posición en tiempo real.
+    if (performance.now() - readAt >= getConfig().pollMs - 5) {
+      readAt = performance.now();
+      try { obd = await read(); } catch { obd = {}; }
+    }
     const s = getSocket(); // por si se cambió de canal en caliente
     const packet = {
       ts: Date.now(),
@@ -120,15 +134,18 @@ export async function start() {
     if (s.connected) s.emit('telemetry', packet);
     else { queue.push(packet); if (queue.length > QUEUE_MAX) queue.shift(); }
     set({ data: packet, queued: queue.length });
+    sentFix = gps;
     // Espera a trozos: con intervalos de minutos, Detener o bajar el intervalo surten efecto al momento.
     let left;
-    while (running && id === loopId && (left = getConfig().pollMs - (performance.now() - t0)) > 0) await new Promise((r) => setTimeout(r, Math.min(left, 250)));
+    while (running && id === loopId && (left = getConfig().pollMs - (performance.now() - readAt)) > 0
+      && !(gps !== sentFix && getConfig().pollMs > 1000)) await new Promise((r) => setTimeout(r, Math.min(left, 250)));
   }
 }
 
 export function stop() {
   running = false;
   wakeLock?.release();
+  wakeLock = null;
   set({ obd: 'off' });
 }
 

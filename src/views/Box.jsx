@@ -104,7 +104,8 @@ export default function Box({ muted }) {
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
             <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus}
-              line={team.track?.line} onSetLine={(line) => api('/api/team', { method: 'PATCH', body: { track: { line } } }).then(setTeam)} />
+              line={team.track?.line} onSetLine={(line) => api('/api/team', { method: 'PATCH', body: { track: { ...team.track, line } } }).then(setTeam)}
+              path={team.track?.path} onSetPath={(path) => api('/api/team', { method: 'PATCH', body: { track: { ...team.track, path } } }).then(setTeam)} />
           </div>
         </section>
 
@@ -172,7 +173,7 @@ function TeamColumn({ team, laps, lapStartedAt, now }) {
         <div className="col-span-2 bg-panel px-3 py-2.5">
           <div className="label flex items-center gap-1.5"><Icon name="timer" size={13} />Vuelta en curso</div>
           <div className="num text-[30px] font-bold leading-tight">{lapStartedAt ? fmtLap(Math.max(0, now - lapStartedAt)).slice(0, -2) : '—'}</div>
-          {!team.track?.line && <div className="text-[12px] leading-snug text-muted">Define la meta en el mapa para cronometrar.</div>}
+          {!team.track?.line && !team.track?.path && <div className="text-[12px] leading-snug text-muted">Define la meta o dibuja el trazado en el mapa para cronometrar.</div>}
         </div>
         <LapStat label="Última" value={fmtLap(last?.ms)} sub={last && avg != null && <DeltaText ms={last.ms - avg} />} />
         <LapStat label="Mejor" value={fmtLap(best?.ms)} sub={best?.driver} />

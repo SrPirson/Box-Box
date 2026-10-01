@@ -7,6 +7,7 @@ export const LIMITS = {
   rpmWarn: 7000, rpmCrit: 7800,         // rpm (≥); el crítico es el corte/limitador
   staleWarn: 3, staleCrit: 10,          // s sin recibir datos (>)
   phoneWarn: 20, phoneCrit: 10,         // % batería del móvil (<)
+  offWarn: 25, offCrit: 50,             // m fuera del trazado dibujado (>)
 };
 export const limitsOf = (p) => ({ ...LIMITS, ...p?.limits });
 // Retraso del paquete respecto a cuando tocaba el siguiente: con intervalos largos (pruebas) no es "sin señal".
@@ -38,6 +39,8 @@ export function carAlarms(p, now) {
   // El aviso de RPM es solo visual: oscila en cada recta y un pitido por vuelta sería ruido.
   if (o.rpm >= L.rpmCrit) add('rpm', 'crit', `Limitador ${fmt(o.rpm)} rpm`);
   else if (o.rpm >= L.rpmWarn) add('rpm', 'warn', `Régimen ${fmt(o.rpm)} rpm`, true);
+  if (p.offTrack > L.offCrit) add('off', 'crit', `Fuera de pista ${fmt(p.offTrack)} m`);
+  else if (p.offTrack > L.offWarn) add('off', 'warn', `Fuera de trazado ${fmt(p.offTrack)} m`);
   if (p.phoneBattery != null) {
     if (p.phoneBattery < L.phoneCrit) add('phone', 'crit', `Móvil ${p.phoneBattery} %`);
     else if (p.phoneBattery < L.phoneWarn) add('phone', 'warn', `Móvil ${p.phoneBattery} %`);
@@ -56,5 +59,6 @@ export function limitErrors(L) {
   if (!(L.rpmWarn < L.rpmCrit)) e.rpm = 'El aviso debe ser menor que el limitador.';
   if (!(L.staleWarn < L.staleCrit)) e.stale = 'El aviso debe ser menor que el crítico.';
   if (!(L.phoneCrit < L.phoneWarn)) e.phone = 'El crítico debe ser menor que el aviso.';
+  if (!(L.offWarn < L.offCrit)) e.off = 'El aviso debe ser menor que el crítico.';
   return e;
 }

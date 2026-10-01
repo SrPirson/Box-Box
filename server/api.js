@@ -131,10 +131,11 @@ const routes = [
       set.limits = l;
     }
     if ('track' in body) {
-      const line = body.track?.line;
-      const ok = Array.isArray(line) && line.length === 2 && line.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum));
-      if (body.track !== null && !ok) fail(400, 'La línea de meta necesita dos puntos.');
-      set.track = body.track === null ? null : { line };
+      const { line, path } = body.track ?? {};
+      const pts = (a, min, max) => Array.isArray(a) && a.length >= min && a.length <= max && a.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum));
+      if (line != null && !pts(line, 2, 2)) fail(400, 'La línea de meta necesita dos puntos.');
+      if (path != null && !pts(path, 3, 2000)) fail(400, 'El trazado necesita entre 3 y 2000 puntos.');
+      set.track = line || path ? { ...(line && { line }), ...(path && { path }) } : null;
     }
     const keys = Object.keys(set);
     if (keys.length) {

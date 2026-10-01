@@ -14,16 +14,60 @@ export function crossing(P, Q, A, B) {
 }
 
 const MIN_LAP_MS = 20000; // filtra dobles cruces por ruido del GPS junto a la línea
+const SECTORS = 20;       // con trazado dibujado: un cruce solo cierra vuelta si se ha recorrido el 80 % de ellos
+const MIN_COVER = 0.8;
+
+// Trazado del circuito (lazo cerrado de puntos [lat, lng]), en metros alrededor de su primer punto.
+export function createRoute(path) {
+  const o = path[0];
+  const mLng = 111320 * Math.cos((o[0] * Math.PI) / 180);
+  const xy = ([lat, lng]) => [(lng - o[1]) * mLng, (lat - o[0]) * 110540];
+  const P = [...path, path[0]].map(xy);
+  const cum = [0];
+  for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+  const total = cum.at(-1) || 1;
+  // Meta por defecto: perpendicular al trazado en su primer punto, 15 m a cada lado.
+  const [dx, dy] = P[1];
+  const k = 15 / (Math.hypot(dx, dy) || 1);
+  const line = [-1, 1].map((sg) => [o[0] + (sg * k * dx) / 110540, o[1] - (sg * k * dy) / mLng]);
+  return {
+    line,
+    // Distancia (m) al trazado y progreso a lo largo de él (0-1) del punto más cercano.
+    locate(pt) {
+      const [x, y] = xy(pt);
+      let best = { dist: Infinity, at: 0 };
+      for (let i = 1; i < P.length; i++) {
+        const [ax, ay] = P[i - 1];
+        const sx = P[i][0] - ax, sy = P[i][1] - ay, len2 = sx * sx + sy * sy;
+        const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * sx + (y - ay) * sy) / len2)) : 0;
+        const d = Math.hypot(x - ax - t * sx, y - ay - t * sy);
+        if (d < best.dist) best = { dist: d, at: (cum[i - 1] + t * (cum[i] - cum[i - 1])) / total };
+      }
+      return best;
+    },
+  };
+}
 
 export function createLapTimer() {
   let prev = null;
   let start = null;
   let acc = null;
-  const reset = () => (acc = { n: 0, temp: 0, maxTemp: -Infinity, rpm: 0, maxRpm: 0, maxSpeed: 0, minVolt: Infinity });
+  let seen = new Set(); // sectores del trazado recorridos en la vuelta en curso
+  let prevAt = null;
+  const reset = () => { acc = { n: 0, temp: 0, maxTemp: -Infinity, rpm: 0, maxRpm: 0, maxSpeed: 0, minVolt: Infinity }; seen = new Set(); };
   reset();
+  // Marca los sectores entre dos muestras por el arco más corto: sirve con muestreo lento y en ambos sentidos de dibujo.
+  const cover = (a, b) => {
+    if (a == null || ((b - a + 1) % 1) > 0.5) [a, b] = [b, a ?? b];
+    let i = Math.floor(a * SECTORS) % SECTORS;
+    const j = Math.floor(b * SECTORS) % SECTORS;
+    seen.add(j);
+    while (i !== j) { seen.add(i); i = (i + 1) % SECTORS; }
+  };
 
   return {
-    // s: { ts, lat, lng, coolant, rpm, speed, voltage }. Devuelve la vuelta completada o null.
+    // s: { ts, lat, lng, coolant, rpm, speed, voltage, at? }. `at`: progreso en el trazado, si lo hay.
+    // Devuelve la vuelta completada o null.
     push(s, line) {
       let lap = null;
       if (line && prev && s.lat != null) {
@@ -31,7 +75,7 @@ export function createLapTimer() {
         if (t != null) {
           const at = prev.ts + t * (s.ts - prev.ts);
           if (start == null) { start = at; reset(); }
-          else if (at - start >= MIN_LAP_MS) {
+          else if (at - start >= MIN_LAP_MS && (!seen.size || seen.size >= SECTORS * MIN_COVER)) {
             const n = acc.n || 1;
             lap = {
               startedAt: Math.round(start), ms: Math.round(at - start),
@@ -51,11 +95,12 @@ export function createLapTimer() {
         if (s.speed != null) acc.maxSpeed = Math.max(acc.maxSpeed, s.speed);
         if (s.voltage != null) acc.minVolt = Math.min(acc.minVolt, s.voltage);
       }
+      if (s.at != null) { if (start != null) cover(prevAt, s.at); prevAt = s.at; }
       if (s.lat != null) prev = s;
       return lap;
     },
     // Vuelta en curso (para el cronómetro en vivo de BOX).
     get startedAt() { return start == null ? null : Math.round(start); },
-    restart() { prev = null; start = null; reset(); },
+    restart() { prev = null; prevAt = null; start = null; reset(); },
   };
 }

@@ -1,5 +1,5 @@
 // Mapa en vivo: plantillas de mapa base sin API key, coches con dorsal y color de estado, estela,
-// seguir coche y encuadrar todo.
+// seguir coche, encuadrar todo y dibujo de la meta y del trazado del circuito.
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -27,7 +27,7 @@ const BASEMAPS = {
 const MAP_KEY = 'cencerro.basemap';
 const OPTIONS = [['auto', 'Auto'], ...Object.entries(BASEMAPS).map(([id, b]) => [id, b.label])];
 
-export default function TrackMap({ cars, trails, sel, states, focus, line, onSetLine }) {
+export default function TrackMap({ cars, trails, sel, states, focus, line, onSetLine, path, onSetPath }) {
   const theme = useTheme();
   const el = useRef(null);
   const map = useRef(null);
@@ -35,10 +35,11 @@ export default function TrackMap({ cars, trails, sel, states, focus, line, onSet
   const layers = useRef({});
   const [choice, setChoice] = useState(() => { try { return localStorage.getItem(MAP_KEY) || 'auto'; } catch { return 'auto'; } });
   const [follow, setFollow] = useState(true);
-  const [drawing, setDrawing] = useState(null); // null | [] | [primer punto] mientras se dibuja la meta
+  const [draw, setDraw] = useState(null); // null | { mode: 'line' | 'path', pts: [[lat, lng], ...] }
   const drawRef = useRef(null);
-  drawRef.current = drawing;
+  drawRef.current = draw;
   const finish = useRef(null);
+  const route = useRef(null);
   const active = choice === 'auto' ? theme : choice;
   const onSetLineRef = useRef(onSetLine);
   onSetLineRef.current = onSetLine;
@@ -46,14 +47,15 @@ export default function TrackMap({ cars, trails, sel, states, focus, line, onSet
   useEffect(() => {
     map.current = L.map(el.current, { zoomControl: false, zoomSnap: 0.25 }).setView([40.4, -3.7], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map.current);
+    map.current.createPane('route').style.zIndex = 350; // trazado por debajo de estela y coches
     map.current.on('dragstart', () => setFollow(false));
-    // Dibujo de la línea de meta: dos toques en el mapa.
+    // Dibujo: la meta son dos toques; el trazado, tantos como haga falta hasta pulsar Guardar.
     map.current.on('click', (e) => {
       const d = drawRef.current;
       if (!d) return;
-      const pt = [e.latlng.lat, e.latlng.lng];
-      if (d.length === 0) setDrawing([pt]);
-      else { setDrawing(null); onSetLineRef.current?.([d[0], pt]); }
+      const pts = [...d.pts, [e.latlng.lat, e.latlng.lng]];
+      if (d.mode === 'line' && pts.length === 2) { setDraw(null); onSetLineRef.current?.(pts); }
+      else setDraw({ ...d, pts });
     });
     return () => map.current.remove();
   }, []);
@@ -71,13 +73,26 @@ export default function TrackMap({ cars, trails, sel, states, focus, line, onSet
   // Línea de meta (cuadros blanco/negro). Mientras se dibuja, el primer punto ya se ve.
   useEffect(() => {
     finish.current?.remove();
-    const pts = drawing?.length ? drawing : line;
+    const pts = draw?.mode === 'line' && draw.pts.length ? draw.pts : line;
     if (!pts) return;
     finish.current = L.layerGroup(pts.length === 2
       ? [L.polyline(pts, { className: 'finish-a', weight: 7, interactive: false }), L.polyline(pts, { className: 'finish-b', weight: 7, interactive: false })]
       : [L.circleMarker(pts[0], { radius: 6, className: 'finish-dot', interactive: false })]).addTo(map.current);
-  }, [line, drawing]);
-  useEffect(() => { el.current.style.cursor = drawing ? 'crosshair' : ''; }, [drawing]);
+  }, [line, draw]);
+  useEffect(() => { el.current.style.cursor = draw ? 'crosshair' : ''; }, [draw]);
+
+  // Trazado del circuito: lazo cerrado. Mientras se dibuja, abierto y con sus puntos.
+  useEffect(() => {
+    route.current?.remove();
+    const editing = draw?.mode === 'path';
+    const pts = editing ? draw.pts : path;
+    if (!pts?.length) return;
+    const opts = { pane: 'route', interactive: false };
+    route.current = L.layerGroup([
+      L.polyline(editing ? pts : [...pts, pts[0]], { ...opts, className: 'route', weight: 12, opacity: 0.35, lineJoin: 'round', lineCap: 'round' }),
+      ...(editing ? pts.map((p) => L.circleMarker(p, { ...opts, radius: 4, className: 'route-dot' })) : []),
+    ]).addTo(map.current);
+  }, [path, draw]);
 
   // Coches: se crean una vez y se mueven con setLatLng.
   useEffect(() => {
@@ -136,15 +151,26 @@ export default function TrackMap({ cars, trails, sel, states, focus, line, onSet
           </select>
         </label>
       </div>
-      {drawing && (
-        <div role="status" className="absolute inset-x-2 bottom-8 z-[1000] mx-auto flex max-w-md items-center gap-3 rounded-[4px] border border-accent bg-panel px-3 py-2 shadow-lg">
-          <Icon name="finish" size={18} className="text-accent" />
-          <span className="text-[14px] font-semibold">{drawing.length === 0 ? 'Toca un borde de la pista en la línea de meta' : 'Ahora toca el borde opuesto'}</span>
-          <button onClick={() => setDrawing(null)} className="ml-auto text-[12px] font-semibold uppercase tracking-[0.06em] text-muted hover:text-fg">Cancelar</button>
+      {draw && (
+        <div role="status" className="absolute inset-x-2 bottom-8 z-[1000] mx-auto flex max-w-lg flex-wrap items-center gap-x-3 gap-y-2 rounded-[4px] border border-accent bg-panel px-3 py-2 shadow-lg">
+          <Icon name={draw.mode === 'line' ? 'finish' : 'route'} size={18} className="text-accent" />
+          <span className="text-[14px] font-semibold">
+            {draw.mode === 'line'
+              ? (draw.pts.length === 0 ? 'Toca un borde de la pista en la línea de meta' : 'Ahora toca el borde opuesto')
+              : <>Toca el centro de la pista vuelta completa, un punto en cada curva <span className="num text-muted">· {draw.pts.length}</span></>}
+          </span>
+          <span className="ml-auto flex gap-3">
+            {draw.mode === 'path' && <>
+              <button onClick={() => setDraw({ ...draw, pts: draw.pts.slice(0, -1) })} disabled={!draw.pts.length} className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-fg-2 hover:text-fg disabled:opacity-40"><Icon name="undo" size={13} />Deshacer</button>
+              <button onClick={() => { onSetPath(draw.pts); setDraw(null); }} disabled={draw.pts.length < 3} className="text-[12px] font-bold uppercase tracking-[0.06em] text-accent disabled:opacity-40">Guardar</button>
+            </>}
+            <button onClick={() => setDraw(null)} className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted hover:text-fg">Cancelar</button>
+          </span>
         </div>
       )}
       <div className="absolute right-2 top-2 z-[1000] flex gap-2">
-        {onSetLine && <MapButton onClick={() => setDrawing(drawing ? null : [])} active={!!drawing} label={line ? 'Redefinir meta' : 'Definir meta'} icon="finish" />}
+        {onSetPath && <MapButton onClick={() => setDraw(draw?.mode === 'path' ? null : { mode: 'path', pts: [] })} active={draw?.mode === 'path'} label={path ? 'Redibujar trazado' : 'Dibujar trazado'} icon="route" />}
+        {onSetLine && <MapButton onClick={() => setDraw(draw?.mode === 'line' ? null : { mode: 'line', pts: [] })} active={draw?.mode === 'line'} label={line ? 'Redefinir meta' : 'Definir meta'} icon="finish" />}
         <MapButton onClick={() => setFollow(!follow)} active={follow} label={follow ? 'Siguiendo coche' : 'Seguir coche'} icon="crosshair" />
         <MapButton onClick={fitAll} label="Encuadrar todos" icon="fit" />
       </div>

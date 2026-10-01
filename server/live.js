@@ -1,7 +1,7 @@
 // Tiempo real por equipo: cada equipo es una sala aislada con un coche y un único piloto al volante.
 // Aquí se cronometran las vueltas y se guarda la telemetría a 1 Hz para estadísticas.
 import { q, one } from './db.js';
-import { createLapTimer } from './laps.js';
+import { createLapTimer, createRoute } from './laps.js';
 import { LIMITS } from '../src/lib/limits.js';
 
 let io;
@@ -10,7 +10,7 @@ const room = (teamId) => `team:${teamId}`;
 
 async function loadTeam(id) {
   const t = await one('select id, dorsal, limits, track from teams where id = $1', [id]);
-  return t && { ...t, limits: { ...LIMITS, ...t.limits } };
+  return t && { ...t, limits: { ...LIMITS, ...t.limits }, route: t.track?.path ? createRoute(t.track.path) : null };
 }
 function state(teamId) {
   if (!states.has(teamId)) {
@@ -25,7 +25,7 @@ const setDriver = (st, u) => {
 };
 const presence = (st) => io.to(room(st.team.id)).emit('presence', [...st.online.keys()]);
 
-// Llamado por la API cuando cambian dorsal, límites o línea de meta.
+// Llamado por la API cuando cambian dorsal, límites, meta o trazado.
 export async function teamChanged(teamId) {
   if (states.has(teamId)) {
     const st = await state(teamId);
@@ -87,7 +87,9 @@ export function attachLive(server, userFromToken) {
         const o = p.obd ?? {};
         const g = p.gps ?? {};
         const s = { ts, lat: num(g.lat), lng: num(g.lng), speed: num(g.speed), coolant: num(o.coolant), rpm: num(o.rpm), throttle: num(o.throttle), voltage: num(o.voltage) };
-        const lap = st.lap.push(s, st.team.track?.line);
+        const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
+        s.at = loc?.at;
+        const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line);
         if (lap) {
           q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10)',
             [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt]).catch((e) => console.error('lap', e.message));
@@ -98,7 +100,9 @@ export function attachLive(server, userFromToken) {
           q('insert into samples (team_id, driver_id, ts, rpm, coolant, throttle, voltage, speed, lat, lng) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10)',
             [st.team.id, u.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng]).catch((e) => console.error('sample', e.message));
         }
-        out.push({ ...p, ts, car: st.team.dorsal, limits: st.team.limits, driver: u.name, lapStartedAt: st.lap.startedAt });
+        // Fuera de pista: metros al trazado descontando el error del GPS, para no avisar por un fix impreciso.
+        const offTrack = loc ? Math.round(Math.max(0, loc.dist - (num(g.acc) ?? 0))) : null;
+        out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: u.name, lapStartedAt: st.lap.startedAt });
       }
       batch ? socket.to(r).emit('telemetry:batch', { packets: out }) : socket.to(r).emit('telemetry', out[0]);
     };

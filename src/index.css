@@ -69,6 +69,8 @@ button:disabled { cursor: not-allowed; }
 .leaflet-control-attribution a { color: var(--text-2); }
 [data-theme='dark'] .tiles-sat { filter: saturate(0.75) brightness(0.8) contrast(1.1); }
 .trail { stroke: var(--accent); }
+.route { stroke: var(--info); }
+.route-dot { stroke: #fff; stroke-width: 2; fill: var(--info); fill-opacity: 1; }
 .finish-a { stroke: #fff; }
 .finish-b { stroke: #000; stroke-dasharray: 7 7; }
 .finish-dot { stroke: #fff; stroke-width: 2; fill: #000; fill-opacity: 1; }

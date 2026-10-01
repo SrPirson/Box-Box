@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { crossing, createLapTimer } from './laps.js';
+import { crossing, createLapTimer, createRoute } from './laps.js';
 
 test('detecta el corte de segmentos', () => {
   const A = [0, -1], B = [0, 1]; // [lat, lng]: meta horizontal en lat 0, de lng -1 a 1
@@ -32,4 +32,49 @@ test('ignora cruces dobles por ruido junto a la línea', () => {
   const pts = [[-0.1, 0], [0.1, 0], [-0.1, 0], [0.1, 0]]; // zigzag sobre la meta en 3 s
   const out = pts.map(([lat, lng], i) => lap.push({ ts: i * 1000, lat, lng }, line));
   assert.deepEqual(out, [null, null, null, null]);
+});
+
+// Circuito circular de ~110 m de radio en Madrid, dibujado con 64 puntos.
+const C = [40, -3.7], R = 0.001;
+const ring = (a, r = R) => [C[0] + r * Math.sin(a), C[1] + (r * Math.cos(a)) / Math.cos((C[0] * Math.PI) / 180)];
+const PATH = Array.from({ length: 64 }, (_, i) => ring((2 * Math.PI * i) / 64));
+
+test('mide la distancia al trazado y el progreso a lo largo de él', () => {
+  const route = createRoute(PATH);
+  assert.ok(route.locate(ring(1)).dist < 1);
+  const out = route.locate(ring(1, R + 0.0002)).dist; // 0,0002° de latitud ≈ 22 m hacia fuera
+  assert.ok(Math.abs(out - 22) < 2, `${out} m`);
+  assert.ok(Math.abs(route.locate(ring(Math.PI)).at - 0.5) < 0.01);
+});
+
+// Vueltas de 60 s alrededor del trazado; `step` = muestras por vuelta, `dir` = sentido de giro.
+function drive(route, { laps = 3, step = 240, dir = 1, line = route.line } = {}) {
+  const timer = createLapTimer();
+  const done = [];
+  for (let i = 1; i <= laps * step; i++) {
+    const pt = ring(dir * ((2 * Math.PI * i) / step + 0.01));
+    const lap = timer.push({ ts: (i * 60000) / step, lat: pt[0], lng: pt[1], at: route.locate(pt).at }, line);
+    if (lap) done.push(lap);
+  }
+  return done;
+}
+
+test('con trazado y sin meta, la meta es el inicio del trazado; da igual el sentido o un muestreo lento', () => {
+  const route = createRoute(PATH);
+  for (const opts of [{}, { dir: -1 }, { step: 12 }]) {
+    const laps = drive(route, opts);
+    assert.equal(laps.length, 2, JSON.stringify(opts));
+    for (const l of laps) assert.ok(Math.abs(l.ms - 60000) < 300, `${JSON.stringify(opts)}: ${l.ms} ms`);
+  }
+});
+
+test('con trazado, un cruce de meta sin recorrer el circuito no es vuelta', () => {
+  const route = createRoute(PATH);
+  const timer = createLapTimer();
+  // Cruza la meta, recorre un cuarto de circuito, da media vuelta y vuelve a cruzarla 40 s después.
+  const arc = [...Array(40).keys()].map((i) => -0.1 + (i / 40) * (Math.PI / 2));
+  const pts = [...arc, ...arc.reverse()].map((a, i) => ({ ts: i * 1000, a }));
+  const out = pts.map(({ ts, a }) => { const p = ring(a); return timer.push({ ts, lat: p[0], lng: p[1], at: route.locate(p).at }, route.line); });
+  assert.ok(timer.startedAt != null);
+  assert.deepEqual(out.filter(Boolean), []);
 });
