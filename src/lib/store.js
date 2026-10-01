@@ -6,7 +6,7 @@ import { api, getSession, refresh, setTeam, useSession } from './session.js';
 const KEY = 'cencerro.config';
 export const DEFAULTS = {
   source: 'sim',       // 'sim' | 'ble'
-  pollMs: 250,         // ciclo de lectura OBD + envío (200-500 ms)
+  pollMs: 250,         // ciclo de lectura OBD + envío (200 ms - 5 min; lo largo, para medir consumo)
 };
 
 let config = DEFAULTS;

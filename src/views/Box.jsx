@@ -4,7 +4,7 @@ import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { useSocket, useLive } from '../lib/store.js';
 import { api, setTeam, useSession } from '../lib/session.js';
-import { carAlarms, worst, limitsOf, fmt, fmtAge } from '../lib/limits.js';
+import { carAlarms, worst, limitsOf, lateMs, fmt, fmtAge } from '../lib/limits.js';
 import { useStats, lapAvg } from './Stats.jsx';
 import { fmtLap, fmtDelta } from './ui.jsx';
 
@@ -99,7 +99,7 @@ export default function Box({ muted }) {
           {p ? (
             <>
               <CarHeader p={p} state={states[p.car]} alarms={alarms[p.car]} now={now} />
-              <Gauges p={p} stale={now - p.ts > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />
+              <Gauges p={p} stale={lateMs(p, now) > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />
             </>
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">

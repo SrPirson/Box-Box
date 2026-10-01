@@ -58,6 +58,7 @@ let watchId = null;
 let running = false;
 const watched = new WeakSet();
 let wakeLock = null;
+let loopId = 0; // cada start() abre un bucle nuevo; el anterior, si sigue esperando, se retira
 
 export async function start() {
   if (running) return;
@@ -101,13 +102,15 @@ export async function start() {
 
   running = true;
   set({ obd: 'on' });
-  while (running) {
+  const id = ++loopId;
+  while (running && id === loopId) {
     const t0 = performance.now();
     let obd;
     try { obd = await read(); } catch { obd = {}; }
     const s = getSocket(); // por si se cambió de canal en caliente
     const packet = {
       ts: Date.now(),
+      pollMs: getConfig().pollMs, // BOX lo usa para no dar "sin señal" con intervalos largos
       obd,
       gps: gps ?? (cfg.source === 'sim' ? simGps() : null),
       phoneBattery: battery ? Math.round(battery.level * 100) : null,
@@ -117,7 +120,9 @@ export async function start() {
     if (s.connected) s.emit('telemetry', packet);
     else { queue.push(packet); if (queue.length > QUEUE_MAX) queue.shift(); }
     set({ data: packet, queued: queue.length });
-    await new Promise((r) => setTimeout(r, Math.max(0, getConfig().pollMs - (performance.now() - t0))));
+    // Espera a trozos: con intervalos de minutos, Detener o bajar el intervalo surten efecto al momento.
+    let left;
+    while (running && id === loopId && (left = getConfig().pollMs - (performance.now() - t0)) > 0) await new Promise((r) => setTimeout(r, Math.min(left, 250)));
   }
 }
 

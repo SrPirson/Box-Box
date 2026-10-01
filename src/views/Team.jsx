@@ -117,9 +117,16 @@ function AlertsCard({ team, save }) {
 function InviteCard({ team, owner, setError }) {
   const [copied, setCopied] = useState('');
   const copy = (what, text) => { navigator.clipboard?.writeText(text); setCopied(what); setTimeout(() => setCopied(''), 1500); };
-  const share = () => navigator.share
-    ? navigator.share({ title: `Únete a ${team.name}`, text: `Únete a ${team.name} en Cencerro Racing`, url: inviteLink(team.inviteCode) }).catch(() => {})
-    : copy('link', inviteLink(team.inviteCode));
+  const link = inviteLink(team.inviteCode);
+  const title = `Únete a ${team.name}`;
+  const text = `${title} en Cencerro Racing (código ${team.inviteCode})`;
+  const msg = `${text}: ${link}`;
+  const enc = encodeURIComponent;
+  const channels = [
+    ['WhatsApp', 'message', `https://wa.me/?text=${enc(msg)}`],
+    ['Telegram', 'send', `https://t.me/share/url?url=${enc(link)}&text=${enc(text)}`],
+    ['Correo', 'mail', `mailto:?subject=${enc(title)}&body=${enc(msg)}`],
+  ];
   const regen = async () => { try { setTeam(await api('/api/team/invite', { method: 'POST' })); } catch (e) { setError(e.message); } };
   return (
     <Card title="Invitar pilotos">
@@ -128,8 +135,14 @@ function InviteCard({ team, owner, setError }) {
         <button onClick={() => copy('code', team.inviteCode)} className={btn.ghost} aria-label="Copiar código"><Icon name={copied === 'code' ? 'check' : 'copy'} size={15} /></button>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button onClick={share} className={`${btn.primary} flex-1`}><Icon name={copied === 'link' ? 'check' : 'link'} size={15} />{copied === 'link' ? 'Enlace copiado' : 'Compartir enlace'}</button>
+        <button onClick={() => copy('link', link)} className={`${btn.primary} flex-1`}><Icon name={copied === 'link' ? 'check' : 'link'} size={15} />{copied === 'link' ? 'Enlace copiado' : 'Copiar enlace'}</button>
         {owner && <ConfirmButton label="Renovar" confirm="Sí, renovar" onConfirm={regen} icon={<Icon name="refresh" size={15} />} />}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {channels.map(([label, icon, href]) => (
+          <a key={label} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" className={`${btn.ghost} flex-1`}><Icon name={icon} size={15} />{label}</a>
+        ))}
+        {navigator.share && <button onClick={() => navigator.share({ title, text, url: link }).catch(() => {})} className={`${btn.ghost} flex-1`}><Icon name="share" size={15} />Más</button>}
       </div>
       <p className="text-[13px] text-muted">Solo se puede entrar con este código o enlace.{owner && ' Renovarlo invalida el anterior.'}</p>
     </Card>

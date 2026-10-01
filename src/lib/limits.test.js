@@ -16,6 +16,9 @@ test('evalúa niveles con los límites por defecto y con los del coche', () => {
   assert.equal(carAlarms(pkt({}), 1000 + 4000)[0].level, 'warn');   // 4 s sin datos
   assert.equal(carAlarms(pkt({}), 1000 + 11000)[0].level, 'crit');  // 11 s sin señal
   assert.equal(carAlarms(pkt({}, { phoneBattery: 5 }), 1000)[0].key, 'phone');
+  // Enviando cada minuto: 50 s sin datos es lo esperado; 64 s ya es aviso.
+  assert.deepEqual(carAlarms(pkt({}, { pollMs: 60000 }), 1000 + 50000), []);
+  assert.equal(carAlarms(pkt({}, { pollMs: 60000 }), 1000 + 64000)[0].level, 'warn');
 });
 
 test('detecta umbrales incoherentes', () => {

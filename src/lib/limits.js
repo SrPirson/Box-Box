@@ -9,6 +9,8 @@ export const LIMITS = {
   phoneWarn: 20, phoneCrit: 10,         // % batería del móvil (<)
 };
 export const limitsOf = (p) => ({ ...LIMITS, ...p?.limits });
+// Retraso del paquete respecto a cuando tocaba el siguiente: con intervalos largos (pruebas) no es "sin señal".
+export const lateMs = (p, now) => now - p.ts - (p.pollMs ?? 0);
 
 const NF = [0, 1, 2].map((d) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: 'always' }));
 export const fmt = (v, d = 0) => (v == null || Number.isNaN(v) ? '—' : NF[d].format(v));
@@ -21,8 +23,9 @@ export function carAlarms(p, now) {
   const out = [];
   const add = (key, level, text, silent) => out.push({ key, level, text, silent });
   const age = now - p.ts;
-  if (age > L.staleCrit * 1000) add('stale', 'crit', `Sin señal ${fmtAge(age)}`);
-  else if (age > L.staleWarn * 1000) add('stale', 'warn', `Sin datos ${fmtAge(age)}`);
+  const late = lateMs(p, now);
+  if (late > L.staleCrit * 1000) add('stale', 'crit', `Sin señal ${fmtAge(age)}`);
+  else if (late > L.staleWarn * 1000) add('stale', 'warn', `Sin datos ${fmtAge(age)}`);
   if (o.coolant > L.tempCrit) add('temp', 'crit', `Temp ${o.coolant} °C`);
   else if (o.coolant >= L.tempWarn) add('temp', 'warn', `Temp ${o.coolant} °C`);
   if (o.voltage != null) {

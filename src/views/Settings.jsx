@@ -7,6 +7,10 @@ import { setMode, useThemeMode } from '../lib/theme.js';
 import { api, logout, setSession, useSession } from '../lib/session.js';
 import { Page, Card, Field, Segmented, Switch, Pill, ErrorText, input, btn } from './ui.jsx';
 
+const POLL_STEPS = [200, 250, 300, 400, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000];
+const pollIndex = (ms) => { const i = POLL_STEPS.findIndex((s) => s >= ms); return i < 0 ? POLL_STEPS.length - 1 : i; };
+const fmtPoll = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` : `${ms / 60000} min`);
+
 export default function Settings() {
   const cfg = useConfig();
   const gw = useGateway();
@@ -32,13 +36,13 @@ export default function Settings() {
                 {running && ' Detén la telemetría para cambiar el origen.'}
               </span>
             </p>
-            <Field label="Intervalo de lectura y envío" help="Más bajo = datos más fluidos, a cambio de más batería y datos móviles.">
+            <Field label="Intervalo de lectura y envío" help="Más bajo = datos más fluidos, a cambio de más batería y datos móviles. En carrera, 250-500 ms; los intervalos largos son para medir el consumo del móvil.">
               <div className="flex items-center gap-4">
-                <input type="range" min="200" max="500" step="50" list="poll-marks" className="flex-1 accent-[var(--accent)]"
-                  value={cfg.pollMs} onChange={(e) => setConfig({ pollMs: Number(e.target.value) })} />
-                <datalist id="poll-marks"><option value="200" /><option value="300" /><option value="400" /><option value="500" /></datalist>
-                <span className="num w-20 text-right text-[15px]">{cfg.pollMs} ms</span>
+                <input type="range" min="0" max={POLL_STEPS.length - 1} step="1" className="flex-1 accent-[var(--accent)]" aria-valuetext={fmtPoll(cfg.pollMs)}
+                  value={pollIndex(cfg.pollMs)} onChange={(e) => setConfig({ pollMs: POLL_STEPS[e.target.value] })} />
+                <span className="num w-20 text-right text-[15px]">{fmtPoll(cfg.pollMs)}</span>
               </div>
+              {cfg.pollMs > 500 && <p className="text-[13px] text-warn">Intervalo de pruebas: BOX verá los datos con retraso y las vueltas no se cronometrarán bien.</p>}
             </Field>
           </Card>
 
@@ -72,7 +76,7 @@ function TelemetryCard() {
   const [copied, setCopied] = useState(false);
   const running = gw.obd === 'on';
   const status = {
-    on: ['text-ok', 'bg-ok', `Enviando · cada ${cfg.pollMs} ms`],
+    on: ['text-ok', 'bg-ok', `Enviando · cada ${fmtPoll(cfg.pollMs)}`],
     connecting: ['text-warn', 'pulse bg-warn-solid', 'Conectando…'],
     error: ['text-crit', 'bg-crit', 'Error'],
     off: ['text-muted', 'bg-pending', 'Detenida'],
