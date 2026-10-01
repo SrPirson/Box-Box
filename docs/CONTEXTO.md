@@ -1,6 +1,6 @@
 # Contexto del proyecto · por dónde vamos
 
-> Última actualización: 2026-10-01. Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
+> Última actualización: 2026-10-02. Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
 
 ## Qué es
 
@@ -11,11 +11,13 @@ ELM327 + GPS) con el portátil del muro de BOX, por WebSocket y con baja latenci
   salen a pantalla completa, se leen en voz alta (TTS) y se responden con OK, NO o PROBLEMA. El único
   ajuste visible es el tema claro u oscuro.
 - **Box** (portátil): vueltas en vivo, equipo conectado, alarmas por niveles, gauges con la media de
-  30 días, mapa con 5 plantillas y línea de meta, y mensajería con acuse de recibo.
+  30 días, mapa con 5 plantillas, trazado del circuito y línea de meta, y mensajería con acuse de recibo.
 - **Estadísticas**: tiempos por vuelta comparados con la media, comparativa entre pilotos y medias de
   telemetría.
-- **Equipo**: invitación, miembros, dorsal, teléfono del mecánico y alertas del coche.
-- **Ajustes**: sensor (simulador o ELM327 BLE), simulador de fallos, tema y cuenta.
+- **Equipo**: invitación (copiar enlace, WhatsApp, Telegram, correo, menú nativo), miembros, dorsal,
+  teléfono del mecánico, meta y trazado (borrar) y alertas del coche.
+- **Ajustes**: sensor (simulador o ELM327 BLE), intervalo de envío (200 ms a 5 min, lo largo para medir
+  consumo), simulador de fallos, tema y cuenta.
 - **Admin**: cuentas y equipos de toda la plataforma.
 
 ## Estado actual
@@ -23,10 +25,11 @@ ELM327 + GPS) con el portátil del muro de BOX, por WebSocket y con baja latenci
 | | |
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
-| Último commit | `f7d15bd` Cuentas, equipos con invitación, administración y estadísticas de vueltas |
+| Último commit | `5310d77` Meta con un toque sobre el trazado y borrado de meta y trazado desde el mapa |
 | Despliegue | https://cencerro-racing.onrender.com · servicio `srv-davb06flk1mc739c6vlg` (Frankfurt, free). Creado a mano con el conector, no ligado al Blueprint |
 | Base de datos | **Postgres de Render** `cencerro-racing-db` (free, **caduca el 31/10/2026**: pasar a plan de pago antes) |
-| Tests | `npm test` → 8 en verde (ELM327, alertas, cronometraje, integración API + tiempo real) |
+| Tests | `npm test` → 11 en verde (ELM327, alertas, cronometraje con y sin trazado, integración API + tiempo real) |
+| Sin commitear | `package-lock.json` local sin campos `libc` (npm antiguo en Windows). **No subirlo**: descartar con `git checkout package-lock.json` |
 
 ## Cómo arrancar
 
@@ -54,10 +57,20 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
   la contraseña se invalidan todos los tokens anteriores.
 - **Un coche por equipo**, con un único piloto «al volante». El servidor rechaza la telemetría de
   cualquier otro móvil.
-- **Vueltas**: las detecta el servidor cuando la traza GPS cruza la línea de meta, interpolando el
-  instante del cruce. Ignora cruces separados por menos de 20 s, que son ruido del GPS.
+- **Circuito** (`team.track = { line?, path? }`): la meta son 2 puntos; el trazado, un lazo cerrado de
+  puntos dibujado en BOX. Con trazado, la meta se pone con un toque (perpendicular, 30 m) y, si no hay
+  meta propia, hace de meta el inicio del trazado. Geometría en `server/laps.js` (`createRoute`), que
+  también importa el cliente.
+- **Vueltas**: las detecta el servidor cuando la traza GPS cruza la meta, interpolando el instante del
+  cruce. Ignora cruces a menos de 20 s. Con trazado, además, solo cuenta si se ha recorrido el 80 % de los
+  20 sectores (sirve en ambos sentidos de dibujo y con muestreo lento).
+- **Fuera de pista**: el servidor añade `offTrack` (m al trazado menos la precisión del GPS) a cada
+  paquete; aviso a 25 m y crítico a 50 m por defecto.
 - **Alertas**: los umbrales son por equipo y viajan en cada paquete. Avisos en ámbar con un tono; críticos
-  con banner y pitido cada 5 s hasta que alguien los reconoce.
+  con banner y pitido cada 5 s hasta que alguien los reconoce. «Sin datos» descuenta el intervalo de envío
+  del móvil (`pollMs` va en el paquete).
+- **Gateway**: el OBD se lee al ritmo del intervalo; con intervalos > 1 s cada fix GPS nuevo se envía al
+  momento. La pantalla del piloto se mantiene encendida (Wake Lock, que se vuelve a pedir al volver a la app).
 - **Mapas sin API key**: Esri (oscuro, claro, satélite, híbrido) y OpenStreetMap (callejero). CARTO se
   descartó porque ya exige key desde el navegador.
 - **Diseño**: tokens claro/oscuro en `src/index.css`; tipografías Barlow Condensed y JetBrains Mono
@@ -74,6 +87,8 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 | Una instancia en Render | El estado en vivo de cada equipo vive en memoria |
 | ENTRA YA EN BOX con pulsación mantenida de 400 ms | Evita envíos accidentales sin usar diálogos |
 | Ajustes del coche editables por cualquier miembro | En pista, el capitán puede estar conduciendo |
+| Fuera de pista calculado en el servidor | Allí ya están el trazado y la traza; BOX solo compara con umbrales |
+| Meta perpendicular automática con trazado | Marcar «borde a borde» con dos toques no se entendía |
 
 ## Pendiente / próximos pasos
 
@@ -86,7 +101,9 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 5. **Probar con hardware real**: KUULAA ELM327 v2.2. Si es Bluetooth clásico (PIN 1234), Web
    Bluetooth no lo ve y hará falta Capacitor con un plugin Bluetooth Serial (`createElm()` ya acepta otro
    transporte).
-6. Opcional: dividir el bundle (unos 550 kB; aviso de Vite) y, si el equipo factura, cuenta gratuita de
+6. **Probar en pista el trazado**: la entrada a boxes saltará como «fuera de pista» si el pit lane no
+   está en el trazado. Idea: crear el trazado a partir de la estela de una vuelta real.
+7. Opcional: dividir el bundle (unos 550 kB; aviso de Vite) y, si el equipo factura, cuenta gratuita de
    ArcGIS para el mapa de Esri.
 
 ## Requisitos de pista (no olvidar)
