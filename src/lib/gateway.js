@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { createElm, connectBle } from './elm327.js';
 import { getConfig, getSocket } from './store.js';
+import { getSession } from './session.js';
 
 const QUEUE_KEY = 'cencerro.queue';
 const QUEUE_MAX = 5000; // ponytail: ~20 min a 4 Hz en memoria; IndexedDB si hacen falta tandas más largas sin cobertura
@@ -55,6 +56,7 @@ let battery = null;
 let watchId = null;
 
 let running = false;
+const watched = new WeakSet();
 let wakeLock = null;
 
 export async function start() {
@@ -87,6 +89,16 @@ export async function start() {
   battery ??= await navigator.getBattery?.().catch(() => null);
   wakeLock = await navigator.wakeLock?.request('screen').catch(() => null); // pantalla siempre encendida en el salpicadero
 
+  // Tomar el volante: desde ahora la telemetría del coche es la de este móvil.
+  const sock = getSocket();
+  sock.emit('drive');
+  if (!watched.has(sock)) {
+    watched.add(sock);
+    sock.on('driver', (d) => {
+      if (running && d && d.id !== getSession().user?.id) { stop(); set({ obd: 'off', error: `Ahora conduce ${d.name}. Tu móvil ha dejado de enviar telemetría.` }); }
+    });
+  }
+
   running = true;
   set({ obd: 'on' });
   while (running) {
@@ -95,13 +107,11 @@ export async function start() {
     try { obd = await read(); } catch { obd = {}; }
     const s = getSocket(); // por si se cambió de canal en caliente
     const packet = {
-      car: getConfig().dorsal,
       ts: Date.now(),
       obd,
       gps: gps ?? (cfg.source === 'sim' ? simGps() : null),
       phoneBattery: battery ? Math.round(battery.level * 100) : null,
       net: { online: navigator.onLine, type: navigator.connection?.effectiveType ?? null, socket: s.connected },
-      limits: getConfig().limits,
     };
     if (s.connected && queue.length) flush(s); // señal recuperada: ráfaga con lo pendiente
     if (s.connected) s.emit('telemetry', packet);

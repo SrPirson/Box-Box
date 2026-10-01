@@ -1,9 +1,12 @@
-// Vista BOX (portátil en el muro): torre de coches, alarmas por niveles, gauges, mapa y mensajería con acuse.
+// Vista BOX (portátil en el muro): equipo y vueltas, alarmas por niveles, gauges con media, mapa y mensajería con acuse.
 import { useEffect, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
-import { useSocket } from '../lib/store.js';
+import { useSocket, useLive } from '../lib/store.js';
+import { api, setTeam, useSession } from '../lib/session.js';
 import { carAlarms, worst, limitsOf, fmt, fmtAge } from '../lib/limits.js';
+import { useStats, lapAvg } from './Stats.jsx';
+import { fmtLap, fmtDelta } from './ui.jsx';
 
 const NO_ACK_MS = 10000; // acuse pendiente → «sin respuesta»
 const TRAIL_MAX = 600; // ~2,5 min a 4 Hz
@@ -22,6 +25,9 @@ export default function Box({ muted }) {
   const [acked, setAcked] = useState(() => new Set());
   const [focus, setFocus] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const { team } = useSession();
+  const today = useStats('today');   // vueltas de hoy
+  const month = useStats('month');   // medias de referencia (30 días)
 
   const ingest = (packets) => {
     for (const p of packets) {
@@ -35,7 +41,7 @@ export default function Box({ muted }) {
       for (const p of packets) if (!n[p.car] || p.ts > n[p.car].ts) n[p.car] = p;
       return n;
     });
-    setSel((s) => s ?? packets[0]?.car);
+    setSel(packets.at(-1)?.car ?? null); // un coche por equipo: siempre el último que ha enviado (sigue al dorsal si cambia)
   };
 
   const { socket } = useSocket({
@@ -87,21 +93,22 @@ export default function Box({ muted }) {
         onDone={(id) => setBreakdowns((b) => b.filter((x) => x.id !== id))} />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-auto bg-line lg:grid-cols-[220px_minmax(0,1fr)_360px] lg:overflow-hidden 2xl:grid-cols-[260px_minmax(0,1fr)_420px]">
-        <Tower cars={cars} alarms={alarms} states={states} sel={sel} setSel={setSel} now={now} />
+        <TeamColumn team={team} laps={today.data?.laps ?? []} lapStartedAt={cars[sel]?.lapStartedAt} now={now} />
 
         <section className="flex flex-col gap-px bg-line lg:min-h-0" aria-label="Telemetría">
           {p ? (
             <>
               <CarHeader p={p} state={states[p.car]} alarms={alarms[p.car]} now={now} />
-              <Gauges p={p} stale={now - p.ts > limitsOf(p).staleWarn * 1000} />
+              <Gauges p={p} stale={now - p.ts > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />
             </>
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
-            <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus} />
+            <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus}
+              line={team.track?.line} onSetLine={(line) => api('/api/team', { method: 'PATCH', body: { track: { line } } }).then(setTeam)} />
           </div>
         </section>
 
-        <Messages cars={cars} log={log} now={now} send={send} />
+        <Messages dorsal={team.dorsal} log={log} now={now} send={send} />
       </div>
     </div>
   );
@@ -149,45 +156,70 @@ const BannerButton = ({ icon, children, ...p }) => (
   </button>
 );
 
-// ── Torre de coches (patrón timing tower): banda de estado + dorsal + mini lecturas ──
-function Tower({ cars, alarms, states, sel, setSel, now }) {
-  const list = Object.values(cars).sort((a, b) => Number(a.car) - Number(b.car) || String(a.car).localeCompare(b.car));
+// ── Columna izquierda: equipo (quién está y quién conduce) + vueltas en vivo ──
+function TeamColumn({ team, laps, lapStartedAt, now }) {
+  const live = useLive();
+  const avg = lapAvg(laps);
+  const last = laps.at(-1);
+  const best = laps.reduce((b, l) => (!b || l.ms < b.ms ? l : b), null);
+  const members = [...team.members].sort((a, b) => (live.driver?.id === b.id) - (live.driver?.id === a.id) || live.online.includes(b.id) - live.online.includes(a.id));
   return (
-    <aside className="flex flex-col bg-panel lg:min-h-0" aria-label="Coches">
+    <aside className="flex flex-col bg-panel lg:min-h-0 lg:overflow-y-auto" aria-label="Equipo y vueltas">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Coches</span>
-        <span className="num text-[12px] text-muted">{list.length}</span>
+        <span className="label">Vueltas · hoy</span><span className="num text-[12px] text-muted">{laps.length}</span>
       </div>
-      <div className="flex overflow-x-auto lg:flex-col lg:overflow-y-auto">
-        {list.length === 0 && <p className="p-3 text-[13px] leading-snug text-muted">Ningún coche conectado todavía.</p>}
-        {list.map((c) => {
-          const st = states[c.car];
-          const age = now - c.ts;
-          const top = alarms[c.car].find((a) => a.level === st);
+      <div className="grid grid-cols-2 gap-px border-b border-line bg-line">
+        <div className="col-span-2 bg-panel px-3 py-2.5">
+          <div className="label flex items-center gap-1.5"><Icon name="timer" size={13} />Vuelta en curso</div>
+          <div className="num text-[30px] font-bold leading-tight">{lapStartedAt ? fmtLap(Math.max(0, now - lapStartedAt)).slice(0, -2) : '—'}</div>
+          {!team.track?.line && <div className="text-[12px] leading-snug text-muted">Define la meta en el mapa para cronometrar.</div>}
+        </div>
+        <LapStat label="Última" value={fmtLap(last?.ms)} sub={last && avg != null && <DeltaText ms={last.ms - avg} />} />
+        <LapStat label="Mejor" value={fmtLap(best?.ms)} sub={best?.driver} />
+        <LapStat label="Media" value={fmtLap(avg && Math.round(avg))} />
+        <LapStat label="Piloto" value={live.driver?.name ?? '—'} small />
+      </div>
+      {laps.length > 0 && (
+        <ol className="border-b border-line">
+          {laps.slice(-8).reverse().map((l) => (
+            <li key={l.id} className={`num flex items-baseline gap-2 border-b border-line px-3 py-1.5 text-[13px] last:border-b-0 ${l.id === best?.id ? 'bg-ok-soft' : ''}`}>
+              <span className="w-6 text-muted">{laps.indexOf(l) + 1}</span>
+              <span className="font-semibold">{fmtLap(l.ms)}</span>
+              <span className="ml-auto"><DeltaText ms={l.ms - avg} /></span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
+        <span className="label">Equipo</span><span className="num text-[12px] text-muted">{live.online.length}/{team.members.length}</span>
+      </div>
+      <ul className="flex overflow-x-auto lg:flex-col">
+        {members.map((m) => {
+          const online = live.online.includes(m.id);
+          const driving = live.driver?.id === m.id;
           return (
-            <button key={c.car} onClick={() => setSel(c.car)} aria-current={c.car === sel}
-              className={`flex shrink-0 items-stretch border-b border-line text-left transition-colors lg:w-full ${c.car === sel ? 'bg-raised' : 'hover:bg-raised'}`}>
-              <span className={`w-1 shrink-0 ${BAND[st]}`} aria-hidden="true" />
-              <span className="flex flex-1 items-center gap-3 px-3 py-2">
-                <span className={`num w-12 text-xl font-bold ${c.car === sel ? 'text-accent' : ''}`}>#{c.car}</span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="num flex gap-3 text-[13px] text-fg-2">
-                    <span className={c.obd?.coolant > limitsOf(c).tempCrit ? 'text-crit' : ''}>{fmt(c.obd?.coolant)}°</span>
-                    <span className={c.obd?.voltage < limitsOf(c).voltCrit ? 'text-crit' : ''}>{fmt(c.obd?.voltage, 1)} V</span>
-                  </span>
-                  <span className={`truncate text-[12px] font-semibold uppercase tracking-[0.06em] ${st === 'ok' ? 'text-muted' : st === 'warn' ? 'text-warn' : 'text-crit'}`}>
-                    {top ? top.text : `Hace ${fmtAge(age)}`}
-                  </span>
-                </span>
-                {st !== 'ok' && <Icon name="alert" size={16} className={st === 'warn' ? 'text-warn' : 'text-crit'} />}
-              </span>
-            </button>
+            <li key={m.id} className={`flex shrink-0 items-center gap-2.5 border-b border-line px-3 py-2 ${online ? '' : 'opacity-60'}`}>
+              <span className={`h-2 w-2 shrink-0 rounded-full ${online ? 'bg-ok' : 'bg-pending'}`} title={online ? 'Conectado' : 'Desconectado'} />
+              <span className="truncate text-[14px] font-semibold">{m.name}</span>
+              {driving && <span className="ml-auto flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-ok"><Icon name="wheel" size={13} />Al volante</span>}
+            </li>
           );
         })}
-      </div>
+      </ul>
     </aside>
   );
 }
+const LapStat = ({ label, value, sub, small }) => (
+  <div className="min-w-0 bg-panel px-3 py-2">
+    <div className="label">{label}</div>
+    <div className={`num truncate font-bold ${small ? 'text-[15px] leading-7' : 'text-[18px]'}`}>{value}</div>
+    {sub && <div className="truncate text-[12px] text-muted">{sub}</div>}
+  </div>
+);
+// Más rápido que la media = ▼ verde; más lento = ▲ ámbar.
+const DeltaText = ({ ms }) => ms == null || Number.isNaN(ms) ? null : (
+  <span className={`num ${ms < 0 ? 'text-ok' : ms > 0 ? 'text-warn' : 'text-muted'}`}>{ms < 0 ? '▼' : ms > 0 ? '▲' : '='} {fmtDelta(ms)}</span>
+);
 
 // ── Cabecera del coche seleccionado: estado + datos del móvil ──
 function CarHeader({ p, state, alarms, now }) {
@@ -195,6 +227,7 @@ function CarHeader({ p, state, alarms, now }) {
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-1 bg-panel px-4 py-2">
       <span className="num text-2xl font-bold">#{p.car}</span>
+      {p.driver && <span className="flex items-center gap-1.5 text-[15px] font-semibold"><Icon name="wheel" size={15} className="text-muted" />{p.driver}</span>}
       <span className={`flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] ${state === 'ok' ? 'text-ok' : state === 'warn' ? 'text-warn' : 'text-crit'}`}>
         <span className={`h-2 w-2 rounded-full ${BAND[state]}`} />{stateText}
         {alarms.length > 0 && <span className="font-semibold normal-case tracking-normal">· {alarms.map((a) => a.text).join(' · ')}</span>}
@@ -216,7 +249,7 @@ const Stat = ({ icon, label, value, warn }) => (
 );
 
 // ── Gauges: arco para temperatura, barra de LEDs para RPM, digital para voltaje y velocidad ──
-function Gauges({ p, stale }) {
+function Gauges({ p, stale, avg = {} }) {
   const o = p.obd ?? {};
   const L = limitsOf(p);
   const v = o.voltage;
@@ -225,12 +258,12 @@ function Gauges({ p, stale }) {
     <div className="grid grid-cols-2 gap-px bg-line xl:grid-cols-4">
       {/* Estrecho: temp + batería arriba, RPM y velocidad a lo ancho.
           Portátil: temp · RPM (doble) · batería y velocidad apiladas. */}
-      <TempArc value={o.coolant} stale={stale} L={L} />
-      <div className="order-3 col-span-2 xl:order-none"><RpmBar value={o.rpm} throttle={o.throttle} stale={stale} L={L} /></div>
+      <TempArc value={o.coolant} stale={stale} L={L} avg={avg.avg_temp} />
+      <div className="order-3 col-span-2 xl:order-none"><RpmBar value={o.rpm} throttle={o.throttle} stale={stale} L={L} avg={avg.avg_rpm} /></div>
       <div className="contents xl:grid xl:grid-rows-2 xl:gap-px">
-        <Readout label="Batería" unit="V" value={o.voltage} digits={2} stale={stale} compact
+        <Readout label="Batería" unit="V" value={o.voltage} digits={2} stale={stale} compact avg={avg.avg_volt}
           state={voltState} bar={{ min: 10, max: 16, marks: [L.voltCrit, L.voltHighWarn] }} />
-        <div className="order-4 col-span-2 xl:order-none xl:col-span-1"><Readout label="Velocidad GPS" unit="km/h" value={p.gps?.speed} stale={stale} compact /></div>
+        <div className="order-4 col-span-2 xl:order-none xl:col-span-1"><Readout label="Velocidad GPS" unit="km/h" value={p.gps?.speed} stale={stale} compact avg={avg.avg_speed} /></div>
       </div>
     </div>
   );
@@ -238,19 +271,32 @@ function Gauges({ p, stale }) {
 
 const STATE_TEXT = { ok: 'text-fg', warn: 'text-warn', crit: 'text-crit' };
 
-function GaugeShell({ label, state, stale, compact, children }) {
+function GaugeShell({ label, state, stale, compact, avg, children }) {
   return (
     <div className={`relative flex h-full flex-col bg-panel px-4 py-3 ${compact ? 'min-h-[148px] xl:min-h-0 xl:py-2' : 'min-h-[148px]'} ${state === 'crit' && !stale ? 'alarm-ring' : ''}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="label">{label}</span>
-        {stale && <span className="num rounded-[3px] bg-warn-soft px-1.5 text-[11px] font-semibold text-warn">SIN DATOS</span>}
+        {stale ? <span className="num rounded-[3px] bg-warn-soft px-1.5 text-[11px] font-semibold text-warn">SIN DATOS</span> : avg}
       </div>
       {children}
     </div>
   );
 }
 
-function TempArc({ value, stale, L }) {
+// Referencia de 30 días: "media 88 °C ▲ 3". Por encima/por debajo con flecha y signo, sin color de alarma.
+function AvgTag({ value, avg, unit, digits = 0 }) {
+  if (avg == null) return null;
+  const d = value == null ? null : value - avg;
+  const tol = digits ? 0.05 : 0.5;
+  return (
+    <span className="num truncate text-[11px] text-muted" title="Media de los últimos 30 días">
+      media {fmt(avg, digits)}
+      {d != null && <span className="ml-1 text-fg-2">{Math.abs(d) < tol ? '=' : d > 0 ? `▲ ${fmt(d, digits)}` : `▼ ${fmt(-d, digits)}`}</span>}
+    </span>
+  );
+}
+
+function TempArc({ value, stale, L, avg }) {
   const [min, max] = [40, 130];
   const state = value > L.tempCrit ? 'crit' : value >= L.tempWarn ? 'warn' : 'ok';
   const ang = (v) => 150 + (240 * (Math.min(max, Math.max(min, v)) - min)) / (max - min);
@@ -263,7 +309,7 @@ function TempArc({ value, stale, L }) {
   const tick = (v) => { const [[x0, y0], [x1, y1]] = [pt(ang(v), 58), pt(ang(v), 84)]; return <line x1={x0} y1={y0} x2={x1} y2={y1} stroke="var(--text-2)" strokeWidth="1.5" />; };
   const [[lx, ly], [rx, ry]] = [pt(ang(min), 70), pt(ang(max), 70)];
   return (
-    <GaugeShell label="Temp. motor" state={state} stale={stale}>
+    <GaugeShell label="Temp. motor" state={state} stale={stale} avg={<AvgTag value={value} avg={avg} unit="°C" />}>
       <svg viewBox="0 0 200 150" className="mx-auto -mb-2 w-full max-w-[220px]" role="img" aria-label={`Temperatura ${fmt(value)} grados`}>
         <path d={arc(L.tempWarn, L.tempCrit, 80)} stroke="var(--arc-warn)" strokeOpacity="0.55" strokeWidth="4" fill="none" />
         <path d={arc(L.tempCrit, max, 80)} stroke="var(--arc-crit)" strokeOpacity="0.55" strokeWidth="4" fill="none" />
@@ -283,14 +329,14 @@ function TempArc({ value, stale, L }) {
 }
 
 // Barra segmentada estilo luces de cambio del volante.
-function RpmBar({ value, throttle, stale, L }) {
+function RpmBar({ value, throttle, stale, L, avg }) {
   const N = 28;
   const max = Math.ceil((L.rpmCrit * 1.08) / 1000) * 1000; // escala: limitador + margen, redondeada a miles
   const lit = value == null || stale ? 0 : Math.round((Math.min(value, max) / max) * N);
   const zone = (i) => { const r = ((i + 1) / N) * max; return r > L.rpmCrit ? 'crit' : r > L.rpmWarn ? 'warn' : 'ok'; };
   const state = value >= L.rpmCrit ? 'crit' : 'ok';
   return (
-    <GaugeShell label="RPM" state={state} stale={stale}>
+    <GaugeShell label="RPM" state={state} stale={stale} avg={<AvgTag value={value} avg={avg} unit="rpm" />}>
       <div className="flex flex-1 flex-col justify-center gap-3">
         <div className="flex items-baseline gap-2">
           <span className={`num text-[44px] font-bold leading-none ${stale ? 'text-muted opacity-50' : ''}`}>{stale && value != null ? '~' : ''}{fmt(value)}</span>
@@ -310,10 +356,10 @@ function RpmBar({ value, throttle, stale, L }) {
   );
 }
 
-function Readout({ label, unit, value, digits = 0, state = 'ok', stale, bar, compact }) {
+function Readout({ label, unit, value, digits = 0, state = 'ok', stale, bar, compact, avg }) {
   const pos = (v) => `${(100 * (Math.min(bar.max, Math.max(bar.min, v)) - bar.min)) / (bar.max - bar.min)}%`;
   return (
-    <GaugeShell label={label} state={state} stale={stale} compact={compact}>
+    <GaugeShell label={label} state={state} stale={stale} compact={compact} avg={<AvgTag value={value} avg={avg} unit={unit} digits={digits ? 1 : 0} />}>
       <div className={`flex flex-1 flex-col justify-center ${compact ? 'gap-3 xl:gap-1.5' : 'gap-3'}`}>
         <div className="flex items-baseline gap-2">
           <span className={`num font-bold leading-none ${compact ? 'text-[44px] xl:text-[32px]' : 'text-[44px]'} ${stale ? 'text-muted opacity-50' : STATE_TEXT[state]}`}>{stale && value != null ? '~' : ''}{fmt(value, digits)}</span>
@@ -351,26 +397,21 @@ const QUICK = [
   { text: 'SANCIÓN' },
 ];
 
-function Messages({ cars, log, now, send }) {
-  const [to, setTo] = useState('all');
+function Messages({ dorsal, log, now, send }) {
   const [text, setText] = useState('');
-  const targets = ['all', ...Object.keys(cars)];
-  const recipients = (m) => (m.to === 'all' ? Object.keys(cars) : [m.to]);
+  const { driver } = useLive();
+  const to = 'all';
+  const recipients = () => [dorsal];
 
   return (
     <aside className="flex flex-col bg-panel lg:min-h-0" aria-label="Mensajes al piloto">
       <div className="flex h-9 shrink-0 items-center border-b border-line px-3"><span className="label">Mensajes al piloto</span></div>
       <div className="flex flex-col gap-3 border-b border-line p-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 text-[14px]">
           <span className="label">Para</span>
-          <div role="radiogroup" className="flex flex-wrap gap-1">
-            {targets.map((t) => (
-              <button key={t} role="radio" aria-checked={to === t} onClick={() => setTo(t)}
-                className={`num rounded-[3px] border px-2.5 py-1 text-[13px] font-semibold transition-colors ${to === t ? 'border-accent bg-accent-soft text-accent' : 'border-line text-fg-2 hover:bg-raised'}`}>
-                {t === 'all' ? 'TODOS' : `#${t}`}
-              </button>
-            ))}
-          </div>
+          <Icon name="wheel" size={15} className="text-muted" />
+          {driver ? <b>{driver.name}</b> : <span className="text-muted">nadie al volante todavía</span>}
+          <span className="num ml-auto text-muted">#{dorsal}</span>
         </div>
         <HoldButton onFire={() => send('ENTRA YA EN BOX', to)}>Entra ya en box</HoldButton>
         <div className="grid grid-cols-3 gap-2">
@@ -406,7 +447,7 @@ function Messages({ cars, log, now, send }) {
             <li key={m.id} className={`flex flex-col gap-1 border-b border-line px-3 py-2 ${problem ? 'bg-warn-soft' : m.critical ? 'bg-crit-soft' : ''}`}>
               <div className="flex items-baseline gap-2">
                 <span className="num text-[12px] text-muted">{hhmmss(m.ts)}</span>
-                <span className="num text-[12px] font-semibold text-fg-2">{m.dir === 'in' ? `#${m.car} → BOX` : `BOX → ${m.to === 'all' ? 'TODOS' : '#' + m.to}`}</span>
+                <span className="num text-[12px] font-semibold text-fg-2">{m.dir === 'in' ? `#${m.car} → BOX` : `BOX → ${m.to === 'all' ? 'PILOTO' : '#' + m.to}`}</span>
                 {m.dir === 'in' && <Badge tone={m.critical ? 'crit' : 'info'}>{m.critical ? 'Avería' : 'Piloto'}</Badge>}
               </div>
               <div className="text-[15px] font-semibold uppercase leading-tight tracking-[0.02em]">{m.text}</div>

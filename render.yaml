@@ -5,7 +5,7 @@ services:
     runtime: node
     region: frankfurt          # la más cercana a España: menos latencia
     plan: free                 # se duerme tras 15 min sin tráfico; cambiar a "starter" los días de carrera
-    numInstances: 1            # los canales viven en memoria: más de una instancia los separaría
+    numInstances: 1            # el estado en vivo de cada equipo está en memoria: más de una instancia lo partiría
     buildCommand: npm ci --include=dev && npm run build
     startCommand: node server/index.js
     healthCheckPath: /
@@ -13,3 +13,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      - key: DATABASE_URL      # cadena de conexión de Neon (Dashboard de Neon → Connect). Se pide al crear el Blueprint.
+        sync: false
+      - key: ADMIN_EMAIL       # el email con el que te registres será administrador de la plataforma
+        sync: false
+      - key: AUTH_SECRET       # firma de las sesiones: Render la genera al azar
+        generateValue: true

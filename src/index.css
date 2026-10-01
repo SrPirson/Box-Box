@@ -13,6 +13,7 @@
   --ok-solid: #11793a; --on-ok: #fff; --warn-solid: #f5b81c; --on-warn: #0e1318; --crit-solid: #c4142b; --on-crit: #fff;
   --ok-soft: #e3f4e8; --warn-soft: #fdf1d3; --crit-soft: #fbe3e5; --info-soft: #e2ecfb;
   --arc-track: #e2e6eb; --arc-ok: #1f9d4f; --arc-warn: #b87c00; --arc-crit: #c4142b;
+  --chart: #4b4fd8; /* serie de gráficos (validada: banda de luminosidad y ≥3:1 sobre panel) */
 }
 [data-theme='dark'] {
   color-scheme: dark;
@@ -24,6 +25,7 @@
   --ok-solid: #3ccf6e; --on-ok: #0b0e12; --warn-solid: #f5b81c; --on-warn: #0b0e12; --crit-solid: #ff5a52; --on-crit: #0b0e12;
   --ok-soft: #12291b; --warn-soft: #2e2510; --crit-soft: #331516; --info-soft: #13233a;
   --arc-track: #232a33; --arc-ok: #3ccf6e; --arc-warn: #f5b81c; --arc-crit: #ff5a52;
+  --chart: #7c84f5;
 }
 /* Piloto: máximo contraste. Claro = negro sobre blanco (sol directo); oscuro = OLED puro sin deslumbrar. */
 [data-theme='light'] .pilot { --bg: #fff; --panel: #fff; --text: #000; --border: #000; }
@@ -67,6 +69,9 @@ button:disabled { cursor: not-allowed; }
 .leaflet-control-attribution a { color: var(--text-2); }
 [data-theme='dark'] .tiles-sat { filter: saturate(0.75) brightness(0.8) contrast(1.1); }
 .trail { stroke: var(--accent); }
+.finish-a { stroke: #fff; }
+.finish-b { stroke: #000; stroke-dasharray: 7 7; }
+.finish-dot { stroke: #fff; stroke-width: 2; fill: #000; fill-opacity: 1; }
 .car-icon { background: none; border: none; }
 .car-dot {
   display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
