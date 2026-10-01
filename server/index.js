@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { Server } from 'socket.io';
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3300;
 const DIST = join(import.meta.dirname, '..', 'dist');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 

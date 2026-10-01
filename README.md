@@ -4,7 +4,7 @@ PWA única: vista **PILOTO** (móvil en el salpicadero), **BOX** (portátil) y *
 
 ```bash
 npm install
-npm start          # compila y sirve app + Socket.io en http://0.0.0.0:3000
+npm start          # compila y sirve app + Socket.io en http://0.0.0.0:3300
 npm run dev        # desarrollo (Vite con proxy a `npm run server`)
 npm test           # parser PIDs ELM327 + driver
 ```
