@@ -45,6 +45,11 @@ test('mide la distancia al trazado y el progreso a lo largo de él', () => {
   const out = route.locate(ring(1, R + 0.0002)).dist; // 0,0002° de latitud ≈ 22 m hacia fuera
   assert.ok(Math.abs(out - 22) < 2, `${out} m`);
   assert.ok(Math.abs(route.locate(ring(Math.PI)).at - 0.5) < 0.01);
+  // Meta con un toque cerca del trazado: 30 m de lado a lado, cortándolo.
+  const [A, B] = route.lineAt(ring(1, R + 0.00005));
+  assert.ok(crossing({ lat: ring(0.95)[0], lng: ring(0.95)[1] }, { lat: ring(1.05)[0], lng: ring(1.05)[1] }, A, B) != null);
+  const len = Math.hypot((A[0] - B[0]) * 110540, (A[1] - B[1]) * 111320 * Math.cos((40 * Math.PI) / 180));
+  assert.ok(Math.abs(len - 30) < 0.5, `${len} m`);
 });
 
 // Vueltas de 60 s alrededor del trazado; `step` = muestras por vuelta, `dir` = sentido de giro.

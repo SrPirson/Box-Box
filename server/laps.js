@@ -22,16 +22,12 @@ export function createRoute(path) {
   const o = path[0];
   const mLng = 111320 * Math.cos((o[0] * Math.PI) / 180);
   const xy = ([lat, lng]) => [(lng - o[1]) * mLng, (lat - o[0]) * 110540];
+  const ll = ([x, y]) => [o[0] + y / 110540, o[1] + x / mLng];
   const P = [...path, path[0]].map(xy);
   const cum = [0];
   for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
   const total = cum.at(-1) || 1;
-  // Meta por defecto: perpendicular al trazado en su primer punto, 15 m a cada lado.
-  const [dx, dy] = P[1];
-  const k = 15 / (Math.hypot(dx, dy) || 1);
-  const line = [-1, 1].map((sg) => [o[0] + (sg * k * dx) / 110540, o[1] - (sg * k * dy) / mLng]);
-  return {
-    line,
+  const route = {
     // Distancia (m) al trazado y progreso a lo largo de él (0-1) del punto más cercano.
     locate(pt) {
       const [x, y] = xy(pt);
@@ -41,11 +37,19 @@ export function createRoute(path) {
         const sx = P[i][0] - ax, sy = P[i][1] - ay, len2 = sx * sx + sy * sy;
         const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * sx + (y - ay) * sy) / len2)) : 0;
         const d = Math.hypot(x - ax - t * sx, y - ay - t * sy);
-        if (d < best.dist) best = { dist: d, at: (cum[i - 1] + t * (cum[i] - cum[i - 1])) / total };
+        if (d < best.dist) best = { dist: d, at: (cum[i - 1] + t * (cum[i] - cum[i - 1])) / total, p: [ax + t * sx, ay + t * sy], dir: [sx, sy] };
       }
       return best;
     },
+    // Línea de meta en el punto del trazado más cercano a `pt`: perpendicular a la pista, 15 m a cada lado.
+    lineAt(pt) {
+      const { p, dir: [sx, sy] } = route.locate(pt);
+      const k = 15 / (Math.hypot(sx, sy) || 1);
+      return [-1, 1].map((sg) => ll([p[0] - sg * k * sy, p[1] + sg * k * sx]));
+    },
   };
+  route.line = route.lineAt(path[0]); // meta por defecto: el inicio del trazado
+  return route;
 }
 
 export function createLapTimer() {
