@@ -82,6 +82,15 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(laps.length, 2);
   assert.ok(Math.abs(laps[0].ms - 30_000) < 300, `vuelta de ${laps[0].ms} ms`);
+  assert.ok(batch.packets.at(-1).lapStartedAt != null, 'hay una vuelta en curso');
+
+  // Anular la vuelta en curso: todos se enteran y la siguiente espera a cruzar la meta.
+  const lapReset = next(sb, 'lap:reset');
+  sa.emit('lap:reset');
+  assert.equal((await lapReset).by, 'Ana');
+  const after = next(sb, 'telemetry');
+  sa.emit('telemetry', { ts: Date.now(), obd: {}, gps: { lat: 39.9995, lng: -3, speed: 100 } });
+  assert.equal((await after).lapStartedAt, null);
 
   // Beto toma el volante: es un relevo (el coche pasa a boxes) y la telemetría de Ana se rechaza.
   const back = next(sa, 'driver');

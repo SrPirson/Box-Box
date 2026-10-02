@@ -51,6 +51,11 @@ export default function Box({ muted }) {
       setLog((l) => [{ id: uid(), dir: 'in', car: e.car, text: e.label, ts: Date.now(), critical: e.critical }, ...l]);
       if (e.critical) setBreakdowns((b) => [...b, { ...e, id: uid() }]);
     },
+    // Vuelta anulada (desde Piloto o desde BOX): fuera el cronómetro y los parciales hasta el próximo cruce de meta.
+    'lap:reset': ({ by, ts }) => {
+      setCars((c) => Object.fromEntries(Object.entries(c).map(([k, p]) => [k, { ...p, lapStartedAt: null, lapSplits: [] }])));
+      setLog((l) => [{ id: uid(), dir: 'in', car: team.dorsal, text: `VUELTA ANULADA · ${by}`, ts }, ...l]);
+    },
     ack: (a) => setLog((l) => l.map((m) => (m.id === a.id ? { ...m, acks: { ...m.acks, [a.car]: { answer: a.answer, at: Date.now() } } } : m))),
   });
 
@@ -94,7 +99,8 @@ export default function Box({ muted }) {
         onDone={(id) => setBreakdowns((b) => b.filter((x) => x.id !== id))} />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-auto bg-line lg:grid-cols-[220px_minmax(0,1fr)_360px] lg:overflow-hidden 2xl:grid-cols-[260px_minmax(0,1fr)_420px]">
-        <TeamColumn team={team} laps={today.data?.laps ?? []} lapStartedAt={cars[sel]?.lapStartedAt} splits={cars[sel]?.lapSplits} now={now} />
+        <TeamColumn team={team} laps={today.data?.laps ?? []} lapStartedAt={cars[sel]?.lapStartedAt} splits={cars[sel]?.lapSplits} now={now}
+          onResetLap={() => socket.emit('lap:reset')} />
 
         <section className="flex flex-col gap-px bg-line lg:min-h-0" aria-label="Telemetría">
           {pit && <PitBar pit={pit} now={now} onArrived={() => socket.emit('pit', 'arrived')} onEnd={() => socket.emit('pit', false)} />}
@@ -206,7 +212,7 @@ const BannerButton = ({ icon, children, ...p }) => (
 );
 
 // ── Columna izquierda: equipo (quién está y quién conduce) + vueltas en vivo ──
-function TeamColumn({ team, laps, lapStartedAt, splits = [], now }) {
+function TeamColumn({ team, laps, lapStartedAt, splits = [], now, onResetLap }) {
   const live = useLive();
   const sec = sectorStats(laps, team.track);
   // Parciales de la vuelta en curso: tiempo de cada tramo ya cerrado (de corte a corte).
@@ -222,7 +228,14 @@ function TeamColumn({ team, laps, lapStartedAt, splits = [], now }) {
       </div>
       <div className="grid grid-cols-2 gap-px border-b border-line bg-line">
         <div className="col-span-2 bg-panel px-3 py-2.5">
-          <div className="label flex items-center gap-1.5"><Icon name="timer" size={13} />Vuelta en curso</div>
+          <div className="label flex items-center gap-1.5"><Icon name="timer" size={13} />Vuelta en curso
+            {lapStartedAt && (
+              <button onClick={onResetLap} title="Descarta esta vuelta: la siguiente empieza al cruzar la meta, desde el T1"
+                className="ml-auto flex items-center gap-1 rounded-[3px] border border-line px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-fg-2 hover:bg-raised hover:text-fg">
+                <Icon name="undo" size={11} />Anular
+              </button>
+            )}
+          </div>
           <div className="num text-[30px] font-bold leading-tight">{lapStartedAt ? fmtLap(Math.max(0, now - lapStartedAt)).slice(0, -2) : '—'}</div>
           {!team.track?.line && !team.track?.path && <div className="text-[12px] leading-snug text-muted">Define la meta o dibuja el trazado en el mapa para cronometrar.</div>}
           {sec.n > 0 && lapStartedAt && (

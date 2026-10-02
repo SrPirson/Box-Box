@@ -136,6 +136,13 @@ export function attachLive(server, userFromToken) {
     socket.on('telemetry', (p) => telemetry([p], false));
     socket.on('telemetry:batch', (b) => telemetry(b?.packets, true));
 
+    // Anular la vuelta en curso (el coche se ha salido o ha tenido que parar a mitad): no se guarda, y la
+    // siguiente empieza al cruzar de nuevo la meta, desde el T1.
+    socket.on('lap:reset', () => {
+      st.lap.restart();
+      io.to(r).emit('lap:reset', { by: u.name, ts: Date.now() });
+    });
+
     // Mensajería: se reenvía al resto del equipo con el remitente verificado.
     for (const ev of ['pilot', 'msg', 'ack']) {
       socket.on(ev, (d) => {

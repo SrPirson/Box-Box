@@ -44,6 +44,17 @@ export default function Pilot({ onNav }) {
     if (a.critical && team.phone) location.href = `tel:${team.phone.replace(/[^\d+]/g, '')}`;
   };
 
+  const [armed, setArmed] = useState(false);
+  const [lapDone, setLapDone] = useState(false);
+  const resetLap = () => {
+    if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 3000); return; }
+    socket.emit('lap:reset');
+    setArmed(false);
+    setLapDone(true);
+    navigator.vibrate?.(200);
+    setTimeout(() => setLapDone(false), 2500);
+  };
+
   const reply = (answer) => {
     const m = inbox[0];
     if (m.id) socket.emit('ack', { id: m.id, car: team.dorsal, answer, ts: Date.now() });
@@ -124,6 +135,16 @@ export default function Pilot({ onNav }) {
           );
         })}
       </div>
+
+      {/* Anular la vuelta en curso (me he salido, he tenido que parar): la siguiente empieza en meta, desde el T1.
+          Doble toque para no perder una vuelta buena por un roce con los guantes. */}
+      {isDriver && (
+        <button onClick={resetLap}
+          className={`mx-3 mb-3 flex h-16 shrink-0 items-center justify-center gap-3 rounded-md border-[3px] text-2xl font-bold uppercase tracking-[0.04em] active:scale-[0.98] ${armed ? 'border-warn-solid bg-warn-solid text-on-warn' : 'border-line text-fg-2'}`}>
+          <Icon name={lapDone ? 'check' : 'undo'} size={28} stroke={2.5} />
+          {lapDone ? 'Vuelta anulada · empieza en meta' : armed ? 'Toca otra vez para anular' : 'Anular vuelta'}
+        </button>
+      )}
 
       {/* Interrupción prioritaria de BOX */}
       {inbox[0] && (
