@@ -1,35 +1,48 @@
 # Contexto del proyecto · por dónde vamos
 
-> Última actualización: 2026-10-02. Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
+> Última actualización: 2026-10-03. Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
 
 ## Qué es
 
-**Box Box · Comms & Telemetry** (antes «Cencerro Racing»; app para cualquier evento de carreras): PWA para equipos de carreras. Une el móvil del coche (lector OBD2
-ELM327 + GPS) con el portátil del muro de BOX, por WebSocket y con baja latencia.
+**Box Box · Comms & Telemetry** (antes «Cencerro Racing»): app para equipos de carreras y para cualquier
+evento. Une el móvil del coche (lector OBD2 ELM327 + GPS) con el portátil del muro de BOX por WebSocket, con
+baja latencia, y permite organizar eventos con varios equipos. Web (PWA) + app Android (Capacitor) que
+carga la web desplegada.
 
-- **Piloto** (móvil en el salpicadero): 6 botones grandes para usar con guantes. Los mensajes de BOX
-  salen a pantalla completa, se leen en voz alta (TTS) y se responden con OK, NO o PROBLEMA. El único
-  ajuste visible es el tema claro u oscuro.
-- **Box** (portátil): vueltas en vivo, equipo conectado, alarmas por niveles, gauges con la media de
-  30 días, mapa con 5 plantillas, trazado del circuito y línea de meta, y mensajería con acuse de recibo.
-- **Estadísticas**: tiempos por vuelta comparados con la media, comparativa entre pilotos y medias de
-  telemetría.
-- **Equipo**: invitación (copiar enlace, WhatsApp, Telegram, correo, menú nativo), miembros, dorsal,
-  teléfono del mecánico, meta y trazado (borrar) y alertas del coche.
-- **Ajustes**: sensor (simulador o ELM327 BLE), intervalo de envío (200 ms a 5 min, lo largo para medir
-  consumo), simulador de fallos, tema y cuenta.
-- **Admin**: cuentas y equipos de toda la plataforma.
+### Roles y modos
+
+Roles en escalera: **admin** ⊃ **organizador** ⊃ **piloto**. El organizador lo asigna el admin (Cuentas).
+Quien tiene varios roles elige el **modo** en su perfil (se recuerda por dispositivo; por defecto el más
+alto) y cada modo solo muestra sus vistas (`src/lib/mode.js`, `MODE_VIEWS` en `src/App.jsx`).
+
+| Modo | Vistas |
+|---|---|
+| Admin | **Cuentas** (usuarios, roles, contraseñas, bajas, equipos) y **Eventos** (todos: abrir, cambiar organizador, cerrar, borrar; no crea) |
+| Organizador | **Mis eventos**: crear (nombre, fecha, lugar), público/privado, abrir/cerrar inscripciones, código, pista común (trazado, meta, tramos), clasificación en vivo, mapa con todos los coches, echar equipos, sacar pilotos, añadir pilotos registrados por email |
+| Piloto | **Piloto** (fila grande bajo la cabecera), **Box**, **Estadísticas**, **Eventos** (lista por fecha con buscador, próximos/pasados, inscripción; sin equipo: «Tengo un código» y «Equipo para entrenar»), **Equipo** (personas: evento, invitar, miembros, nombre, salir) y **Ajustes** (coche: dorsal, icono, teléfono del mecánico, alertas; móvil: OBD, intervalo, simulador, telemetría, APK) |
+| Todos | **Perfil** (botón con la inicial): nombre, email (con contraseña), contraseña, modo, tema, cerrar sesión, eliminar cuenta y estadísticas personales |
+
+Sin equipo, el piloto solo ve Eventos y Perfil.
+
+### Pantallas clave
+
+- **Piloto**: 4 botones grandes (Avería, Salgo a box, Repostar, Pinchazo), «Anular vuelta» (doble toque),
+  fila Coche (temp. motor, rpm) / Móvil (batería, temperatura) en directo. Mensajes de BOX a pantalla
+  completa con voz (nativa en la APK) y respuestas OK / NO / PROBLEMA. Aviso si falta el permiso de ubicación.
+- **Box**: vueltas y parciales en vivo, alarmas por niveles, gauges, mapa (barra de pista: pistas guardadas,
+  trazado, meta, tramos; en un evento, la del organizador sin editar), mensajería, «Viene a boxes / En boxes».
+- **Estadísticas**: vueltas, pilotos, telemetría y tramos (mejor, media, última, constancia, vuelta ideal).
 
 ## Estado actual
 
 | | |
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
-| Último commit | `5310d77` Meta con un toque sobre el trazado y borrado de meta y trazado desde el mapa |
-| Despliegue | **https://boxracing.onrender.com** · servicio `boxracing` `srv-db02jqad0e5s739s56gg` (Frankfurt, free), creado con el conector. La dirección antigua https://cencerro-racing.onrender.com (servicio `cencerro` `srv-davb06flk1mc739c6vlg`; borrarlo cuando todos los móviles tengan la APK v9 o posterior) sigue activa durante la transición: con `REDIRECT_TO` manda los navegadores a la nueva, y las APK antiguas la siguen cargando para actualizarse a la que apunta a la nueva. `box-box` y `boxbox` en Render estaban cogidas |
-| Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, plan gratuito sin caducidad; creada desde la integración de Vercel). Migrada desde el Postgres de Render el 02/10/2026 con `server/migrate.js`. El de Render (`cencerro-racing-db`) queda como copia hasta que caduque el 31/10/2026 |
-| Tests | `npm test` → 11 en verde (ELM327, alertas, cronometraje con y sin trazado, integración API + tiempo real) |
-| Sin commitear | `package-lock.json` local sin campos `libc` (npm antiguo en Windows). **No subirlo**: descartar con `git checkout package-lock.json` |
+| Último commit | `dc7bbe4` Vistas por modo (Admin, Organizador, Piloto) y perfil de cuenta |
+| Despliegue | **https://boxracing.onrender.com** · servicio `boxracing` `srv-db02jqad0e5s739s56gg` (Frankfurt, free, autodeploy de `main`). La antigua https://cencerro-racing.onrender.com (servicio `cencerro` `srv-davb06flk1mc739c6vlg`) sigue activa con `REDIRECT_TO`: los navegadores van a la nueva y las APK antiguas (WebView, `; wv)`) la siguen cargando para actualizarse. **Borrarla cuando todos los móviles tengan la APK v9 o posterior.** `box-box` y `boxbox` en Render estaban cogidas |
+| Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, gratis sin caducidad; creada desde la integración de Vercel). `DATABASE_URL` con `sslmode=verify-full`. Migrada desde Render el 02/10 con `server/migrate.js`. El Postgres de Render (`cencerro-racing-db`) caduca el 31/10/2026 y ya no se usa |
+| APK | Release `apk` de GitHub, **versión 11** (`cencerro.apk`). La compila `.github/workflows/android.yml` en cada cambio de `android/`, `capacitor.config.json` o `package.json`; firma fija con el secreto `ANDROID_KEYSTORE` (CN=Cencerro Racing), verificada con apksigner antes de publicar. La app avisa de versión nueva e instala encima |
+| Tests | `npm test` → **18 en verde** (ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
 
 ## Cómo arrancar
 
@@ -42,79 +55,83 @@ npm test
 
 - El puerto 3000 lo ocupa otro proyecto Next.js en este equipo. Por eso este usa el **3300**.
 - Para ser admin en local: `ADMIN_EMAIL=tu@email npm start` y registrarse con ese email.
+- Pruebas en local sin tocar datos: `PGLITE_DIR=memory:// PORT=3477 node server/index.js`.
 - Para probar sin coche: Ajustes → Simulador, y en Piloto «Tomar el volante».
+- Variables del servicio en Render: `NODE_VERSION`, `DATABASE_URL` (Neon), `AUTH_SECRET`; opcionales
+  `ADMIN_EMAIL`, `REDIRECT_TO` (solo el servicio antiguo), `MIGRATE_TO` (solo para una migración).
 
 ## Arquitectura (resumen)
 
 ```
-Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" ──▶ portátiles BOX / otros miembros
-  ELM327 BLE / simulador       │ api.js   REST: cuentas, equipos, admin, stats
-  GPS · batería · red          │ live.js  piloto al volante, presencia, vueltas, muestreo 1 Hz
-  cola offline (ráfaga)        └ db.js    Postgres Render (prod) · PGlite (local)
+Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>"  ──▶ BOX / miembros del equipo
+  ELM327 BLE (nativo en APK)   │                └▶ sala "event:<id>" (resumen 1 Hz + vueltas) ──▶ organizador
+  GPS · brújula · batería      │ api.js   REST: cuentas, perfil, equipos, pistas, eventos, admin, stats
+  cola offline (ráfaga)        │ live.js  piloto al volante, presencia, boxes, vueltas, muestreo 1 Hz
+                               └ db.js    Postgres Neon (prod) · PGlite (local)
 ```
 
-- **Autenticación**: contraseñas con scrypt y tokens HMAC de 30 días (stdlib, sin librerías). Al cambiar
-  la contraseña se invalidan todos los tokens anteriores.
-- **Un coche por equipo**, con un único piloto «al volante». El servidor rechaza la telemetría de
-  cualquier otro móvil.
-- **Circuito** (`team.track = { line?, path? }`): la meta son 2 puntos; el trazado, un lazo cerrado de
-  puntos dibujado en BOX. Con trazado, la meta se pone con un toque (perpendicular, 30 m) y, si no hay
-  meta propia, hace de meta el inicio del trazado. Geometría en `server/laps.js` (`createRoute`), que
-  también importa el cliente.
-- **Vueltas**: las detecta el servidor cuando la traza GPS cruza la meta, interpolando el instante del
-  cruce. Ignora cruces a menos de 20 s. Con trazado, además, solo cuenta si se ha recorrido el 80 % de los
-  20 sectores (sirve en ambos sentidos de dibujo y con muestreo lento).
-- **Fuera de pista**: el servidor añade `offTrack` (m al trazado menos la precisión del GPS) a cada
-  paquete; aviso a 25 m y crítico a 50 m por defecto.
-- **Alertas**: los umbrales son por equipo y viajan en cada paquete. Avisos en ámbar con un tono; críticos
-  con banner y pitido cada 5 s hasta que alguien los reconoce. «Sin datos» descuenta el intervalo de envío
-  del móvil (`pollMs` va en el paquete).
-- **Gateway**: el OBD se lee al ritmo del intervalo; con intervalos > 1 s cada fix GPS nuevo se envía al
-  momento. La pantalla del piloto se mantiene encendida (Wake Lock, que se vuelve a pedir al volver a la app).
-- **Mapas sin API key**: Esri (oscuro, claro, satélite, híbrido) y OpenStreetMap (callejero). CARTO se
-  descartó porque ya exige key desde el navegador.
-- **Diseño**: tokens claro/oscuro en `src/index.css`; tipografías Barlow Condensed y JetBrains Mono
-  (empaquetadas, funcionan sin red). Los motivos están en `docs/investigacion-ux-ui.md`.
+- **Autenticación**: scrypt + tokens HMAC de 30 días (stdlib). Cambiar contraseña invalida los tokens.
+- **Un coche por equipo**, un único piloto «al volante». Un **relevo** reinicia la vuelta y abre la parada.
+- **Pista** (`track = { line?, path?, sectors?, id?, name? }`): en equipos de entrenamiento, la del equipo
+  (pistas guardadas en `tracks`); en un evento, la del organizador (`events.track`), igual para todos.
+- **Vueltas y tramos**: el servidor detecta el cruce de meta interpolando el instante; cortes de tramo →
+  parciales en el orden en que se cruzan. Cada vuelta guarda `sectors`, `track_id` y `event_id`.
+- **Boxes**: «Salgo a box»/«Repostar» → viene de camino (alarmas normales); BOX confirma «Coche en boxes» →
+  cuenta y se callan sin señal/batería/rpm/pista; termina a ≥ 40 km/h o con «Fin de boxes».
+- **Eventos**: `events` (organizador, código, pista, cerrado, privado) y `teams.event_id`. Códigos de equipo y
+  de evento únicos entre ambos; `/api/code/:code` dice cuál es. Clasificación en `/api/events/:id/standings`.
+- **Perfil**: las vueltas y muestras son también del piloto; si el equipo se borra, quedan con `team_id` null.
+- **App Android (Capacitor 8)**: carga `server.url` remoto. Plugins propios en
+  `android/app/src/main/java/com/cencerro/racing/`: `Thermal` (temperatura y nivel de batería), `Updater`
+  (versión y descarga/instalación del APK), `Background` (servicio en primer plano con GPS nativo y pulso
+  de 250 ms para la pantalla apagada; permisos y ajustes de la app). Comunidad: `bluetooth-le` (OBD en la
+  APK, el WebView no tiene Web Bluetooth) y `text-to-speech`. Pide ubicación, Bluetooth y notificaciones al
+  abrir; pantalla siempre encendida.
+- **Mapa**: Esri + OpenStreetMap sin API key. Icono propio del coche (foto en círculo o silueta que gira con
+  el rumbo: GPS en marcha, brújula parado). En eventos, cada coche se identifica por su equipo (`p.key`).
+- **Diseño**: tokens en `src/index.css`, Barlow Condensed + JetBrains Mono. Logotipo e iconos generados del
+  PNG del usuario (`public/logo-*.png`, `icon-*.png`, mipmaps de Android).
 
 ## Decisiones tomadas (y por qué)
 
 | Decisión | Motivo |
 |---|---|
 | React + Vite (no Next.js) | Es una SPA; Next no aportaba nada |
-| Render (no Vercel) | Vercel no mantiene WebSockets abiertos |
-| Postgres de Render | El disco de Render free se borra y PGlite no cabe en 512 MB (OOM) |
+| Render (no Vercel) | Vercel no mantiene WebSockets ni estado en memoria |
+| Neon gratis (no Postgres de Render) | El de Render gratis caduca a los 30 días |
+| Una instancia en Render | El estado en vivo (equipo y evento) vive en memoria |
 | `ADMIN_EMAIL` por variable de entorno | Que nadie se haga admin por registrarse el primero |
-| Una instancia en Render | El estado en vivo de cada equipo vive en memoria |
-| ENTRA YA EN BOX con pulsación mantenida de 400 ms | Evita envíos accidentales sin usar diálogos |
-| Ajustes del coche editables por cualquier miembro | En pista, el capitán puede estar conduciendo |
-| Fuera de pista calculado en el servidor | Allí ya están el trazado y la traza; BOX solo compara con umbrales |
-| Meta perpendicular automática con trazado | Marcar «borde a borde» con dos toques no se entendía |
-| Roles admin / organizador / piloto; el organizador lo asigna el admin | Que no cualquiera cree eventos |
-| Eventos con la pista del organizador, común a todos sus equipos | Tiempos comparables: la clasificación tiene sentido |
-| Un equipo activo por piloto; equipos sin evento = entrenamiento | Lo que ya hacía la app; el historial de todos los eventos queda en el perfil |
-| Un solo campo «código» para equipo y evento (códigos únicos entre ambos) | El piloto no tiene que saber qué tipo de código le han dado |
-| El organizador recibe un resumen por equipo a 1 Hz, nunca los mensajes | Clasificación y mapa del evento sin invadir la radio de cada equipo |
+| Roles en escalera y modo elegido en el perfil | El admin también corre; cada modo solo enseña lo suyo |
+| Organizador asignado por el admin | Que no cualquiera cree eventos |
+| Pista del evento común a sus equipos | Tiempos comparables en la clasificación |
+| Un equipo activo por piloto; sin evento = entrenamiento | Simple; el historial queda en el perfil |
+| El capitán inscribe a su propio equipo en eventos | Conserva pilotos y configuración del coche |
+| El organizador recibe un resumen a 1 Hz, nunca los mensajes | Seguir el evento sin invadir la radio de cada equipo |
+| Parada en boxes confirmada por BOX | Avisar de que entra no significa que ya esté parado |
+| Confirmaciones en dos toques, nunca `confirm()` | Los diálogos del navegador bloquean y quedan mal en la APK |
+| APK con firma fija y verificada en CI | Si cambia la firma, Android obliga a desinstalar |
+| ENTRA YA EN BOX con pulsación mantenida; Anular vuelta con doble toque | Evitar envíos accidentales con guantes |
 
 ## Pendiente / próximos pasos
 
-1. ~~Base de datos antes del 31/10/2026~~: hecho, migrada a Neon el 02/10/2026.
-2. **Media de vuelta representativa**: hoy la media incluye vueltas de relevo y de boxes, que la
-   distorsionan (en la prueba subió de 30 s a 46 s). Propuesta: excluir las vueltas de más del 107 % de
-   la mejor, o usar la mediana. **Pendiente de decidir con el usuario.**
-3. **Limitar intentos de login** antes de abrir la app a más equipos.
-4. **Persistir el historial de mensajes** de BOX en la base de datos; hoy se pierde al recargar.
-5. **Probar con hardware real**: KUULAA ELM327 v2.2. Si es Bluetooth clásico (PIN 1234), Web
-   Bluetooth no lo ve y hará falta Capacitor con un plugin Bluetooth Serial (`createElm()` ya acepta otro
-   transporte).
-6. **Probar en pista el trazado**: la entrada a boxes saltará como «fuera de pista» si el pit lane no
-   está en el trazado. Idea: crear el trazado a partir de la estela de una vuelta real.
-7. Opcional: dividir el bundle (unos 550 kB; aviso de Vite) y, si el equipo factura, cuenta gratuita de
-   ArcGIS para el mapa de Esri.
+1. **Borrar el servicio antiguo `cencerro`** en Render cuando todos los móviles tengan la APK v9+.
+2. **Avisos de dirección de carrera** a todos los pilotos del evento (bandera roja, safety car, amarilla).
+3. **Icono propio de cada coche en el mapa del evento** (ahora todos salen como círculo con dorsal).
+4. **ELM327 de Bluetooth clásico** (el KUULAA v2.2 puede serlo): plugin de puerto serie en la APK;
+   `createElm()` ya acepta otro transporte.
+5. **Gestión de stints y combustible** (tiempo al volante por piloto, consumo, ventana de boxes) y tiempos
+   en la vista Piloto (última vuelta y delta).
+6. **Media de vuelta representativa** (excluir vueltas > 107 % de la mejor o usar la mediana): pendiente de decidir.
+7. **Limitar intentos de login** y **persistir el historial de mensajes** de BOX.
+8. Probar en un móvil real: pantalla apagada (y ajuste de batería «Sin restricciones» en Xiaomi/Samsung),
+   brújula en el soporte, OBD BLE nativo, permisos y actualización encima con la v11.
+9. Opcional: dividir el bundle (aviso de Vite) y actualizar las acciones de GitHub a v5.
 
 ## Requisitos de pista (no olvidar)
 
 - **HTTPS** obligatorio en el móvil (Bluetooth, GPS, Wake Lock). Render lo da hecho.
-- Web Bluetooth funciona en **Chrome Android**, no en iOS.
+- En la APK: ubicación «Permitir mientras se usa la app» y batería sin restricciones para la pantalla apagada.
+- Web Bluetooth solo en **Chrome Android**; en la APK, Bluetooth nativo. iOS no está soportado.
 - `tel:` abre el marcador, pero el piloto tiene que pulsar llamar.
-- La voz (TTS) y el pitido de BOX necesitan una primera pulsación en la página.
-- Render free se duerme tras 15 min: los días de carrera, plan **Starter**.
+- Render free se duerme tras 15 min: los días de carrera, un ping cada 10 min (cron-job.org) o plan Starter.
+- Antes de un evento, que todo el equipo use la dirección nueva y la APK v9+ (el estado en vivo es por servicio).
