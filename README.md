@@ -1,4 +1,4 @@
-# Cencerro Racing Comms & Telemetry
+# Box Box · Comms & Telemetry
 
 PWA de comunicaciones y telemetría para equipos de carreras. Vistas **Box** (muro), **Piloto** (móvil en el
 salpicadero), **Estadísticas**, **Equipo**, **Ajustes** y **Admin**.

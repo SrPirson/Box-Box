@@ -91,7 +91,7 @@ function Header({ view, setView, muted, setMuted, noTeam }) {
     <header className="flex h-11 shrink-0 items-stretch gap-2 border-b border-line bg-panel px-2 sm:gap-4 sm:px-3">
       <div className="flex items-center gap-2 sm:pr-2">
         <img src="/icon.svg" alt="" className="h-6 w-6 rounded-[3px]" />
-        <span className="hidden text-lg font-bold uppercase tracking-[0.12em] xl:inline">Cencerro</span>
+        <span className="hidden text-lg font-bold uppercase tracking-[0.12em] xl:inline">Box Box</span>
         {team && <span className="hidden max-w-40 truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-muted 2xl:inline">· {team.name}</span>}
       </div>
       <nav className="-mb-px flex min-w-0 items-stretch overflow-x-auto" aria-label="Vistas">

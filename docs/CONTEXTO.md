@@ -4,7 +4,7 @@
 
 ## Qué es
 
-**Cencerro Racing Comms & Telemetry**: PWA para equipos de carreras. Une el móvil del coche (lector OBD2
+**Box Box · Comms & Telemetry** (antes «Cencerro Racing»; app para cualquier evento de carreras): PWA para equipos de carreras. Une el móvil del coche (lector OBD2
 ELM327 + GPS) con el portátil del muro de BOX, por WebSocket y con baja latencia.
 
 - **Piloto** (móvil en el salpicadero): 6 botones grandes para usar con guantes. Los mensajes de BOX

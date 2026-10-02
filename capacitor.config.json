@@ -1,6 +1,6 @@
 {
   "appId": "com.cencerro.racing",
-  "appName": "Cencerro",
+  "appName": "Box Box",
   "webDir": "dist",
   "server": {
     "url": "https://cencerro-racing.onrender.com",

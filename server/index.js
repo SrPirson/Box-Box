@@ -28,4 +28,4 @@ const http = createServer(async (req, res) => {
 // Solo WebSocket (sin long-polling) para mantener la latencia por debajo de 100 ms.
 attachLive(new Server(http, { transports: ['websocket'] }), userFromToken);
 
-http.listen(PORT, () => console.log(`Cencerro BOX escuchando en http://0.0.0.0:${PORT}`));
+http.listen(PORT, () => console.log(`Box Box escuchando en http://0.0.0.0:${PORT}`));

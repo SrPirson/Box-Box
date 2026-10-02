@@ -167,7 +167,7 @@ function InviteCard({ team, owner, setError }) {
   const copy = (what, text) => { navigator.clipboard?.writeText(text); setCopied(what); setTimeout(() => setCopied(''), 1500); };
   const link = inviteLink(team.inviteCode);
   const title = `Únete a ${team.name}`;
-  const text = `${title} en Cencerro Racing (código ${team.inviteCode})`;
+  const text = `${title} en Box Box (código ${team.inviteCode})`;
   const msg = `${text}: ${link}`;
   const enc = encodeURIComponent;
   const channels = [

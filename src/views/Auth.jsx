@@ -10,7 +10,7 @@ export const Shell = ({ children, wide }) => (
     <div className="flex items-center gap-3">
       <img src="/icon.svg" alt="" className="h-10 w-10 rounded-md" />
       <div className="leading-none">
-        <div className="text-2xl font-bold uppercase tracking-[0.14em]">Cencerro</div>
+        <div className="text-2xl font-bold uppercase tracking-[0.14em]">Box Box</div>
         <div className="text-[13px] font-semibold uppercase tracking-[0.3em] text-muted">Racing · Comms & Telemetry</div>
       </div>
     </div>
@@ -152,7 +152,7 @@ export function TeamGate({ onAdmin }) {
         <form onSubmit={create.onSubmit}>
           <Panel title="Crear un equipo">
             <p className="text-[13px] text-muted">Serás el capitán: podrás invitar pilotos y gestionar el equipo.</p>
-            <Field label="Nombre del equipo" name="name" required maxLength={60} placeholder="Cencerro Racing" />
+            <Field label="Nombre del equipo" name="name" required maxLength={60} placeholder="Mi equipo Racing" />
             <ErrorText>{create.error}</ErrorText>
             <Submit busy={create.busy}>Crear equipo</Submit>
           </Panel>

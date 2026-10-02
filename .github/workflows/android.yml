@@ -40,7 +40,7 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk cencerro.apk
-          gh release view apk >/dev/null 2>&1 || gh release create apk --title "App Android" --notes "APK de Cencerro para el móvil del coche. Se actualiza sola con cada cambio de la parte Android."
+          gh release view apk >/dev/null 2>&1 || gh release create apk --title "App Android" --notes "APK de Box Box para el móvil del coche. Se actualiza sola con cada cambio de la parte Android."
           gh release upload apk cencerro.apk --clobber
           # El título termina en el versionCode: la app lo lee de la API de GitHub para saber si hay versión nueva.
-          gh release edit apk --title "App Android · ${{ github.run_number }}"
+          gh release edit apk --title "App Android · ${{ github.run_number }}" --notes "APK de Box Box para el móvil del coche. Se actualiza sola con cada cambio de la parte Android."
