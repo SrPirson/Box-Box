@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ThermalPlugin.class);
         registerPlugin(UpdaterPlugin.class);
+        registerPlugin(BackgroundPlugin.class);
         super.onCreate(savedInstanceState);
         // El móvil va en el salpicadero: pantalla siempre encendida con la app abierta.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -23,7 +24,8 @@ public class MainActivity extends BridgeActivity {
     }
 
     // Todo lo que la app necesita, pedido al abrirla para que el piloto lo acepte antes de salir a pista:
-    // ubicación (GPS del coche) y, desde Android 12, Bluetooth (adaptador OBD).
+    // ubicación (GPS del coche), desde Android 12 Bluetooth (adaptador OBD) y desde Android 13 notificaciones
+    // (la del servicio que mantiene la telemetría con la pantalla apagada).
     private void askPermissions() {
         List<String> wanted = new ArrayList<>();
         wanted.add(Manifest.permission.ACCESS_FINE_LOCATION);
@@ -32,6 +34,7 @@ public class MainActivity extends BridgeActivity {
             wanted.add(Manifest.permission.BLUETOOTH_SCAN);
             wanted.add(Manifest.permission.BLUETOOTH_CONNECT);
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) wanted.add(Manifest.permission.POST_NOTIFICATIONS);
         List<String> missing = new ArrayList<>();
         for (String p : wanted) if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) missing.add(p);
         if (!missing.isEmpty()) ActivityCompat.requestPermissions(this, missing.toArray(new String[0]), 1);

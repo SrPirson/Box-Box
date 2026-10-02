@@ -5,7 +5,7 @@ import { createElm, connectBle } from './elm327.js';
 import { phoneHeading } from './heading.js';
 import { getConfig, getSocket } from './store.js';
 import { getSession } from './session.js';
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 // --- Sensores del móvil en directo: batería, temperatura y brújula, con o sin telemetría en marcha ---
 // La app Android los lee del sistema (plugin Thermal: temperatura y nivel de la batería); el navegador solo
@@ -80,6 +80,47 @@ function simGps() {
 // --- Sensores del móvil ---
 let gps = null;
 let watchId = null;
+const onFix = (g) => { gps = g; };
+
+// App Android: servicio en primer plano (BackgroundPlugin) para seguir con la pantalla apagada. Da el GPS
+// nativo y un pulso cada 250 ms que despierta las esperas del bucle: con la página oculta, el WebView
+// ralentiza los setTimeout y la telemetría casi se pararía.
+const Background = registerPlugin('Background');
+const native = Capacitor.isNativePlatform();
+let bgSubs = [];
+let wakers = [];
+const nap = (ms) => new Promise((resolve) => {
+  const done = () => { clearTimeout(t); resolve(); };
+  const t = setTimeout(done, ms);
+  if (bgSubs.length) wakers.push(done); // solo con el pulso nativo activo (si no, nadie las vaciaría)
+});
+async function startBackground() {
+  bgSubs = await Promise.all([
+    Background.addListener('location', (g) => onFix({ ...g, speed: g.speed ?? null, heading: g.heading ?? null })),
+    Background.addListener('tick', () => wakers.splice(0).forEach((f) => f())),
+  ]);
+  await Background.start();
+}
+function stopBackground() {
+  bgSubs.forEach((s) => s.remove());
+  bgSubs = [];
+  wakers.splice(0).forEach((f) => f());
+  Background.stop().catch(() => {});
+}
+function watchWebGps() {
+  watchId ??= navigator.geolocation?.watchPosition(
+    (p) => {
+      // (0, 0) es el valor de "sin fix" de algunos navegadores/emuladores: no es una posición real.
+      if (!p.coords.latitude && !p.coords.longitude) return;
+      // heading: rumbo del GPS (0-360°, desde el norte); null o NaN si el móvil está parado.
+      const h = p.coords.heading;
+      onFix({ lat: p.coords.latitude, lng: p.coords.longitude, speed: p.coords.speed == null ? null : Math.round(p.coords.speed * 3.6), acc: Math.round(p.coords.accuracy),
+        heading: Number.isFinite(h) ? Math.round(h) : null });
+    },
+    () => {},
+    { enableHighAccuracy: true, maximumAge: 0 },
+  );
+}
 
 let running = false;
 const watched = new WeakSet();
@@ -127,18 +168,14 @@ export async function start() {
     return set({ obd: 'error', error: e.message });
   }
 
-  watchId ??= navigator.geolocation?.watchPosition(
-    (p) => {
-      // (0, 0) es el valor de "sin fix" de algunos navegadores/emuladores: no es una posición real.
-      if (!p.coords.latitude && !p.coords.longitude) return;
-      // heading: rumbo del GPS (0-360°, desde el norte); null o NaN si el móvil está parado.
-      const h = p.coords.heading;
-      gps = { lat: p.coords.latitude, lng: p.coords.longitude, speed: p.coords.speed == null ? null : Math.round(p.coords.speed * 3.6), acc: Math.round(p.coords.accuracy),
-        heading: Number.isFinite(h) ? Math.round(h) : null };
-    },
-    () => {},
-    { enableHighAccuracy: true, maximumAge: 0 },
-  );
+  if (native) {
+    try { await startBackground(); } catch (e) {
+      // Sin servicio (p. ej. sin permiso de ubicación): funciona igual, pero solo con la pantalla encendida.
+      stopBackground();
+      watchWebGps();
+      set({ notice: `${e.message}: la telemetría se parará si apagas la pantalla.` });
+    }
+  } else watchWebGps();
   // "absolute": referida al norte (la normal es relativa a cómo estaba el móvil al empezar).
   addEventListener('deviceorientationabsolute', onOrient);
 
@@ -186,12 +223,13 @@ export async function start() {
     // Espera a trozos: con intervalos de minutos, Detener o bajar el intervalo surten efecto al momento.
     let left;
     while (running && id === loopId && (left = getConfig().pollMs - (performance.now() - readAt)) > 0
-      && !(gps !== sentFix && getConfig().pollMs > 1000)) await new Promise((r) => setTimeout(r, Math.min(left, 250)));
+      && !(gps !== sentFix && getConfig().pollMs > 1000)) await nap(Math.min(left, 250));
   }
 }
 
 export function stop() {
   running = false;
+  if (native) stopBackground();
   removeEventListener('deviceorientationabsolute', onOrient);
   setPhone({ compass: null });
   wakeLock?.release();
