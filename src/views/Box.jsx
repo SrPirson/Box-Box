@@ -64,7 +64,7 @@ export default function Box({ muted }) {
 
   // Alarmas derivadas del último paquete de cada coche (en boxes se callan las propias de una parada).
   const { pit, driver } = useLive();
-  const alarms = Object.fromEntries(Object.values(cars).map((p) => [p.car, carAlarms(p, now, !!pit)]));
+  const alarms = Object.fromEntries(Object.values(cars).map((p) => [p.car, carAlarms(p, now, !!pit?.arrived)]));
   const states = Object.fromEntries(Object.entries(alarms).map(([c, a]) => [c, worst(a)]));
   const crits = Object.entries(alarms).flatMap(([car, a]) => a.filter((x) => x.level === 'crit').map((x) => ({ ...x, car, id: `${car}:${x.key}` })));
   const unacked = crits.filter((c) => !acked.has(c.id));
@@ -97,11 +97,11 @@ export default function Box({ muted }) {
         <TeamColumn team={team} laps={today.data?.laps ?? []} lapStartedAt={cars[sel]?.lapStartedAt} splits={cars[sel]?.lapSplits} now={now} />
 
         <section className="flex flex-col gap-px bg-line lg:min-h-0" aria-label="Telemetría">
-          {pit && <PitBar pit={pit} now={now} onEnd={() => socket.emit('pit', false)} />}
+          {pit && <PitBar pit={pit} now={now} onArrived={() => socket.emit('pit', 'arrived')} onEnd={() => socket.emit('pit', false)} />}
           {p ? (
             <>
               <CarHeader p={p} driver={driver?.name ?? p.driver} state={states[p.car]} alarms={alarms[p.car]} now={now}
-                onPit={!pit && (() => socket.emit('pit', true))} />
+                onPit={!pit && (() => socket.emit('pit', 'arrived'))} />
               <Gauges p={p} stale={lateMs(p, now) > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />
             </>
           ) : <EmptyTelemetry />}
@@ -290,16 +290,29 @@ const DeltaText = ({ ms }) => ms == null || Number.isNaN(ms) ? null : (
 );
 
 // ── Cabecera del coche seleccionado: estado + datos del móvil ──
-// Parada en curso: sin alarmas de señal, batería, régimen ni pista mientras dura.
-function PitBar({ pit, now, onEnd }) {
-  const s = Math.max(0, Math.floor((now - pit.since) / 1000));
+// Parada. Viene de camino (el piloto avisó): BOX confirma la llegada y ahí empieza la cuenta.
+// En boxes: sin alarmas de señal, batería, régimen ni pista mientras dura.
+const mmss = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const pitBtn = 'rounded-[4px] border-2 border-current px-3 py-1 text-[13px] font-bold uppercase tracking-[0.08em]';
+function PitBar({ pit, now, onArrived, onEnd }) {
+  if (!pit.arrived) return (
+    <div role="status" className="alarm-ring flex flex-wrap items-center gap-x-4 gap-y-2 bg-warn-soft px-4 py-2 text-warn">
+      <Icon name="pitIn" size={20} stroke={2.5} />
+      <span className="text-[15px] font-bold uppercase tracking-[0.08em]">Viene a boxes</span>
+      <span className="text-[13px] font-semibold">{pit.reason} · avisó hace {mmss(now - pit.since)}</span>
+      <span className="ml-auto flex gap-2">
+        <button onClick={onArrived} className={`${pitBtn} border-transparent bg-warn-solid text-on-warn`}>Coche en boxes</button>
+        <button onClick={onEnd} className={pitBtn}>Cancelar</button>
+      </span>
+    </div>
+  );
   return (
     <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-info-soft px-4 py-2 text-info">
       <Icon name="pitIn" size={20} stroke={2.5} />
       <span className="text-[15px] font-bold uppercase tracking-[0.08em]">En boxes</span>
-      <span className="num text-[15px] font-bold">{Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}</span>
+      <span className="num text-[15px] font-bold">{mmss(now - pit.since)}</span>
       <span className="text-[13px] font-semibold">{pit.reason} · sin alarmas de señal, batería ni pista hasta que salga</span>
-      <button onClick={onEnd} className="ml-auto rounded-[4px] border-2 border-current px-3 py-1 text-[13px] font-bold uppercase tracking-[0.08em]">Fin de boxes</button>
+      <button onClick={onEnd} className={`ml-auto ${pitBtn}`}>Fin de boxes</button>
     </div>
   );
 }

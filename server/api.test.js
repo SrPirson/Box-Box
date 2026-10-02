@@ -97,6 +97,20 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   sb.emit('telemetry', { ts: Date.now(), obd: {}, gps: { lat: 39, lng: -3, speed: 80 } });
   assert.equal(await pitOut, null);
 
+  // Beto avisa de que entra a boxes: viene de camino (sin cuenta) aunque vaya rápido, hasta que BOX confirma.
+  const coming = next(sa, 'pit');
+  sb.emit('pilot', { type: 'pit', label: 'SALGO A BOX' });
+  assert.deepEqual([(await coming).reason, (await coming).arrived], ['Entrada a box', false]);
+  let pitChanged = false;
+  sa.once('pit', () => { pitChanged = true; });
+  sb.emit('telemetry', { ts: Date.now(), obd: {}, gps: { lat: 39, lng: -3, speed: 120 } });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(pitChanged, false, 'ir rápido de camino a boxes no termina la parada');
+  const arrived = next(sb, 'pit');
+  sa.emit('pit', 'arrived');
+  assert.equal((await arrived).arrived, true);
+  sa.emit('pit', false);
+
   // Estadísticas guardadas
   const st = await call(`/api/stats?since=${new Date(t0 - 1000).toISOString()}`, { token: beto.token });
   assert.equal(st.laps.length, 2);

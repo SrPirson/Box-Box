@@ -21,6 +21,8 @@ function state(teamId) {
 
 // En boxes: parada para repostar o cambiar de piloto. Que el OBD calle, el coche esté parado o nadie
 // mande datos es lo normal ahí, así que BOX no lo trata como avería. Termina al salir rodando.
+// pit: { since, reason, arrived }. Cuando el piloto avisa de que entra, `arrived` es false (viene de camino:
+// alarmas normales, sin cuenta) hasta que BOX confirma que el coche ha llegado; ahí empieza la cuenta.
 const PIT_EXIT_KMH = 40;
 const setPit = (st, pit) => {
   st.pit = pit;
@@ -34,7 +36,8 @@ const setDriver = (st, u) => {
   if (prev && st.driver && prev.id !== st.driver.id) {
     // Relevo: la vuelta del cambio no es representativa ni de uno ni de otro.
     st.lap.restart();
-    if (!st.pit) setPit(st, { since: Date.now(), reason: 'Cambio de piloto' });
+    // El relevo solo se hace con el coche parado: si no había parada confirmada, empieza ya.
+    if (!st.pit?.arrived) setPit(st, { since: Date.now(), reason: st.pit?.reason ?? 'Cambio de piloto', arrived: true });
   }
   io.to(room(st.team.id)).emit('driver', st.driver);
 };
@@ -83,8 +86,10 @@ export function attachLive(server, userFromToken) {
     presence(st);
     socket.emit('driver', st.driver);
     socket.emit('pit', st.pit);
-    // BOX puede marcar o terminar la parada a mano.
-    socket.on('pit', (on) => setPit(st, on ? st.pit ?? { since: Date.now(), reason: 'Marcado desde BOX' } : null));
+    // BOX confirma la llegada del coche ('arrived', empieza la cuenta) o termina/cancela la parada (false).
+    socket.on('pit', (action) => setPit(st, action === 'arrived'
+      ? { since: Date.now(), reason: st.pit?.reason ?? 'Marcado desde BOX', arrived: true }
+      : null));
     socket.on('disconnect', () => {
       const n = st.online.get(u.id) - 1;
       n > 0 ? st.online.set(u.id, n) : st.online.delete(u.id);
@@ -105,7 +110,8 @@ export function attachLive(server, userFromToken) {
         const o = p.obd ?? {};
         const g = p.gps ?? {};
         const s = { ts, lat: num(g.lat), lng: num(g.lng), speed: num(g.speed), coolant: num(o.coolant), rpm: num(o.rpm), throttle: num(o.throttle), voltage: num(o.voltage) };
-        if (st.pit && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null); // sale de boxes (no por datos atrasados)
+        // Sale de boxes (no por datos atrasados). Mientras viene de camino va rápido: eso no la termina.
+        if (st.pit?.arrived && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null);
         const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
         s.at = loc?.at;
         const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
@@ -133,7 +139,7 @@ export function attachLive(server, userFromToken) {
     // Mensajería: se reenvía al resto del equipo con el remitente verificado.
     for (const ev of ['pilot', 'msg', 'ack']) {
       socket.on(ev, (d) => {
-        if (ev === 'pilot' && PIT_REASONS[d?.type] && !st.pit) setPit(st, { since: Date.now(), reason: PIT_REASONS[d.type] });
+        if (ev === 'pilot' && PIT_REASONS[d?.type] && !st.pit) setPit(st, { since: Date.now(), reason: PIT_REASONS[d.type], arrived: false });
         socket.to(r).emit(ev, { ...d, from: { id: u.id, name: u.name }, serverTs: Date.now() });
       });
     }
