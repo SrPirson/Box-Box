@@ -29,3 +29,6 @@ const http = createServer(async (req, res) => {
 attachLive(new Server(http, { transports: ['websocket'] }), userFromToken);
 
 http.listen(PORT, () => console.log(`Box Box escuchando en http://0.0.0.0:${PORT}`));
+
+// Copia única a otra base de datos (ver migrate.js), en segundo plano para no retrasar el arranque.
+if (process.env.MIGRATE_TO) import('./migrate.js').then((m) => m.migrateTo(process.env.MIGRATE_TO));

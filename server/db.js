@@ -18,7 +18,7 @@ export const one = async (text, params) => (await q(text, params))[0];
 
 await (db.exec ? db.exec(SCHEMA()) : db.query(SCHEMA()));
 
-function SCHEMA() {
+export function SCHEMA() {
   return `
   create table if not exists teams (
     id serial primary key,
