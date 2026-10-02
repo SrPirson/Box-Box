@@ -38,6 +38,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- GPS del coche (el plugin Bluetooth también las declara; aquí quedan explícitas) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <!-- Vibración al llegar un mensaje de BOX (navigator.vibrate) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Abrir el instalador con la actualización descargada (UpdaterPlugin) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

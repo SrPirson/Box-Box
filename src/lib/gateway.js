@@ -2,19 +2,41 @@
 // Si no hay conexión, encola los paquetes y los retransmite en ráfaga al recuperar señal.
 import { useSyncExternalStore } from 'react';
 import { createElm, connectBle } from './elm327.js';
+import { phoneHeading } from './heading.js';
 import { getConfig, getSocket } from './store.js';
 import { getSession } from './session.js';
 import { registerPlugin } from '@capacitor/core';
 
-// Temperatura del móvil (de la batería): solo existe en la app Android; en el navegador queda en null.
+// --- Sensores del móvil en directo: batería, temperatura y brújula, con o sin telemetría en marcha ---
+// La app Android los lee del sistema (plugin Thermal: temperatura y nivel de la batería); el navegador solo
+// da el nivel (Battery API). Se refrescan cada pocos segundos y cada paquete lleva el último valor.
 const Thermal = registerPlugin('Thermal');
-const phoneTemp = () => Thermal.read().then((r) => Math.round(r.celsius), () => null);
+const PHONE_EVERY_MS = 5000;
+let phone = { battery: null, temp: null, compass: null };
+const phoneSubs = new Set();
+const setPhone = (p) => { phone = { ...phone, ...p }; phoneSubs.forEach((f) => f()); };
+export const usePhone = () => useSyncExternalStore((cb) => (phoneSubs.add(cb), () => phoneSubs.delete(cb)), () => phone);
+let webBattery;
+async function readPhone() {
+  const sys = await Thermal.read().catch(() => null);
+  webBattery ??= await navigator.getBattery?.().catch(() => null) ?? null;
+  setPhone({
+    temp: sys ? Math.round(sys.celsius) : null,
+    battery: sys?.level != null ? Math.round(sys.level) : webBattery ? Math.round(webBattery.level * 100) : null,
+  });
+}
+readPhone();
+setInterval(readPhone, PHONE_EVERY_MS);
+
+// Brújula: hacia dónde mira el móvil (su trasera en el soporte). Solo mientras se conduce: el sensor gasta.
+const onOrient = (e) => { if (e.alpha != null) setPhone({ compass: Math.round(phoneHeading(e.alpha, e.beta ?? 0, e.gamma ?? 0)) }); };
 
 const QUEUE_KEY = 'cencerro.queue';
 const QUEUE_MAX = 5000; // ponytail: ~20 min a 4 Hz en memoria; IndexedDB si hacen falta tandas más largas sin cobertura
 const BATCH = 500;
 
-let state = { obd: 'off', error: '', data: null, queued: 0 };
+// obdLink: 'ok' | 'lost' (adaptador caído, reconectando). notice: aviso informativo (relevo de piloto).
+let state = { obd: 'off', error: '', notice: '', obdLink: 'ok', data: null, queued: 0 };
 const subs = new Set();
 const set = (p) => { state = { ...state, ...p }; subs.forEach((f) => f()); };
 export const useGateway = () => useSyncExternalStore((cb) => (subs.add(cb), () => subs.delete(cb)), () => state);
@@ -57,7 +79,6 @@ function simGps() {
 
 // --- Sensores del móvil ---
 let gps = null;
-let battery = null;
 let watchId = null;
 
 let running = false;
@@ -76,14 +97,29 @@ let loopId = 0; // cada start() abre un bucle nuevo; el anterior, si sigue esper
 export async function start() {
   if (running) return;
   const cfg = getConfig();
-  set({ obd: 'connecting', error: '' });
+  set({ obd: 'connecting', error: '', notice: '', obdLink: 'ok' });
   let read;
   try {
     if (cfg.source === 'ble') {
-      if (!navigator.bluetooth) throw new Error('Web Bluetooth no disponible (usa Chrome Android o la app Capacitor)');
-      const elm = createElm(await connectBle(() => { running = false; set({ obd: 'error', error: 'Bluetooth desconectado' }); }));
-      await elm.init();
-      read = () => elm.read();
+      // Si el adaptador se cae (contacto quitado al repostar, cambio de piloto, cobertura BLE), la telemetría
+      // sigue con GPS y sin OBD mientras se reconecta solo al mismo adaptador cada pocos segundos.
+      let elm = null;
+      let device = null;
+      const link = async () => {
+        const t = await connectBle(lost, device);
+        device = t.device;
+        const e = createElm(t);
+        await e.init();
+        elm = e;
+        set({ obdLink: 'ok' });
+      };
+      const retry = () => { if (running && !elm) link().catch(() => setTimeout(retry, 3000)); };
+      function lost() {
+        elm = null;
+        if (running) { set({ obdLink: 'lost' }); setTimeout(retry, 1000); }
+      }
+      await link();
+      read = async () => (elm ? elm.read() : {});
     } else {
       read = async () => simRead();
     }
@@ -103,7 +139,8 @@ export async function start() {
     () => {},
     { enableHighAccuracy: true, maximumAge: 0 },
   );
-  battery ??= await navigator.getBattery?.().catch(() => null);
+  // "absolute": referida al norte (la normal es relativa a cómo estaba el móvil al empezar).
+  addEventListener('deviceorientationabsolute', onOrient);
 
   // Tomar el volante: desde ahora la telemetría del coche es la de este móvil.
   const sock = getSocket();
@@ -111,7 +148,8 @@ export async function start() {
   if (!watched.has(sock)) {
     watched.add(sock);
     sock.on('driver', (d) => {
-      if (running && d && d.id !== getSession().user?.id) { stop(); set({ obd: 'off', error: `Ahora conduce ${d.name}. Tu móvil ha dejado de enviar telemetría.` }); }
+      // Relevo normal (cambio de piloto): aviso informativo, no error.
+      if (running && d && d.id !== getSession().user?.id) { stop(); set({ obd: 'off', notice: `Relevo: ahora conduce ${d.name}. Este móvil ha dejado de enviar telemetría.` }); }
     });
   }
 
@@ -135,8 +173,9 @@ export async function start() {
       pollMs: getConfig().pollMs, // BOX lo usa para no dar "sin señal" con intervalos largos
       obd,
       gps: gps ?? (cfg.source === 'sim' ? simGps() : null),
-      phoneBattery: battery ? Math.round(battery.level * 100) : null,
-      phoneTemp: await phoneTemp(),
+      phoneBattery: phone.battery,
+      phoneTemp: phone.temp,
+      compass: phone.compass, // hacia dónde mira el móvil (BOX lo usa con el coche parado)
       net: { online: navigator.onLine, type: navigator.connection?.effectiveType ?? null, socket: s.connected },
     };
     if (s.connected && queue.length) flush(s); // señal recuperada: ráfaga con lo pendiente
@@ -153,6 +192,8 @@ export async function start() {
 
 export function stop() {
   running = false;
+  removeEventListener('deviceorientationabsolute', onOrient);
+  setPhone({ compass: null });
   wakeLock?.release();
   wakeLock = null;
   set({ obd: 'off' });

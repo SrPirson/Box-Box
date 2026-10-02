@@ -149,13 +149,16 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
       if (l.icon !== carIcon + carIconStyle) { l.dot.setIcon(carMarker(p.car, carIcon, carIconStyle)); l.icon = carIcon + carIconStyle; } // el equipo cambió el icono
       l.trail.setLatLngs(trails[p.car] ?? []);
       l.dot.setLatLng(pos);
-      // Rumbo: el del GPS del móvil si va en marcha (como el puntero de Google Maps); si no lo da, el calculado
-      // entre posiciones. Parado se queda como estaba. Acumulado sin saltos (179° → −179° gira 2°, no 358°)
+      // Rumbo. En marcha: el del GPS del móvil (como el puntero de Google Maps) o, si no lo da, el calculado entre
+      // posiciones; la brújula, como último recurso (dentro del coche la desvían el metal y la electrónica).
+      // Parado: hacia donde mira el móvil según la brújula. Acumulado sin saltos (179° → −179° gira 2°, no 358°)
       // para que la transición CSS no dé la vuelta entera.
       const moved = bearing(l.from, pos);
       if (moved != null) l.from = pos;
-      const gpsHeading = Number(p.gps.heading);
-      const h = p.gps.heading != null && Number.isFinite(gpsHeading) && (p.gps.speed ?? 0) >= MIN_SPEED_KMH ? gpsHeading : moved;
+      const num = (v) => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);
+      const gpsHeading = num(p.gps.heading);
+      const compass = num(p.compass);
+      const h = (p.gps.speed ?? 0) >= MIN_SPEED_KMH ? gpsHeading ?? moved ?? compass : compass ?? moved;
       if (h != null) l.heading += ((h - l.heading + 540) % 360) - 180;
       const dot = l.dot.getElement()?.firstChild;
       if (dot) {

@@ -241,7 +241,7 @@ function LeaveCard({ team }) {
   return (
     <Card title="Salir del equipo" tone="border-crit/40">
       <p className="text-[13px] text-muted">
-        {last ? 'Eres el último miembro: si sales, el equipo y todas sus estadísticas se eliminan.' : 'Podrás volver a entrar con una invitación.'}
+        {last ? 'Eres el último miembro: si sales, el equipo se elimina. Cada piloto conserva sus vueltas en su perfil.' : 'Podrás volver a entrar con una invitación.'}
       </p>
       <div><ConfirmButton label="Salir del equipo" confirm={last ? 'Salir y eliminar' : 'Sí, salir'} icon={<Icon name="logout" size={15} />}
         onConfirm={async () => setSession(await api('/api/team/leave', { method: 'POST' }))} /></div>

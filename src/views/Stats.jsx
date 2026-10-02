@@ -96,7 +96,7 @@ export default function Stats() {
   );
 }
 
-const Kpi = ({ label, value, sub }) => (
+export const Kpi = ({ label, value, sub }) => (
   <div className="flex flex-col gap-1 bg-panel px-4 py-3">
     <span className="label">{label}</span>
     <span className="num text-[24px] font-bold leading-none">{value}</span>
@@ -105,11 +105,11 @@ const Kpi = ({ label, value, sub }) => (
 );
 
 // Diferencia con la media: más rápido = mejor (verde ▼), más lento = ámbar ▲. Signo + flecha, nunca solo color.
-const Delta = ({ ms }) => ms == null ? <span className="text-muted">—</span> : (
+export const Delta = ({ ms }) => ms == null ? <span className="text-muted">—</span> : (
   <span className={`num whitespace-nowrap ${ms < 0 ? 'text-ok' : ms > 0 ? 'text-warn' : 'text-muted'}`}>{ms < 0 ? '▼' : ms > 0 ? '▲' : '='} {fmtDelta(ms)}</span>
 );
 
-function LapChart({ laps, avg, bestId }) {
+export function LapChart({ laps, avg, bestId }) {
   const ref = useRef(null);
   const [w, setW] = useState(640);
   const [hover, setHover] = useState(null);
@@ -167,7 +167,7 @@ function LapChart({ laps, avg, bestId }) {
   );
 }
 
-const Th = ({ children, right }) => <th className={`px-4 py-2 font-semibold ${right ? 'text-right' : ''}`}>{children}</th>;
+export const Th = ({ children, right }) => <th className={`px-4 py-2 font-semibold ${right ? 'text-right' : ''}`}>{children}</th>;
 
 function DriversTable({ drivers, teamAvg }) {
   return (

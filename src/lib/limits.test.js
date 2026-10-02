@@ -18,6 +18,9 @@ test('evalúa niveles con los límites por defecto y con los del coche', () => {
   assert.equal(carAlarms(pkt({}, { phoneBattery: 5 }), 1000)[0].key, 'phone');
   assert.equal(carAlarms(pkt({}, { offTrack: 30 }), 1000)[0].level, 'warn');
   assert.equal(carAlarms(pkt({}, { offTrack: 60 }), 1000)[0].key, 'off');
+  // En boxes: sin datos, motor parado y pit lane no son alarma; el sobrecalentamiento sí.
+  assert.deepEqual(carAlarms(pkt({ voltage: 12.0, rpm: 0 }, { offTrack: 60 }), 1000 + 60000, true), []);
+  assert.equal(carAlarms(pkt({ coolant: 105 }), 1000 + 60000, true)[0].key, 'temp');
   assert.deepEqual(carAlarms(pkt({}, { offTrack: null }), 1000), []);
   // Enviando cada minuto: 50 s sin datos es lo esperado; 64 s ya es aviso.
   assert.deepEqual(carAlarms(pkt({}, { pollMs: 60000 }), 1000 + 50000), []);

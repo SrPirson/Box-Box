@@ -226,6 +226,25 @@ const routes = [
     return { laps, metrics, drivers };
   }],
 
+  // Perfil del piloto: sus vueltas y su telemetría al volante, de cualquier equipo (también de uno ya eliminado).
+  ['GET', '/api/me/stats', 'user', async ({ user, url }) => {
+    const since = new Date(url.searchParams.get('since') || 0);
+    if (Number.isNaN(since.getTime())) fail(400, 'Fecha no válida.');
+    const args = [user.id, since];
+    const [laps, metrics] = await Promise.all([
+      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id,
+           t.name as team, tr.name as track
+         from laps l left join teams t on t.id = l.team_id left join tracks tr on tr.id = l.track_id
+         where l.driver_id = $1 and l.started_at >= $2 order by l.started_at`, args),
+      // Muestras a 1 Hz: su número son los segundos al volante, y la velocidad integrada, los km.
+      one(`select count(*)::int as seconds, coalesce(sum(speed), 0)::float8 / 3600 as km,
+             avg(coolant)::float8 as avg_temp, max(coolant)::float8 as max_temp, max(rpm)::float8 as max_rpm,
+             avg(speed)::float8 as avg_speed, max(speed)::float8 as max_speed, avg(throttle)::float8 as avg_throttle
+           from samples where driver_id = $1 and ts >= $2`, args),
+    ]);
+    return { laps, metrics };
+  }],
+
   // Administración de la plataforma
   ['GET', '/api/admin/users', 'admin', () => q(`select u.id, u.email, u.name, u.role, u.must_reset, u.created_at, t.name as team
     from users u left join teams t on t.id = u.team_id order by u.created_at desc`)],

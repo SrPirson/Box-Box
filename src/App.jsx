@@ -6,6 +6,7 @@ import Team from './views/Team.jsx';
 import Stats from './views/Stats.jsx';
 import Admin from './views/Admin.jsx';
 import UpdateBanner from './views/Update.jsx';
+import Profile from './views/Profile.jsx';
 import { Login, ForcedPassword, TeamGate } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
@@ -17,6 +18,7 @@ const VIEWS = {
   box: { label: 'Box', icon: 'flag' },
   piloto: { label: 'Piloto', icon: 'wheel' },
   stats: { label: 'Estadísticas', short: 'Stats', icon: 'chart' },
+  perfil: { label: 'Mi perfil', icon: 'user' },
   equipo: { label: 'Equipo', icon: 'users' },
   ajustes: { label: 'Ajustes', icon: 'sliders' },
   admin: { label: 'Admin', icon: 'shield', admin: true },
@@ -53,7 +55,7 @@ function Views() {
   if (!session.team) return <TeamGate onAdmin={() => setView('admin')} />;
   if (view === 'piloto') return <Pilot onNav={setView} />;
 
-  const Page = { box: Box, stats: Stats, equipo: Team, ajustes: Settings }[view] ?? Box;
+  const Page = { box: Box, stats: Stats, perfil: Profile, equipo: Team, ajustes: Settings }[view] ?? Box;
   return (
     <Frame view={view} setView={setView} muted={muted} setMuted={setMuted}>
       <Page muted={muted} />
@@ -113,7 +115,7 @@ function Header({ view, setView, muted, setMuted, noTeam }) {
         <IconButton onClick={toggleTheme} label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}>
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </IconButton>
-        <button onClick={() => setView('ajustes')} title={`${user.name} · Ajustes y cuenta`}
+        <button onClick={() => setView('perfil')} title={`${user.name} · Mi perfil`}
           className="grid h-8 w-8 place-items-center rounded-full bg-accent-soft text-[14px] font-bold uppercase text-accent">
           {user.name.slice(0, 1)}
         </button>

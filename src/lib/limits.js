@@ -20,11 +20,14 @@ export const fmt = (v, d = 0) => (v == null || Number.isNaN(v) ? '—' : NF[d].f
 export const fmtAge = (ms) => { ms = Math.max(0, ms); return `${fmt(ms / 1000, ms < 10000 ? 1 : 0)} s`; };
 
 // Alarmas activas de un paquete: [{ key, level: 'warn'|'crit', text, silent? }]
-export function carAlarms(p, now) {
+// En boxes (`pit`) es normal no recibir datos, tener el motor parado (batería baja, 0 rpm) o estar fuera
+// del trazado (pit lane): esas alarmas se callan. Temperatura y batería del móvil siguen avisando.
+const PIT_QUIET = new Set(['stale', 'volt', 'rpm', 'off']);
+export function carAlarms(p, now, pit = false) {
   const L = limitsOf(p);
   const o = p.obd ?? {};
   const out = [];
-  const add = (key, level, text, silent) => out.push({ key, level, text, silent });
+  const add = (key, level, text, silent) => { if (!(pit && PIT_QUIET.has(key))) out.push({ key, level, text, silent }); };
   const age = now - p.ts;
   const late = lateMs(p, now);
   if (late > L.staleCrit * 1000) add('stale', 'crit', `Sin señal ${fmtAge(age)}`);

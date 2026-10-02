@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Icon from '../icons.jsx';
 import { useSocket, useLive, speak, hush } from '../lib/store.js';
 import { useSession } from '../lib/session.js';
-import { useGateway, start, stop, lastGps } from '../lib/gateway.js';
+import { useGateway, usePhone, start, stop, lastGps } from '../lib/gateway.js';
 import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
@@ -52,15 +52,14 @@ export default function Pilot({ onNav }) {
   };
 
   const o = gw.data?.obd ?? {};
-  const bat = gw.data?.phoneBattery;
-  const temp = gw.data?.phoneTemp;
+  const { battery: bat, temp } = usePhone(); // en directo, aunque este móvil no esté enviando telemetría
   return (
     <div className="pilot flex h-full flex-col bg-bg text-fg">
       {/* Estado: solo lo que el piloto puede usar de un vistazo */}
       <div className="num flex h-14 shrink-0 items-center gap-3 whitespace-nowrap border-b border-line px-3 text-lg font-bold sm:gap-4">
         <button onClick={gw.obd === 'on' ? stop : start} className="flex h-10 items-center gap-2 rounded-md border-2 border-line px-3"
           aria-label={gw.obd === 'on' ? 'Detener telemetría' : 'Iniciar telemetría'}>
-          <span className={`h-3.5 w-3.5 rounded-full ${gw.obd === 'on' ? 'bg-ok' : gw.obd === 'connecting' ? 'pulse bg-warn-solid' : 'bg-crit'}`} />
+          <span className={`h-3.5 w-3.5 rounded-full ${gw.obd === 'on' ? (gw.obdLink === 'lost' ? 'pulse bg-warn-solid' : 'bg-ok') : gw.obd === 'connecting' ? 'pulse bg-warn-solid' : 'bg-crit'}`} />
           {getConfig().source === 'sim' ? 'SIM' : 'OBD'}
         </button>
         <span className="flex items-center gap-2" title="Conexión con BOX">
@@ -94,6 +93,10 @@ export default function Pilot({ onNav }) {
         </div>
       </div>
       {gw.error && <div role="alert" className="bg-crit-solid px-3 py-2 text-lg font-bold text-on-crit">{gw.error}</div>}
+      {gw.notice && <div role="status" className="bg-info-soft px-3 py-2 text-lg font-bold text-info">{gw.notice}</div>}
+      {gw.obd === 'on' && gw.obdLink === 'lost' && (
+        <div role="status" className="bg-warn-soft px-3 py-2 text-lg font-bold text-warn">OBD sin conexión · reconectando. El GPS se sigue enviando.</div>
+      )}
       {gw.queued > 0 && <div className="num bg-warn-soft px-3 py-1 text-warn">Sin cobertura · {gw.queued} paquetes en cola</div>}
 
       {/* Quién conduce: solo el móvil del piloto al volante manda telemetría y recibe los mensajes de BOX */}

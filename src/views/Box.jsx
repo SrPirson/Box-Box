@@ -62,8 +62,9 @@ export default function Box({ muted }) {
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
 
-  // Alarmas derivadas del último paquete de cada coche.
-  const alarms = Object.fromEntries(Object.values(cars).map((p) => [p.car, carAlarms(p, now)]));
+  // Alarmas derivadas del último paquete de cada coche (en boxes se callan las propias de una parada).
+  const { pit, driver } = useLive();
+  const alarms = Object.fromEntries(Object.values(cars).map((p) => [p.car, carAlarms(p, now, !!pit)]));
   const states = Object.fromEntries(Object.entries(alarms).map(([c, a]) => [c, worst(a)]));
   const crits = Object.entries(alarms).flatMap(([car, a]) => a.filter((x) => x.level === 'crit').map((x) => ({ ...x, car, id: `${car}:${x.key}` })));
   const unacked = crits.filter((c) => !acked.has(c.id));
@@ -96,9 +97,11 @@ export default function Box({ muted }) {
         <TeamColumn team={team} laps={today.data?.laps ?? []} lapStartedAt={cars[sel]?.lapStartedAt} splits={cars[sel]?.lapSplits} now={now} />
 
         <section className="flex flex-col gap-px bg-line lg:min-h-0" aria-label="Telemetría">
+          {pit && <PitBar pit={pit} now={now} onEnd={() => socket.emit('pit', false)} />}
           {p ? (
             <>
-              <CarHeader p={p} state={states[p.car]} alarms={alarms[p.car]} now={now} />
+              <CarHeader p={p} driver={driver?.name ?? p.driver} state={states[p.car]} alarms={alarms[p.car]} now={now}
+                onPit={!pit && (() => socket.emit('pit', true))} />
               <Gauges p={p} stale={lateMs(p, now) > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />
             </>
           ) : <EmptyTelemetry />}
@@ -287,12 +290,29 @@ const DeltaText = ({ ms }) => ms == null || Number.isNaN(ms) ? null : (
 );
 
 // ── Cabecera del coche seleccionado: estado + datos del móvil ──
-function CarHeader({ p, state, alarms, now }) {
+// Parada en curso: sin alarmas de señal, batería, régimen ni pista mientras dura.
+function PitBar({ pit, now, onEnd }) {
+  const s = Math.max(0, Math.floor((now - pit.since) / 1000));
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-info-soft px-4 py-2 text-info">
+      <Icon name="pitIn" size={20} stroke={2.5} />
+      <span className="text-[15px] font-bold uppercase tracking-[0.08em]">En boxes</span>
+      <span className="num text-[15px] font-bold">{Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}</span>
+      <span className="text-[13px] font-semibold">{pit.reason} · sin alarmas de señal, batería ni pista hasta que salga</span>
+      <button onClick={onEnd} className="ml-auto rounded-[4px] border-2 border-current px-3 py-1 text-[13px] font-bold uppercase tracking-[0.08em]">Fin de boxes</button>
+    </div>
+  );
+}
+
+function CarHeader({ p, driver, state, alarms, now, onPit }) {
   const stateText = { ok: 'Normal', warn: 'Aviso', crit: 'Crítico' }[state];
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-1 bg-panel px-4 py-2">
       <span className="num text-2xl font-bold">#{p.car}</span>
-      {p.driver && <span className="flex items-center gap-1.5 text-[15px] font-semibold"><Icon name="wheel" size={15} className="text-muted" />{p.driver}</span>}
+      {driver && <span className="flex items-center gap-1.5 text-[15px] font-semibold"><Icon name="wheel" size={15} className="text-muted" />{driver}</span>}
+      {onPit && <button onClick={onPit} title="Calla las alarmas de una parada (sin señal, batería, pista) hasta que el coche salga"
+        className="flex items-center gap-1.5 rounded-[4px] border border-line px-2 py-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-fg-2 hover:bg-raised">
+        <Icon name="pitIn" size={13} />En boxes</button>}
       <span className={`flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] ${state === 'ok' ? 'text-ok' : state === 'warn' ? 'text-warn' : 'text-crit'}`}>
         <span className={`h-2 w-2 rounded-full ${BAND[state]}`} />{stateText}
         {alarms.length > 0 && <span className="font-semibold normal-case tracking-normal">· {alarms.map((a) => a.text).join(' · ')}</span>}

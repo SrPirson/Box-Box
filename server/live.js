@@ -14,13 +14,28 @@ async function loadTeam(id) {
 }
 function state(teamId) {
   if (!states.has(teamId)) {
-    states.set(teamId, loadTeam(teamId).then((team) => ({ team, driver: null, lap: createLapTimer(), lastStored: 0, online: new Map() })));
+    states.set(teamId, loadTeam(teamId).then((team) => ({ team, driver: null, pit: null, lap: createLapTimer(), lastStored: 0, online: new Map() })));
   }
   return states.get(teamId);
 }
 
+// En boxes: parada para repostar o cambiar de piloto. Que el OBD calle, el coche esté parado o nadie
+// mande datos es lo normal ahí, así que BOX no lo trata como avería. Termina al salir rodando.
+const PIT_EXIT_KMH = 40;
+const setPit = (st, pit) => {
+  st.pit = pit;
+  io.to(room(st.team.id)).emit('pit', pit);
+};
+const PIT_REASONS = { pit: 'Entrada a box', fuel: 'Repostaje' };
+
 const setDriver = (st, u) => {
+  const prev = st.driver;
   st.driver = u && { id: u.id, name: u.name };
+  if (prev && st.driver && prev.id !== st.driver.id) {
+    // Relevo: la vuelta del cambio no es representativa ni de uno ni de otro.
+    st.lap.restart();
+    if (!st.pit) setPit(st, { since: Date.now(), reason: 'Cambio de piloto' });
+  }
   io.to(room(st.team.id)).emit('driver', st.driver);
 };
 const presence = (st) => io.to(room(st.team.id)).emit('presence', [...st.online.keys()]);
@@ -67,6 +82,9 @@ export function attachLive(server, userFromToken) {
     st.online.set(u.id, (st.online.get(u.id) ?? 0) + 1);
     presence(st);
     socket.emit('driver', st.driver);
+    socket.emit('pit', st.pit);
+    // BOX puede marcar o terminar la parada a mano.
+    socket.on('pit', (on) => setPit(st, on ? st.pit ?? { since: Date.now(), reason: 'Marcado desde BOX' } : null));
     socket.on('disconnect', () => {
       const n = st.online.get(u.id) - 1;
       n > 0 ? st.online.set(u.id, n) : st.online.delete(u.id);
@@ -87,6 +105,7 @@ export function attachLive(server, userFromToken) {
         const o = p.obd ?? {};
         const g = p.gps ?? {};
         const s = { ts, lat: num(g.lat), lng: num(g.lng), speed: num(g.speed), coolant: num(o.coolant), rpm: num(o.rpm), throttle: num(o.throttle), voltage: num(o.voltage) };
+        if (st.pit && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null); // sale de boxes (no por datos atrasados)
         const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
         s.at = loc?.at;
         const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
@@ -113,7 +132,10 @@ export function attachLive(server, userFromToken) {
 
     // Mensajería: se reenvía al resto del equipo con el remitente verificado.
     for (const ev of ['pilot', 'msg', 'ack']) {
-      socket.on(ev, (d) => socket.to(r).emit(ev, { ...d, from: { id: u.id, name: u.name }, serverTs: Date.now() }));
+      socket.on(ev, (d) => {
+        if (ev === 'pilot' && PIT_REASONS[d?.type] && !st.pit) setPit(st, { since: Date.now(), reason: PIT_REASONS[d.type] });
+        socket.to(r).emit(ev, { ...d, from: { id: u.id, name: u.name }, serverTs: Date.now() });
+      });
     }
   });
 }

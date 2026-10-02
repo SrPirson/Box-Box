@@ -20,6 +20,10 @@ public class ThermalPlugin extends Plugin {
         if (tenths == Integer.MIN_VALUE) { call.reject("Temperatura no disponible"); return; }
         JSObject ret = new JSObject();
         ret.put("celsius", tenths / 10.0);
+        // Nivel de batería del sistema (el Battery API del WebView no siempre se actualiza).
+        int level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+        if (level >= 0 && scale > 0) ret.put("level", level * 100.0 / scale);
         call.resolve(ret);
     }
 }

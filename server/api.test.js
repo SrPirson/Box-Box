@@ -83,13 +83,19 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   assert.equal(laps.length, 2);
   assert.ok(Math.abs(laps[0].ms - 30_000) < 300, `vuelta de ${laps[0].ms} ms`);
 
-  // Beto toma el volante: la telemetría de Ana se rechaza.
+  // Beto toma el volante: es un relevo (el coche pasa a boxes) y la telemetría de Ana se rechaza.
   const back = next(sa, 'driver');
+  const pitIn = next(sa, 'pit');
   sb.emit('drive');
   assert.equal((await back).name, 'Beto');
+  assert.equal((await pitIn).reason, 'Cambio de piloto');
   const rejected = next(sa, 'driver');
   sa.emit('telemetry', { ts: Date.now(), obd: {} });
   assert.equal((await rejected).name, 'Beto');
+  // Beto sale rodando: fin de la parada.
+  const pitOut = next(sa, 'pit');
+  sb.emit('telemetry', { ts: Date.now(), obd: {}, gps: { lat: 39, lng: -3, speed: 80 } });
+  assert.equal(await pitOut, null);
 
   // Estadísticas guardadas
   const st = await call(`/api/stats?since=${new Date(t0 - 1000).toISOString()}`, { token: beto.token });
@@ -98,6 +104,13 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   assert.ok(st.metrics.samples >= 80, `${st.metrics.samples} muestras`); // ~1 Hz durante 90 s
   assert.equal(st.metrics.avg_temp, 90);
   assert.equal(leaked, false, 'el otro equipo no debe recibir nada');
+
+  // Perfil: las vueltas son de Ana, no de Beto.
+  const mine = await call(`/api/me/stats?since=${new Date(t0 - 1000).toISOString()}`, { token: ana.token });
+  assert.equal(mine.laps.length, 2);
+  assert.equal(mine.laps[0].team, 'Cencerro Racing');
+  assert.ok(mine.metrics.seconds >= 80 && mine.metrics.km > 2, JSON.stringify(mine.metrics)); // 90 s a 120 km/h ≈ 3 km
+  assert.equal((await call(`/api/me/stats?since=${new Date(t0 - 1000).toISOString()}`, { token: beto.token })).laps.length, 0);
 
   // Administración: un piloto no puede; el admin restablece la contraseña de Ana.
   assert.equal((await call('/api/admin/users', { token: beto.token })).status, 403);
@@ -114,6 +127,12 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   const left = await call('/api/team/leave', { token: changed.token, method: 'POST' });
   assert.equal(left.team, null);
   assert.equal((await call('/api/team', { token: beto.token })).ownerId, beto.user.id);
+
+  // Beto sale también: el equipo se elimina, pero Ana conserva sus vueltas en su perfil.
+  await call('/api/team/leave', { token: beto.token, method: 'POST' });
+  const kept = await call(`/api/me/stats?since=${new Date(t0 - 1000).toISOString()}`, { token: changed.token });
+  assert.equal(kept.laps.length, 2);
+  assert.equal(kept.laps[0].team, null);
 
   for (const s of [sa, sb, so]) s.close();
 });

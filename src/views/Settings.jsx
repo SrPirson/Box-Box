@@ -33,7 +33,7 @@ export default function Settings() {
               <Icon name="bluetooth" size={15} className="mt-px" />
               <span>
                 {cfg.source === 'ble'
-                  ? 'Necesita Chrome en Android y un adaptador BLE 4.0. Los ELM327 de Bluetooth clásico (PIN 1234) no aparecen.'
+                  ? 'Necesita un adaptador BLE 4.0 y la app Android (o Chrome en Android). Los ELM327 de Bluetooth clásico (PIN 1234) no aparecen. Si se desconecta (contacto quitado al repostar), el GPS sigue enviándose y se reconecta solo.'
                   : 'Genera RPM, temperatura y voltaje realistas para probar BOX y Piloto sin coche.'}
                 {running && ' Detén la telemetría para cambiar el origen.'}
               </span>

@@ -22,8 +22,8 @@ export function setConfig(patch) {
 }
 export const useConfig = () => useSyncExternalStore((cb) => (cfgSubs.add(cb), () => cfgSubs.delete(cb)), getConfig);
 
-// Estado en vivo del equipo.
-let live = { driver: null, online: [] };
+// Estado en vivo del equipo. pit: null | { since, reason } mientras el coche está en boxes.
+let live = { driver: null, online: [], pit: null };
 const liveSubs = new Set();
 const setLive = (p) => { live = { ...live, ...p }; liveSubs.forEach((f) => f()); };
 export const getLive = () => live;
@@ -40,6 +40,7 @@ export function getSocket() {
     socketToken = token;
     socket.on('driver', (driver) => setLive({ driver }));
     socket.on('presence', (online) => setLive({ online }));
+    socket.on('pit', (pit) => setLive({ pit }));
     socket.on('team', () => api('/api/team').then(setTeam).catch(refresh));
     // El servidor nos echa al cambiar de equipo o de contraseña: recargar sesión y reconectar.
     socket.on('disconnect', (reason) => { if (reason === 'io server disconnect') refresh().then(() => setTimeout(() => getSocket().connect(), 500)); });

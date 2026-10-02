@@ -28,3 +28,14 @@ test('driver serializa comandos, cae a ATRV y descarta respuestas tardías', asy
   await elm.read();
   assert.equal(sent.filter((c) => c === '0142').length, 1);     // ya no reintenta 0142
 });
+
+test('con el contacto quitado no espera a cada PID: solo RPM y la tensión del adaptador', async () => {
+  let emit;
+  const sent = [];
+  const elm = createElm({
+    send: (s) => { const c = s.trim(); sent.push(c); setTimeout(() => emit((c === 'ATRV' ? '12.4V' : 'UNABLE TO CONNECT') + '\r\r>'), 1); },
+    onData: (cb) => (emit = cb),
+  }, 50);
+  assert.deepEqual(await elm.read(), { rpm: null, voltage: 12.4 });
+  assert.deepEqual(sent, ['010C', '0142', 'ATRV']);
+});

@@ -73,5 +73,15 @@ function SCHEMA() {
     rpm real, coolant real, throttle real, voltage real, speed real,
     lat double precision, lng double precision
   );
-  create index if not exists samples_team_time on samples (team_id, ts);`;
+  create index if not exists samples_team_time on samples (team_id, ts);
+  -- Las vueltas y la telemetría también son del piloto (su perfil): si el equipo se elimina, se quedan sin
+  -- equipo en vez de borrarse. "not valid": no revisa las filas existentes en cada arranque (todas cumplen).
+  alter table laps alter column team_id drop not null;
+  alter table laps drop constraint if exists laps_team_id_fkey;
+  alter table laps add constraint laps_team_id_fkey foreign key (team_id) references teams(id) on delete set null not valid;
+  alter table samples alter column team_id drop not null;
+  alter table samples drop constraint if exists samples_team_id_fkey;
+  alter table samples add constraint samples_team_id_fkey foreign key (team_id) references teams(id) on delete set null not valid;
+  create index if not exists laps_driver_time on laps (driver_id, started_at);
+  create index if not exists samples_driver_time on samples (driver_id, ts);`;
 }

@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { BleClient, numberToUUID } from '@capacitor-community/bluetooth-le';
+
 // Driver ELM327 (KUULAA v2.2 y clones).
 //
 // Cómo habla el chip:
@@ -86,9 +89,12 @@ export function createElm(transport, timeoutMs = 1500) {
       await send('0100', 8000);
     },
     // Lee todos los PIDs; devuelve { rpm, coolant, throttle, voltage } (null en los que fallen).
+    // Con el contacto quitado (repostaje, cambio de piloto) la ECU no contesta: si falla el primero, no se
+    // esperan los demás (serían varios segundos de timeouts); solo la tensión, que la mide el propio adaptador.
     async read() {
       const out = {};
       for (const [pid, { key }] of Object.entries(PIDS)) {
+        if (key !== 'rpm' && key !== 'voltage' && out.rpm == null) continue;
         if (key === 'voltage' && voltageViaAtrv) { out.voltage = parseAtrv(await send('ATRV')); continue; }
         out[key] = parsePid(pid, await send(pid));
         if (key === 'voltage' && out.voltage == null) { voltageViaAtrv = true; out.voltage = parseAtrv(await send('ATRV')); }
@@ -98,16 +104,52 @@ export function createElm(transport, timeoutMs = 1500) {
   };
 }
 
-// Transporte Web Bluetooth (BLE). Solo funciona con adaptadores BLE 4.0; ver README para Bluetooth clásico.
+// Transporte BLE. Solo funciona con adaptadores BLE 4.0; ver README para Bluetooth clásico.
 // Los clones ELM327 BLE usan uno de estos servicios "UART"; las características se detectan por propiedades.
 const BLE_SERVICES = [0xfff0, 0xffe0, 0x18f0, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2'];
 
-export async function connectBle(onDisconnect) {
-  const device = await navigator.bluetooth.requestDevice({
+// Abre el canal serie BLE del adaptador. Con `device` (el de una conexión anterior) reconecta sin volver a
+// preguntar cuál. En Chrome usa Web Bluetooth; en la app Android, el Bluetooth nativo (el WebView no lo trae).
+export const connectBle = (onDisconnect, device) =>
+  (Capacitor.isNativePlatform() ? connectNative : connectWeb)(onDisconnect, device);
+
+async function connectNative(onDisconnect, device) {
+  const ids = BLE_SERVICES.map((s) => (typeof s === 'number' ? numberToUUID(s) : s));
+  await BleClient.initialize(); // pide los permisos de Bluetooth si aún no se dieron al abrir la app
+  device ??= await BleClient.requestDevice({ optionalServices: ids }); // selector nativo con los dispositivos cerca
+  const id = device.deviceId;
+  await BleClient.connect(id, () => onDisconnect());
+  let rx, tx;
+  // Solo los servicios UART conocidos: los genéricos (1800/1801) también tienen características "indicate".
+  for (const svc of (await BleClient.getServices(id)).filter((s) => ids.includes(s.uuid.toLowerCase()))) {
+    for (const ch of svc.characteristics) {
+      if (!rx && (ch.properties.notify || ch.properties.indicate)) rx = [svc.uuid, ch.uuid];
+      if (!tx && (ch.properties.write || ch.properties.writeWithoutResponse)) tx = [svc.uuid, ch.uuid, ch.properties.writeWithoutResponse];
+    }
+    if (rx && tx) break;
+  }
+  if (!rx || !tx) { await BleClient.disconnect(id).catch(() => {}); throw new Error('El adaptador no expone un canal serie BLE compatible'); }
+  const dec = new TextDecoder();
+  const enc = new TextEncoder();
+  let listener = () => {};
+  await BleClient.startNotifications(id, rx[0], rx[1], (v) => listener(dec.decode(v)));
+  return {
+    device,
+    send: (s) => {
+      const v = new DataView(enc.encode(s).buffer);
+      return tx[2] ? BleClient.writeWithoutResponse(id, tx[0], tx[1], v) : BleClient.write(id, tx[0], tx[1], v);
+    },
+    onData: (cb) => { listener = cb; },
+  };
+}
+
+async function connectWeb(onDisconnect, device) {
+  if (!navigator.bluetooth) throw new Error('Este navegador no tiene Bluetooth: usa Chrome en Android o la app.');
+  device ??= await navigator.bluetooth.requestDevice({
     filters: [{ namePrefix: 'OBD' }, { namePrefix: 'KUULAA' }, { namePrefix: 'V-LINK' }, { namePrefix: 'IOS-Vlink' }, { services: [0xfff0] }, { services: [0xffe0] }],
     optionalServices: BLE_SERVICES,
   });
-  device.addEventListener('gattserverdisconnected', onDisconnect);
+  device.ongattserverdisconnected = onDisconnect; // propiedad, no listener: al reconectar no se acumulan
   const server = await device.gatt.connect();
   let rx, tx;
   for (const svc of await server.getPrimaryServices()) {
