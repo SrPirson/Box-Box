@@ -10,6 +10,7 @@
     "test": "node --test src/lib/*.test.js server/*.test.js"
   },
   "dependencies": {
+    "@capacitor-community/text-to-speech": "^8.0.2",
     "@capacitor/android": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "@electric-sql/pglite": "^0.5.8",

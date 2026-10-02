@@ -2,7 +2,7 @@
 // Único ajuste visible: tema claro (sol) / oscuro (noche).
 import { useState } from 'react';
 import Icon from '../icons.jsx';
-import { useSocket, useLive, speak } from '../lib/store.js';
+import { useSocket, useLive, speak, hush } from '../lib/store.js';
 import { useSession } from '../lib/session.js';
 import { useGateway, start, stop, lastGps } from '../lib/gateway.js';
 import { getConfig } from '../lib/store.js';
@@ -47,7 +47,7 @@ export default function Pilot({ onNav }) {
   const reply = (answer) => {
     const m = inbox[0];
     if (m.id) socket.emit('ack', { id: m.id, car: team.dorsal, answer, ts: Date.now() });
-    globalThis.speechSynthesis?.cancel();
+    hush();
     setInbox((q) => q.slice(1));
   };
 

@@ -1,6 +1,8 @@
 // Ajustes de este dispositivo + conexión Socket.io del equipo + estado en vivo (piloto al volante, presencia).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { io } from 'socket.io-client';
+import { Capacitor } from '@capacitor/core';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { api, getSession, refresh, setTeam, useSession } from './session.js';
 
 const KEY = 'cencerro.config';
@@ -65,8 +67,12 @@ export function useSocket(handlers = {}) {
   return { socket: s, connected };
 }
 
-// El WebView de la app Android no trae síntesis de voz: ahí no se habla, pero tampoco se rompe nada.
+// El WebView de la app Android no trae síntesis de voz: ahí habla el motor de voz nativo de Android.
+// Sin ninguno de los dos (navegador raro) no se habla, pero tampoco se rompe nada.
+const native = Capacitor.isNativePlatform();
+export const hush = () => (native ? TextToSpeech.stop().catch(() => {}) : globalThis.speechSynthesis?.cancel());
 export const speak = (text) => {
+  if (native) return void TextToSpeech.speak({ text, lang: 'es-ES', rate: 1.05 }).catch(() => {}); // Flush: corta lo anterior
   if (!globalThis.speechSynthesis) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
