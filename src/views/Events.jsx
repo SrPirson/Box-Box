@@ -11,11 +11,12 @@ const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', {
 const STALE_MS = 15000; // sin datos de un coche desde hace más: «sin señal»
 const TRAIL_MAX = 300;
 
-export default function Events() {
+// admin: todos los eventos (no los crea; puede cambiarles el organizador). Si no, los del organizador.
+export default function Events({ admin = false }) {
   const [list, setList] = useState(null);
   const [sel, setSel] = useState(null);
   const [error, setError] = useState('');
-  const load = () => api('/api/events').then((l) => { setList(l); setSel((s) => s ?? l[0]?.id ?? null); }).catch((e) => setError(e.message));
+  const load = () => api(admin ? '/api/events?all=1' : '/api/events').then((l) => { setList(l); setSel((s) => s ?? l[0]?.id ?? null); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
   const create = async (e) => {
     e.preventDefault();
@@ -30,42 +31,49 @@ export default function Events() {
   };
 
   return (
-    <Page title="Eventos" subtitle="Crea el evento con su pista y comparte el código: cada equipo se inscribe con él y sus pilotos se unen con el código del equipo." max="max-w-[1400px]">
+    <Page title={admin ? 'Eventos' : 'Mis eventos'} max="max-w-[1400px]"
+      subtitle={admin ? 'Todos los eventos de la plataforma: ábrelos, cámbiales el organizador, ciérralos o bórralos.'
+        : 'Crea el evento con su pista; los equipos se inscriben desde la lista de eventos o, si es privado, con su código.'}>
       <ErrorText>{error}</ErrorText>
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <Card title="Mis eventos" flush>
+          <Card title={admin ? 'Eventos' : 'Mis eventos'} flush>
             {list?.length === 0 && <p className="px-4 py-3 text-[13px] text-muted">Aún no has creado ningún evento.</p>}
             <ul>
               {list?.map((e) => (
                 <li key={e.id}>
                   <button onClick={() => setSel(e.id)} aria-current={e.id === sel ? 'true' : undefined}
                     className={`flex w-full flex-col items-start gap-0.5 border-t border-line px-4 py-2.5 text-left first:border-t-0 ${e.id === sel ? 'bg-accent-soft' : 'hover:bg-raised'}`}>
-                    <span className="flex w-full items-center gap-2 text-[15px] font-semibold">{e.name}{e.closed && <span className="ml-auto"><Pill tone="muted">Cerrado</Pill></span>}</span>
-                    <span className="text-[12px] text-muted">{[fmtDate(e.startsOn), e.place, `${e.teams} equipo${e.teams === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</span>
+                    <span className="flex w-full items-center gap-2 text-[15px] font-semibold">{e.name}
+                      <span className="ml-auto flex gap-1">{e.private && <Pill tone="info">Privado</Pill>}{e.closed && <Pill tone="muted">Cerrado</Pill>}</span></span>
+                    <span className="text-[12px] text-muted">{[fmtDate(e.startsOn), e.place, `${e.teams} equipo${e.teams === 1 ? '' : 's'}`, admin && e.organizer].filter(Boolean).join(' · ')}</span>
                   </button>
                 </li>
               ))}
             </ul>
           </Card>
-          <Card title="Nuevo evento">
+          {!admin && <Card title="Nuevo evento">
             <form onSubmit={create} className="flex flex-col gap-3">
               <Field label="Nombre"><input className={input} name="name" required maxLength={80} placeholder="24 Horas de Jarama" /></Field>
               <Field label="Fecha"><input className={input} name="startsOn" type="date" /></Field>
               <Field label="Lugar"><input className={input} name="place" maxLength={80} placeholder="Circuito del Jarama" /></Field>
               <button className={btn.primary}><Icon name="plus" size={15} />Crear evento</button>
             </form>
-          </Card>
+          </Card>}
         </div>
-        {sel ? <EventDetail key={sel} id={sel} onChanged={load} onDeleted={() => { setSel(null); load(); }} />
+        {sel ? <EventDetail key={sel} id={sel} admin={admin} onChanged={load} onDeleted={() => { setSel(null); load(); }} />
           : <Card title="Evento"><p className="text-[14px] text-muted">Crea un evento o elige uno de la lista.</p></Card>}
       </div>
     </Page>
   );
 }
 
-function EventDetail({ id, onChanged, onDeleted }) {
+function EventDetail({ id, admin, onChanged, onDeleted }) {
   const [ev, setEv] = useState(null);
+  const [organizers, setOrganizers] = useState([]); // admin: a quién se puede pasar el evento
+  useEffect(() => {
+    if (admin) api('/api/admin/users').then((u) => setOrganizers(Object.values(u).filter((x) => ['organizer', 'admin'].includes(x.role)))).catch(() => {});
+  }, [admin]);
   const [standings, setStandings] = useState([]);
   const [cars, setCars] = useState({}); // equipo → último resumen en vivo
   const trails = useRef({});
@@ -113,7 +121,15 @@ function EventDetail({ id, onChanged, onDeleted }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <ErrorText>{error}</ErrorText>
-      <Card title="Evento" badge={ev.closed ? <Pill tone="muted">Inscripciones cerradas</Pill> : <Pill tone="ok">Inscripciones abiertas</Pill>}>
+      <Card title="Evento" badge={<span className="flex gap-1">{ev.private ? <Pill tone="info">Privado</Pill> : <Pill tone="accent">Público</Pill>}{ev.closed ? <Pill tone="muted">Inscripciones cerradas</Pill> : <Pill tone="ok">Inscripciones abiertas</Pill>}</span>}>
+        {admin && (
+          <Field label="Organizador">
+            <select className={input} value={ev.organizerId ?? ''} onChange={(e) => patch({ organizerId: Number(e.target.value) })}>
+              {ev.organizerId == null && <option value="">— Sin organizador —</option>}
+              {organizers.map((o) => <option key={o.id} value={o.id}>{o.name} · {o.email}</option>)}
+            </select>
+          </Field>
+        )}
         <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_160px_minmax(0,1fr)]">
           <Field label="Nombre"><BlurInput value={ev.name} maxLength={80} onSave={(name) => patch({ name })} /></Field>
           <Field label="Fecha"><BlurInput type="date" value={ev.startsOn ?? ''} onSave={(startsOn) => patch({ startsOn })} /></Field>
@@ -130,6 +146,9 @@ function EventDetail({ id, onChanged, onDeleted }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => patch({ closed: !ev.closed })} className={btn.ghost}>{ev.closed ? 'Abrir inscripciones' : 'Cerrar inscripciones'}</button>
+          <button onClick={() => patch({ private: !ev.private })} className={btn.ghost}
+            title={ev.private ? 'Saldrá en la lista de eventos de los pilotos' : 'Solo se podrán inscribir con el código'}>
+            {ev.private ? 'Hacerlo público' : 'Hacerlo privado'}</button>
           <ConfirmButton label="Eliminar evento" confirm="Sí, eliminar" icon={<Icon name="trash" size={14} />}
             onConfirm={() => api(`/api/events/${id}`, { method: 'DELETE' }).then(onDeleted).catch((e) => setError(e.message))} />
         </div>
@@ -181,17 +200,63 @@ function EventDetail({ id, onChanged, onDeleted }) {
         {ev.teams.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">Ninguno todavía.</p> : (
           <ul>
             {ev.teams.map((t) => (
-              <li key={t.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line px-4 py-2.5 first:border-t-0">
-                <span className="num text-muted">#{t.dorsal}</span>
-                <b>{t.name}</b>
-                <span className="text-[13px] text-fg-2">{t.members.map((m) => m.name).join(', ') || 'sin pilotos'}</span>
-                <span className="num ml-auto text-[12px] text-muted" title="Código del equipo: lo usan sus pilotos para unirse">código {t.inviteCode}</span>
-              </li>
+              <TeamRow key={t.id} team={t} eventId={id} onChange={setEv} onError={setError} />
             ))}
           </ul>
         )}
       </Card>
     </div>
+  );
+}
+
+// Un equipo inscrito: sus pilotos (se puede sacar a uno), meter a un piloto registrado por su email y echar
+// al equipo del evento (sigue existiendo como equipo de entrenamiento).
+function TeamRow({ team: t, eventId, onChange, onError }) {
+  const [adding, setAdding] = useState(false);
+  const [armed, setArmed] = useState(null); // piloto a punto de sacar (segundo toque para confirmar)
+  const act = (p) => p.then(onChange).catch((e) => onError(e.message));
+  const add = (e) => {
+    e.preventDefault();
+    const email = new FormData(e.currentTarget).get('email');
+    act(api(`/api/events/${eventId}/teams/${t.id}/members`, { method: 'POST', body: { email } })).then(() => setAdding(false));
+  };
+  return (
+    <li className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="num text-muted">#{t.dorsal}</span>
+        <b className="text-[15px]">{t.name}</b>
+        <span className="num text-[12px] text-muted" title="Código del equipo: lo usan sus pilotos para unirse">código {t.inviteCode}</span>
+        <span className="ml-auto flex flex-wrap gap-2">
+          <button onClick={() => setAdding(!adding)} className={btn.ghost}><Icon name="plus" size={14} />Añadir piloto</button>
+          <ConfirmButton label="Echar del evento" confirm="Sí, echarlo" icon={<Icon name="x" size={14} />}
+            onConfirm={() => act(api(`/api/events/${eventId}/teams/${t.id}`, { method: 'DELETE' }))} />
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {t.members.length === 0 && <span className="text-[13px] text-muted">Sin pilotos.</span>}
+        {t.members.map((m) => (
+          <span key={m.id} className={`flex items-center gap-1 rounded-[3px] border py-0.5 pl-2 pr-0.5 text-[13px] ${armed === m.id ? 'border-crit bg-crit-soft text-crit' : 'border-line'}`}>
+            {armed === m.id ? `¿Sacar a ${m.name}?` : m.name}
+            {armed === m.id
+              ? <>
+                <button onClick={() => { setArmed(null); act(api(`/api/events/${eventId}/teams/${t.id}/members/${m.id}`, { method: 'DELETE' })); }}
+                  className="rounded-[3px] bg-crit-solid px-1.5 text-[12px] font-bold uppercase text-on-crit">Sí</button>
+                <button onClick={() => setArmed(null)} className="px-1.5 text-[12px] font-semibold uppercase">No</button>
+              </>
+              : <button title={`Sacar a ${m.name} del equipo`} aria-label={`Sacar a ${m.name} del equipo`} onClick={() => setArmed(m.id)}
+                className="grid h-6 w-6 place-items-center rounded-[3px] text-muted hover:bg-crit-soft hover:text-crit"><Icon name="x" size={13} /></button>}
+          </span>
+        ))}
+      </div>
+      {adding && (
+        <form onSubmit={add} className="flex flex-wrap items-end gap-2">
+          <Field label="Email del piloto (ya registrado)"><input className={`${input} w-64`} name="email" type="email" required autoFocus /></Field>
+          <button className={btn.primary}>Añadir al equipo</button>
+          <button type="button" onClick={() => setAdding(false)} className={btn.ghost}>Cancelar</button>
+          <p className="basis-full text-[12px] text-muted">Si ya está en otro equipo, sale de él y pasa a este.</p>
+        </form>
+      )}
+    </li>
   );
 }
 

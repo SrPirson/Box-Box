@@ -1,7 +1,8 @@
-// Acceso: entrar / crear cuenta, cambio obligatorio de contraseña y unirse o crear un equipo.
+// Acceso: entrar / crear cuenta y cambio obligatorio de contraseña. Unirse a un equipo o inscribirse en un
+// evento está en la vista Eventos (EventsBrowse).
 import { useState } from 'react';
 import Icon from '../icons.jsx';
-import { api, setSession, logout, pendingInvite, clearInvite, useSession } from '../lib/session.js';
+import { api, setSession, pendingInvite, useSession } from '../lib/session.js';
 
 // Logotipo con la versión de su tema: letras blancas en oscuro, casi negras en claro.
 export const Wordmark = ({ className }) => (
@@ -134,80 +135,6 @@ export function ForcedPassword() {
           <Submit busy={f.busy}>Guardar y continuar</Submit>
         </Panel>
       </form>
-    </Shell>
-  );
-}
-
-const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
-
-// Sin equipo: con un código (de equipo → unirse; de evento → inscribir un equipo) o un equipo para entrenar.
-export function TeamGate({ onNav }) {
-  const { user } = useSession();
-  const [found, setFound] = useState(null); // { code, kind: 'event', event } tras buscar un código de evento
-  const lookup = useSubmit(async (f) => {
-    const code = String(f.get('code')).trim().toUpperCase();
-    const r = await api(`/api/code/${encodeURIComponent(code)}`);
-    if (r.kind === 'team') { setSession(await api('/api/teams/join', { method: 'POST', body: { code } })); clearInvite(); }
-    else setFound({ code, event: r.event });
-  });
-  const enroll = useSubmit(async (f) => {
-    setSession(await api('/api/teams', { method: 'POST', body: { name: f.get('name'), eventCode: found.code } }));
-    clearInvite();
-  });
-  const create = useSubmit(async (f) => setSession(await api('/api/teams', { method: 'POST', body: { name: f.get('name') } })));
-  const ev = found?.event;
-  const organizer = user.role === 'organizer' || user.role === 'admin';
-
-  return (
-    <Shell wide>
-      <p className="mb-4 text-center text-[15px] text-fg-2">Hola, <b className="text-fg">{user.name}</b>. Para correr necesitas un equipo: únete a uno o inscribe el tuyo en un evento.</p>
-      <div className="grid gap-4 md:grid-cols-2">
-        {ev ? (
-          <form onSubmit={enroll.onSubmit}>
-            <Panel title="Inscribir mi equipo">
-              <div className="rounded-[4px] bg-sunken px-3 py-2.5">
-                <div className="flex items-center gap-2 text-[17px] font-bold uppercase tracking-[0.04em]"><Icon name="finish" size={18} className="text-accent" />{ev.name}</div>
-                <div className="text-[13px] text-muted">{[fmtDate(ev.startsOn), ev.place].filter(Boolean).join(' · ') || 'Sin fecha ni lugar'}</div>
-                {ev.closed && <div className="mt-1 text-[13px] font-semibold text-crit">Inscripciones cerradas.</div>}
-              </div>
-              {ev.teams.length > 0 && (
-                <div className="text-[13px] text-fg-2">
-                  <div className="label mb-1">Equipos inscritos ({ev.teams.length})</div>
-                  <ul className="flex flex-col gap-0.5">{ev.teams.map((t, i) => <li key={i} className="num">#{t.dorsal} {t.name} <span className="text-muted">· {t.members} piloto{t.members === 1 ? '' : 's'}</span></li>)}</ul>
-                  <p className="mt-1.5 text-muted">¿Tu equipo ya está? Pide a su capitán el código del equipo y ponlo con «Usar otro código».</p>
-                </div>
-              )}
-              <Field label="Nombre de tu equipo" name="name" required maxLength={60} placeholder="Mi equipo Racing" />
-              <ErrorText>{enroll.error}</ErrorText>
-              <Submit busy={enroll.busy}>Inscribir y ser capitán</Submit>
-              <button type="button" onClick={() => setFound(null)} className="text-[13px] font-semibold uppercase tracking-[0.06em] text-muted hover:text-fg">Usar otro código</button>
-            </Panel>
-          </form>
-        ) : (
-          <form onSubmit={lookup.onSubmit}>
-            <Panel title="Tengo un código">
-              <p className="text-[13px] text-muted">El de un equipo, para unirte a él, o el de un evento, para inscribir tu equipo. Te lo da el capitán o el organizador.</p>
-              <Field label="Código" name="code" defaultValue={pendingInvite()} required maxLength={12} autoCapitalize="characters" className={`${input} num uppercase tracking-[0.2em]`} placeholder="ABC123" />
-              <ErrorText>{lookup.error}</ErrorText>
-              <Submit busy={lookup.busy}>Continuar</Submit>
-            </Panel>
-          </form>
-        )}
-        <form onSubmit={create.onSubmit}>
-          <Panel title="Equipo para entrenar">
-            <p className="text-[13px] text-muted">Sin evento: tus propias pistas y tus vueltas. Serás el capitán y podrás invitar pilotos.</p>
-            <Field label="Nombre del equipo" name="name" required maxLength={60} placeholder="Mi equipo Racing" />
-            <ErrorText>{create.error}</ErrorText>
-            <Submit busy={create.busy}>Crear equipo</Submit>
-          </Panel>
-        </form>
-      </div>
-      <div className="mt-6 flex flex-wrap justify-center gap-4 text-[13px] font-semibold uppercase tracking-[0.06em]">
-        {organizer && <button onClick={() => onNav('eventos')} className="flex items-center gap-1.5 text-accent hover:underline"><Icon name="finish" size={15} />Mis eventos</button>}
-        {user.role === 'admin' && <button onClick={() => onNav('admin')} className="flex items-center gap-1.5 text-accent hover:underline"><Icon name="shield" size={15} />Panel de administración</button>}
-        <button onClick={() => onNav('perfil')} className="flex items-center gap-1.5 text-fg-2 hover:text-fg"><Icon name="user" size={15} />Mi perfil</button>
-        <button onClick={logout} className="flex items-center gap-1.5 text-muted hover:text-fg"><Icon name="logout" size={15} />Cerrar sesión</button>
-      </div>
     </Shell>
   );
 }

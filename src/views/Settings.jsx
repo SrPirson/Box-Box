@@ -1,13 +1,14 @@
-// Ajustes de ESTE dispositivo (sensor, simulador, telemetría, tema) y de la cuenta.
+// Ajustes: el coche con el que corre el equipo (dorsal, icono, teléfono del mecánico, alertas) y este móvil
+// (sensor OBD, intervalo, simulador, telemetría, app Android). La cuenta y el tema están en el perfil.
 import { useState } from 'react';
 import Icon from '../icons.jsx';
 import { useConfig, setConfig, speak } from '../lib/store.js';
 import { sim, useGateway, start, stop } from '../lib/gateway.js';
-import { setMode, useThemeMode } from '../lib/theme.js';
-import { api, logout, setSession, useSession } from '../lib/session.js';
+import { useSession } from '../lib/session.js';
 import { Capacitor } from '@capacitor/core';
 import { APK_URL } from './Update.jsx';
-import { Page, Card, Field, Segmented, Switch, Pill, ErrorText, input, btn } from './ui.jsx';
+import { CarCard, AlertsCard, useTeamSave } from './Team.jsx';
+import { Page, Card, Field, Segmented, Switch, Pill, ErrorText, btn } from './ui.jsx';
 
 const POLL_STEPS = [200, 250, 300, 400, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000];
 const pollIndex = (ms) => { const i = POLL_STEPS.findIndex((s) => s >= ms); return i < 0 ? POLL_STEPS.length - 1 : i; };
@@ -16,16 +17,20 @@ const fmtPoll = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` 
 export default function Settings() {
   const cfg = useConfig();
   const gw = useGateway();
-  const mode = useThemeMode();
+  const { team } = useSession();
+  const { error, save } = useTeamSave();
   const [faults, setFaults] = useState({ ...sim });
   const toggle = (k) => { sim[k] = !sim[k]; setFaults({ ...sim }); };
   const running = gw.obd === 'on';
   const simulating = cfg.source === 'sim' && Object.values(faults).some(Boolean);
 
   return (
-    <Page title="Ajustes" subtitle="Solo afectan a este dispositivo. Los ajustes del coche (dorsal, alertas, meta) están en Equipo.">
+    <Page title="Ajustes" subtitle="El coche con el que corres (lo comparte todo el equipo) y este móvil (solo este dispositivo).">
+      <ErrorText>{error}</ErrorText>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-4">
+          <CarCard team={team} save={save} />
+          <AlertsCard team={team} save={save} />
           <Card title="Sensor OBD2">
             <Segmented label="Origen de los datos" value={cfg.source} disabled={running} onChange={(v) => setConfig({ source: v })}
               options={[['sim', 'Simulador'], ['ble', 'ELM327 Bluetooth']]} />
@@ -56,17 +61,11 @@ export default function Settings() {
             </div>
             {cfg.source !== 'sim' && <p className="text-[13px] text-muted">Solo disponible con el simulador como origen.</p>}
           </Card>
-
-          <Card title="Apariencia">
-            <Segmented label="Tema" value={mode} onChange={setMode} options={[['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Oscuro']]} />
-            <p className="text-[13px] text-muted">Claro para el muro a pleno sol; oscuro para noche o boxes cerrados.</p>
-          </Card>
         </div>
 
         <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
           <TelemetryCard />
           {!Capacitor.isNativePlatform() && <AppCard />}
-          <AccountCard />
         </div>
       </div>
     </Page>
@@ -135,50 +134,6 @@ function AppCard() {
     <Card title="App Android">
       <p className="text-[13px] text-muted">El móvil del coche necesita la app para mandar la temperatura del teléfono. Al instalarla, Android pedirá permitir apps de origen desconocido.</p>
       <a href={APK_URL} className={btn.primary}><Icon name="download" size={16} />Descargar APK</a>
-    </Card>
-  );
-}
-
-function AccountCard() {
-  const { user } = useSession();
-  const [open, setOpen] = useState(false);
-  const [error, setError] = useState('');
-  const [done, setDone] = useState(false);
-  const submit = async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    setError('');
-    try {
-      if (f.get('next') !== f.get('next2')) throw new Error('Las contraseñas no coinciden.');
-      setSession(await api('/api/password', { method: 'POST', body: { current: f.get('current'), next: f.get('next') } }));
-      setOpen(false);
-      setDone(true);
-    } catch (err) { setError(err.message); }
-  };
-  return (
-    <Card title="Cuenta" badge={user.role === 'admin' && <Pill tone="accent">Administrador</Pill>}>
-      <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-lg font-bold uppercase text-accent">{user.name.slice(0, 1)}</span>
-        <div className="min-w-0">
-          <div className="truncate text-[16px] font-semibold">{user.name}</div>
-          <div className="num truncate text-[13px] text-muted">{user.email}</div>
-        </div>
-      </div>
-      {done && <p className="text-[13px] text-ok">Contraseña cambiada. Las demás sesiones se han cerrado.</p>}
-      {open ? (
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <Field label="Contraseña actual"><input className={input} name="current" type="password" autoComplete="current-password" required /></Field>
-          <Field label="Nueva contraseña"><input className={input} name="next" type="password" autoComplete="new-password" minLength={8} required /></Field>
-          <Field label="Repítela"><input className={input} name="next2" type="password" autoComplete="new-password" minLength={8} required /></Field>
-          <ErrorText>{error}</ErrorText>
-          <div className="flex gap-2"><button className={btn.primary}>Guardar</button><button type="button" onClick={() => setOpen(false)} className={btn.ghost}>Cancelar</button></div>
-        </form>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => { setOpen(true); setDone(false); }} className={btn.ghost}><Icon name="key" size={15} />Cambiar contraseña</button>
-          <button onClick={() => { stop(); logout(); }} className={btn.ghost}><Icon name="logout" size={15} />Cerrar sesión</button>
-        </div>
-      )}
     </Card>
   );
 }

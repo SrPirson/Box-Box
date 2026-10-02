@@ -18,7 +18,7 @@ export default function Admin() {
   const f = filter.trim().toLowerCase();
 
   return (
-    <Page title="Administración" subtitle="Cuentas y equipos de toda la plataforma."
+    <Page title="Cuentas" subtitle="Cuentas y equipos de toda la plataforma: roles (piloto, organizador, admin), contraseñas y bajas."
       actions={<Segmented value={tab} onChange={setTab} options={[['users', `Cuentas${users ? ` · ${users.length}` : ''}`], ['teams', `Equipos${teams ? ` · ${teams.length}` : ''}`]]} />}>
       <ErrorText>{error}</ErrorText>
       <div className="mb-3 mt-2 flex items-center gap-2">

@@ -8,27 +8,38 @@ import Admin from './views/Admin.jsx';
 import UpdateBanner from './views/Update.jsx';
 import Profile from './views/Profile.jsx';
 import Events from './views/Events.jsx';
-import { Login, ForcedPassword, TeamGate, Wordmark } from './views/Auth.jsx';
+import EventsBrowse from './views/EventsBrowse.jsx';
+import { Login, ForcedPassword, Wordmark } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
 import { refresh, useSession } from './lib/session.js';
 import { useGateway } from './lib/gateway.js';
 import { toggleTheme, useTheme } from './lib/theme.js';
+import { MODES, modesOf, useMode } from './lib/mode.js';
 
-const VIEWS = {
-  box: { label: 'Box', icon: 'flag' },
-  piloto: { label: 'Piloto', icon: 'wheel' },
-  stats: { label: 'Estadísticas', short: 'Stats', icon: 'chart' },
-  perfil: { label: 'Mi perfil', icon: 'user', noTeam: true },
-  equipo: { label: 'Equipo', icon: 'users' },
-  ajustes: { label: 'Ajustes', icon: 'sliders' },
-  eventos: { label: 'Eventos', icon: 'finish', organizer: true, noTeam: true },
-  admin: { label: 'Admin', icon: 'shield', admin: true, noTeam: true },
+// Vistas de cada modo (team: solo con equipo). «piloto» (la vista del coche) y «perfil» (el botón con la inicial)
+// van aparte: la primera solo en modo Piloto con equipo; el perfil, en todos.
+const AdminEvents = (p) => <Events admin {...p} />;
+const MODE_VIEWS = {
+  pilot: {
+    box: { label: 'Box', icon: 'flag', team: true, Page: Box },
+    stats: { label: 'Estadísticas', icon: 'chart', team: true, Page: Stats },
+    eventos: { label: 'Eventos', icon: 'finish', Page: EventsBrowse },
+    equipo: { label: 'Equipo', icon: 'users', team: true, Page: Team },
+    ajustes: { label: 'Ajustes', icon: 'sliders', team: true, Page: Settings },
+  },
+  organizer: { eventos: { label: 'Mis eventos', icon: 'finish', Page: Events } },
+  admin: {
+    cuentas: { label: 'Cuentas', icon: 'users', Page: Admin },
+    eventos: { label: 'Eventos', icon: 'finish', Page: AdminEvents },
+  },
 };
-// Vistas que el usuario puede abrir según su rol (noTeam: también sin equipo).
-const allowed = (v, user) => (!v.admin || user.role === 'admin') && (!v.organizer || ['organizer', 'admin'].includes(user.role));
 const fromHash = () => location.hash.slice(1);
-const initial = () => (fromHash() in VIEWS ? fromHash() : innerWidth < 900 ? 'piloto' : 'box');
+const home = (mode, hasTeam) => (mode === 'admin' ? 'cuentas' : mode === 'organizer' || !hasTeam ? 'eventos' : innerWidth < 900 ? 'piloto' : 'box');
+// ¿Se puede abrir esta vista en este modo? (si no, se abre la principal del modo)
+const valid = (view, mode, hasTeam) => view === 'perfil'
+  || (view === 'piloto' && mode === 'pilot' && hasTeam)
+  || (MODE_VIEWS[mode][view] && (!MODE_VIEWS[mode][view].team || hasTeam));
 
 export default function App() {
   return (
@@ -41,42 +52,40 @@ export default function App() {
 
 function Views() {
   const session = useSession();
-  const [view, setView] = useState(initial);
+  const mode = useMode(session.user?.role);
+  const [view, setView] = useState(fromHash);
   const [muted, setMuted] = useState(false);
   useEffect(() => { refresh(); }, []);
-  useEffect(() => { if (session.user) location.hash = view; }, [view, session.user]);
   useEffect(() => {
-    const onHash = () => fromHash() in VIEWS && setView(fromHash());
+    const onHash = () => setView(fromHash());
     addEventListener('hashchange', onHash);
     return () => removeEventListener('hashchange', onHash);
   }, []);
+  const hasTeam = !!session.team;
+  const current = session.user && (valid(view, mode, hasTeam) ? view : home(mode, hasTeam));
+  useEffect(() => { if (current && location.hash.slice(1) !== current) history.replaceState(null, '', `#${current}`); }, [current]);
 
   if (!session.ready) return null;
   if (!session.user) return <Login />;
   if (session.user.mustReset) return <ForcedPassword />;
-  const v = VIEWS[view];
-  if (!session.team && v?.noTeam && allowed(v, session.user)) {
-    const Page = { admin: Admin, eventos: Events, perfil: Profile }[view];
-    return <Frame view={view} setView={setView} noTeam><Page /></Frame>;
-  }
-  if (!session.team) return <TeamGate onNav={setView} />;
-  if (view === 'piloto') return <Pilot onNav={setView} />;
+  if (current === 'piloto') return <Pilot onNav={setView} />;
 
-  const Page = (allowed(v ?? {}, session.user) && { box: Box, stats: Stats, perfil: Profile, equipo: Team, ajustes: Settings, eventos: Events, admin: Admin }[view]) || Box;
+  const Page = current === 'perfil' ? Profile : MODE_VIEWS[mode][current].Page;
   return (
-    <Frame view={view} setView={setView} muted={muted} setMuted={setMuted}>
-      <Page muted={muted} />
+    <Frame view={current} setView={setView} mode={mode} muted={muted} setMuted={setMuted}>
+      <Page muted={muted} onNav={setView} />
     </Frame>
   );
 }
 
-function Frame({ view, setView, muted, setMuted, noTeam, children }) {
+function Frame({ view, setView, mode, muted, setMuted, children }) {
   const gw = useGateway();
+  const { team } = useSession();
   return (
     <div className="flex h-full flex-col">
-      <Header view={view} setView={setView} muted={muted} setMuted={setMuted} noTeam={noTeam} />
+      <Header view={view} setView={setView} mode={mode} muted={muted} setMuted={setMuted} />
       {/* Fila propia para volver a Piloto: se tiene que poder acertar conduciendo, con guantes y en movimiento */}
-      {!noTeam && (
+      {mode === 'pilot' && team && (
         <button onClick={() => setView('piloto')}
           className={`flex h-24 shrink-0 items-center justify-center gap-4 bg-accent text-4xl font-bold uppercase tracking-[0.04em] text-panel active:opacity-80 lg:h-12 lg:text-2xl`}>
           <Icon name="wheel" size={40} />{gw.obd === 'on' ? 'Volver a Piloto' : 'Piloto'}
@@ -87,12 +96,14 @@ function Frame({ view, setView, muted, setMuted, noTeam, children }) {
   );
 }
 
-function Header({ view, setView, muted, setMuted, noTeam }) {
+function Header({ view, setView, mode, muted, setMuted }) {
   const { user, team, offline } = useSession();
   const theme = useTheme();
   const [clock, setClock] = useState(() => new Date());
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
-  const items = Object.entries(VIEWS).filter(([id, v]) => id !== 'piloto' && allowed(v, user) && (!noTeam || v.noTeam));
+  const items = Object.entries(MODE_VIEWS[mode]).filter(([, v]) => !v.team || team);
+  // Sin equipo, un piloto no tiene tiempo real (el servidor no lo admitiría): sin indicador de conexión.
+  const live = team || mode !== 'pilot';
 
   return (
     <header className="flex h-11 shrink-0 items-stretch gap-2 border-b border-line bg-panel px-2 sm:gap-4 sm:px-3">
@@ -100,10 +111,14 @@ function Header({ view, setView, muted, setMuted, noTeam }) {
         {/* Pantallas estrechas: solo el símbolo; anchas: el logotipo completo */}
         <img src="/icon-192.png" alt="Box Box" className="h-7 w-7 xl:hidden" />
         <span className="hidden xl:contents"><Wordmark className="h-6" /></span>
-        {team && <span className="hidden max-w-40 truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-muted 2xl:inline">· {team.name}</span>}
+        {/* Con varios modos, cuál está activo (se cambia en el perfil) */}
+        {modesOf(user.role).length > 1 && (
+          <button onClick={() => setView('perfil')} title="Cambiar de modo en tu perfil"
+            className="rounded-[3px] bg-accent-soft px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-accent">{MODES[mode]}</button>
+        )}
+        {mode === 'pilot' && team && <span className="hidden max-w-40 truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-muted 2xl:inline">· {team.name}</span>}
       </div>
       <nav className="-mb-px flex min-w-0 items-stretch overflow-x-auto" aria-label="Vistas">
-        {noTeam && <button onClick={() => setView('box')} className="border-b-2 border-transparent px-2 text-[13px] font-semibold uppercase tracking-[0.08em] text-muted hover:text-fg sm:px-3">← Inicio</button>}
         {items.map(([id, v]) => (
           <button key={id} onClick={() => setView(id)} aria-current={id === view ? 'page' : undefined} title={v.label}
             className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2 text-[13px] font-semibold uppercase tracking-[0.08em] transition-colors sm:px-3 ${id === view ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
@@ -113,7 +128,7 @@ function Header({ view, setView, muted, setMuted, noTeam }) {
         ))}
       </nav>
       <div className="ml-auto flex shrink-0 items-center gap-2 text-[13px] sm:gap-4">
-        {!noTeam && <Connection offline={offline} />}
+        {live && <Connection offline={offline} />}
         <span className="num hidden text-fg-2 xl:inline">{clock.toLocaleTimeString('es-ES')}</span>
         {view === 'box' && (
           <IconButton onClick={() => setMuted(!muted)} label={muted ? 'Activar sonido de alarmas' : 'Silenciar alarmas'} active={muted}>

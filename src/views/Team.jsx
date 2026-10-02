@@ -1,4 +1,5 @@
-// Equipo: invitación, miembros y ajustes del coche compartidos (dorsal, teléfono, alertas, línea de meta).
+// Equipo: las personas (invitar, miembros, nombre, evento y salir). Lo del coche (dorsal, icono, alertas,
+// teléfono del mecánico) está en Ajustes: CarCard y AlertsCard se exportan para usarlas allí.
 import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { api, inviteLink, setSession, setTeam, useSession } from '../lib/session.js';
@@ -7,31 +8,59 @@ import { LIMITS, limitErrors } from '../lib/limits.js';
 import { Page, Card, Field, Pill, NumInput, ConfirmButton, ErrorText, input, btn } from './ui.jsx';
 import CarIconEditor from './CarIconEditor.jsx';
 
-export default function Team() {
-  const { user, team } = useSession();
-  const owner = user.role === 'admin' || team.ownerId === user.id;
+// Guardar cambios del equipo: devuelve true si se guardó y deja el error a la vista.
+export function useTeamSave() {
   const [error, setError] = useState('');
   const save = async (patch) => {
     setError('');
     try { setTeam(await api('/api/team', { method: 'PATCH', body: patch })); return true; } catch (e) { setError(e.message); return false; }
   };
+  return { error, setError, save };
+}
+
+export default function Team({ onNav }) {
+  const { user, team } = useSession();
+  const owner = user.role === 'admin' || team.ownerId === user.id;
+  const { error, setError, save } = useTeamSave();
 
   return (
-    <Page title={team.name} subtitle={owner ? 'Eres el capitán: gestionas invitaciones y miembros.' : 'Los ajustes del coche los puede cambiar cualquier miembro.'}>
+    <Page title={team.name} subtitle={owner ? 'Eres el capitán: gestionas invitaciones, miembros y la inscripción en eventos.' : 'El coche se configura en Ajustes; cualquier miembro puede hacerlo.'}>
       <ErrorText>{error}</ErrorText>
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-4">
-          <CarCard team={team} save={save} />
-          <AlertsCard team={team} save={save} />
+          <EventCard team={team} owner={owner} setError={setError} onNav={onNav} />
+          <InviteCard team={team} owner={owner} setError={setError} />
+          {owner && <RenameCard team={team} save={save} />}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          <InviteCard team={team} owner={owner} setError={setError} />
           <MembersCard team={team} user={user} owner={owner} setError={setError} />
-          {owner && <RenameCard team={team} save={save} />}
           <LeaveCard team={team} />
         </div>
       </div>
     </Page>
+  );
+}
+
+// Evento en el que corre el equipo; el capitán puede sacarlo (vuelve a ser de entrenamiento).
+function EventCard({ team, owner, setError, onNav }) {
+  const ev = team.event;
+  return (
+    <Card title="Evento">
+      {ev ? <>
+        <div className="flex items-center gap-3">
+          <Icon name="finish" size={22} className="text-accent" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[16px] font-bold uppercase tracking-[0.04em]">{ev.name}</div>
+            <div className="text-[13px] text-muted">{[ev.startsOn && new Date(`${ev.startsOn}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }), ev.place].filter(Boolean).join(' · ')}</div>
+          </div>
+        </div>
+        {owner && <ConfirmButton label="Sacar al equipo del evento" confirm="Sí, sacarlo"
+          onConfirm={() => api('/api/team/enroll', { method: 'POST', body: { eventId: null } }).then(setTeam).catch((e) => setError(e.message))} />}
+      </> : <>
+        <p className="text-[14px] text-fg-2">Equipo de entrenamiento: no está inscrito en ningún evento.</p>
+        <button onClick={() => onNav?.('eventos')} className={btn.ghost}><Icon name="finish" size={15} />{owner ? 'Buscar un evento para inscribirlo' : 'Ver eventos'}</button>
+      </>}
+    </Card>
   );
 }
 
@@ -45,7 +74,7 @@ function SavedInput({ value, onSave, className = '', ...p }) {
   );
 }
 
-function CarCard({ team, save }) {
+export function CarCard({ team, save }) {
   return (
     <Card title="Coche">
       <div className="grid gap-4 sm:grid-cols-[140px_1fr]">
@@ -137,7 +166,7 @@ const ALERT_ROWS = [
 ];
 
 // Borrador local: las alertas se comparten con todo el equipo, así que se guardan de una vez y solo si son coherentes.
-function AlertsCard({ team, save }) {
+export function AlertsCard({ team, save }) {
   const [draft, setDraft] = useState(team.limits);
   useEffect(() => setDraft(team.limits), [team.limits]);
   const errors = limitErrors(draft);
