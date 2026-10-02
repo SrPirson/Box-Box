@@ -10,7 +10,16 @@ const PORT = process.env.PORT || 3300;
 const DIST = join(import.meta.dirname, '..', 'dist');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.webmanifest': 'application/manifest+json' };
 
+// Dirección antigua: con REDIRECT_TO, quien la abre en el navegador pasa a la nueva. La app Android
+// (WebView, "; wv)" en el user agent) no se redirige: la de una versión anterior sigue cargando aquí,
+// ve el aviso de versión nueva e instala la que ya apunta a la dirección nueva.
+const REDIRECT_TO = process.env.REDIRECT_TO?.replace(/\/$/, '');
+
 const http = createServer(async (req, res) => {
+  if (REDIRECT_TO && req.method === 'GET' && !req.url.startsWith('/api/') && !/;\s*wv\)/.test(req.headers['user-agent'] ?? '')) {
+    res.writeHead(301, { Location: REDIRECT_TO + req.url }).end();
+    return;
+  }
   if (await handleApi(req, res)) return;
   const path = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^(\.\.[/\\])+/, '');
   for (const file of [join(DIST, path), join(DIST, 'index.html')]) {

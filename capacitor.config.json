@@ -3,7 +3,7 @@
   "appName": "Box Box",
   "webDir": "dist",
   "server": {
-    "url": "https://cencerro-racing.onrender.com",
+    "url": "https://boxracing.onrender.com",
     "cleartext": false
   }
 }

@@ -26,7 +26,7 @@ ELM327 + GPS) con el portátil del muro de BOX, por WebSocket y con baja latenci
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
 | Último commit | `5310d77` Meta con un toque sobre el trazado y borrado de meta y trazado desde el mapa |
-| Despliegue | https://cencerro-racing.onrender.com · servicio `srv-davb06flk1mc739c6vlg` (Frankfurt, free). Creado a mano con el conector, no ligado al Blueprint |
+| Despliegue | **https://boxracing.onrender.com** · servicio `boxracing` `srv-db02jqad0e5s739s56gg` (Frankfurt, free), creado con el conector. La dirección antigua https://cencerro-racing.onrender.com (servicio `cencerro-racing-antiguo` `srv-davb06flk1mc739c6vlg`) sigue activa durante la transición: con `REDIRECT_TO` manda los navegadores a la nueva, y las APK antiguas la siguen cargando para actualizarse a la que apunta a la nueva. `box-box` y `boxbox` en Render estaban cogidas |
 | Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, plan gratuito sin caducidad; creada desde la integración de Vercel). Migrada desde el Postgres de Render el 02/10/2026 con `server/migrate.js`. El de Render (`cencerro-racing-db`) queda como copia hasta que caduque el 31/10/2026 |
 | Tests | `npm test` → 11 en verde (ELM327, alertas, cronometraje con y sin trazado, integración API + tiempo real) |
 | Sin commitear | `package-lock.json` local sin campos `libc` (npm antiguo en Windows). **No subirlo**: descartar con `git checkout package-lock.json` |
