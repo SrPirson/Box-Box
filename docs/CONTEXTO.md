@@ -89,6 +89,11 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 | Ajustes del coche editables por cualquier miembro | En pista, el capitán puede estar conduciendo |
 | Fuera de pista calculado en el servidor | Allí ya están el trazado y la traza; BOX solo compara con umbrales |
 | Meta perpendicular automática con trazado | Marcar «borde a borde» con dos toques no se entendía |
+| Roles admin / organizador / piloto; el organizador lo asigna el admin | Que no cualquiera cree eventos |
+| Eventos con la pista del organizador, común a todos sus equipos | Tiempos comparables: la clasificación tiene sentido |
+| Un equipo activo por piloto; equipos sin evento = entrenamiento | Lo que ya hacía la app; el historial de todos los eventos queda en el perfil |
+| Un solo campo «código» para equipo y evento (códigos únicos entre ambos) | El piloto no tiene que saber qué tipo de código le han dado |
+| El organizador recibe un resumen por equipo a 1 Hz, nunca los mensajes | Clasificación y mapa del evento sin invadir la radio de cada equipo |
 
 ## Pendiente / próximos pasos
 

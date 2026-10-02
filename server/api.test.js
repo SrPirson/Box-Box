@@ -178,6 +178,7 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   assert.deepEqual([look.kind, look.event.name], ['event', '24h Jarama']);
   const reg = await call('/api/teams', { token: pepe.token, method: 'POST', body: { name: 'Los Rápidos', eventCode: ev.inviteCode } });
   assert.equal(reg.team.event.name, '24h Jarama');
+  assert.equal(reg.team.dorsal, '1'); // el primero del evento; el siguiente sería el 2
   assert.deepEqual(reg.team.track.line, line);
   assert.equal((await call('/api/team', { token: pepe.token, method: 'PATCH', body: { track: { line: [[1, 1], [2, 2]] } } })).status, 403);
 

@@ -59,7 +59,7 @@ function Users({ users, run }) {
                     {u.id === me.id ? <Pill tone="accent">Admin</Pill> : (
                       <select value={u.role} onChange={(e) => run(() => api(`/api/admin/users/${u.id}`, { method: 'PATCH', body: { role: e.target.value } }))}
                         className="h-8 rounded-[4px] border border-line-strong bg-sunken px-2 text-[13px] font-semibold uppercase" aria-label={`Rol de ${u.name}`}>
-                        <option value="pilot">Piloto</option><option value="admin">Admin</option>
+                        <option value="pilot">Piloto</option><option value="organizer">Organizador</option><option value="admin">Admin</option>
                       </select>
                     )}
                   </td>

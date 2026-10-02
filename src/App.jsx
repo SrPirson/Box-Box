@@ -7,6 +7,7 @@ import Stats from './views/Stats.jsx';
 import Admin from './views/Admin.jsx';
 import UpdateBanner from './views/Update.jsx';
 import Profile from './views/Profile.jsx';
+import Events from './views/Events.jsx';
 import { Login, ForcedPassword, TeamGate, Wordmark } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
@@ -18,11 +19,14 @@ const VIEWS = {
   box: { label: 'Box', icon: 'flag' },
   piloto: { label: 'Piloto', icon: 'wheel' },
   stats: { label: 'Estadísticas', short: 'Stats', icon: 'chart' },
-  perfil: { label: 'Mi perfil', icon: 'user' },
+  perfil: { label: 'Mi perfil', icon: 'user', noTeam: true },
   equipo: { label: 'Equipo', icon: 'users' },
   ajustes: { label: 'Ajustes', icon: 'sliders' },
-  admin: { label: 'Admin', icon: 'shield', admin: true },
+  eventos: { label: 'Eventos', icon: 'finish', organizer: true, noTeam: true },
+  admin: { label: 'Admin', icon: 'shield', admin: true, noTeam: true },
 };
+// Vistas que el usuario puede abrir según su rol (noTeam: también sin equipo).
+const allowed = (v, user) => (!v.admin || user.role === 'admin') && (!v.organizer || ['organizer', 'admin'].includes(user.role));
 const fromHash = () => location.hash.slice(1);
 const initial = () => (fromHash() in VIEWS ? fromHash() : innerWidth < 900 ? 'piloto' : 'box');
 
@@ -50,12 +54,15 @@ function Views() {
   if (!session.ready) return null;
   if (!session.user) return <Login />;
   if (session.user.mustReset) return <ForcedPassword />;
-  const isAdmin = session.user.role === 'admin';
-  if (view === 'admin' && isAdmin) return <Frame view={view} setView={setView} noTeam={!session.team}><Admin /></Frame>;
-  if (!session.team) return <TeamGate onAdmin={() => setView('admin')} />;
+  const v = VIEWS[view];
+  if (!session.team && v?.noTeam && allowed(v, session.user)) {
+    const Page = { admin: Admin, eventos: Events, perfil: Profile }[view];
+    return <Frame view={view} setView={setView} noTeam><Page /></Frame>;
+  }
+  if (!session.team) return <TeamGate onNav={setView} />;
   if (view === 'piloto') return <Pilot onNav={setView} />;
 
-  const Page = { box: Box, stats: Stats, perfil: Profile, equipo: Team, ajustes: Settings }[view] ?? Box;
+  const Page = (allowed(v ?? {}, session.user) && { box: Box, stats: Stats, perfil: Profile, equipo: Team, ajustes: Settings, eventos: Events, admin: Admin }[view]) || Box;
   return (
     <Frame view={view} setView={setView} muted={muted} setMuted={setMuted}>
       <Page muted={muted} />
@@ -85,7 +92,7 @@ function Header({ view, setView, muted, setMuted, noTeam }) {
   const theme = useTheme();
   const [clock, setClock] = useState(() => new Date());
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
-  const items = Object.entries(VIEWS).filter(([id, v]) => id !== 'piloto' && (!v.admin || user.role === 'admin') && (!noTeam || v.admin));
+  const items = Object.entries(VIEWS).filter(([id, v]) => id !== 'piloto' && allowed(v, user) && (!noTeam || v.noTeam));
 
   return (
     <header className="flex h-11 shrink-0 items-stretch gap-2 border-b border-line bg-panel px-2 sm:gap-4 sm:px-3">

@@ -113,8 +113,11 @@ export default function Box({ muted }) {
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
             <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus} track={team.track}
-              onTrack={(track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
-              toolbar={<TrackPicker team={team} />} carIcon={team.carIcon} carIconStyle={team.carIconStyle} />
+              // En un evento la pista la pone el organizador: se ve, pero no se edita.
+              onTrack={team.event ? undefined : (track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
+              toolbar={team.event
+                ? <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Icon name="finish" size={15} className="text-accent" />Pista del evento · {team.event.name}</span>
+                : <TrackPicker team={team} />} carIcon={team.carIcon} carIconStyle={team.carIconStyle} />
           </div>
         </section>
 

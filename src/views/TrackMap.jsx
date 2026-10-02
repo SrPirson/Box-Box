@@ -136,10 +136,11 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
     for (const p of Object.values(cars)) {
       if (!p.gps) continue;
       const pos = [p.gps.lat, p.gps.lng];
-      let l = layers.current[p.car];
+      const k = p.key ?? p.car; // en un evento, el equipo (dos equipos pueden llevar el mismo dorsal)
+      let l = layers.current[k];
       if (!l) {
         if (!Object.keys(layers.current).length) map.current.setView(pos, 17);
-        l = layers.current[p.car] = {
+        l = layers.current[k] = {
           trail: L.polyline([], { className: 'trail', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(map.current),
           dot: L.marker(pos, { icon: carMarker(p.car, carIcon, carIconStyle), zIndexOffset: 1000 }).addTo(map.current),
           icon: carIcon + carIconStyle,
@@ -147,7 +148,7 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
         };
       }
       if (l.icon !== carIcon + carIconStyle) { l.dot.setIcon(carMarker(p.car, carIcon, carIconStyle)); l.icon = carIcon + carIconStyle; } // el equipo cambió el icono
-      l.trail.setLatLngs(trails[p.car] ?? []);
+      l.trail.setLatLngs(trails[k] ?? []);
       l.dot.setLatLng(pos);
       // Rumbo. En marcha: el del GPS del móvil (como el puntero de Google Maps) o, si no lo da, el calculado entre
       // posiciones; la brújula, como último recurso (dentro del coche la desvían el metal y la electrónica).
@@ -162,11 +163,11 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
       if (h != null) l.heading += ((h - l.heading + 540) % 360) - 180;
       const dot = l.dot.getElement()?.firstChild;
       if (dot) {
-        dot.dataset.state = states[p.car]; dot.dataset.sel = String(p.car === sel);
+        dot.dataset.state = states[k]; dot.dataset.sel = String(k === sel);
         const img = dot.classList.contains('car-sprite') && dot.firstChild;
         if (img) img.style.transform = `rotate(${l.heading}deg)`;
       }
-      if (follow && p.car === sel) map.current.panTo(pos, { animate: true, duration: 0.25 });
+      if (follow && k === sel) map.current.panTo(pos, { animate: true, duration: 0.25 });
     }
   }, [cars, sel, trails, states, follow, carIcon, carIconStyle]);
 
@@ -195,14 +196,14 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
   return (
     <div className="flex h-full flex-col">
       {/* Barra de pista: pistas guardadas a la izquierda, herramientas de dibujo a la derecha */}
-      {onTrack && (
+      {(onTrack || toolbar) && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-panel px-2 py-1.5" aria-label="Pista">
           {toolbar}
-          <span className="ml-auto flex gap-2">
+          {onTrack && <span className="ml-auto flex gap-2">
             <MapButton onClick={tool('path')} active={draw?.mode === 'path'} label="Trazado" icon="route" />
             <MapButton onClick={tool('line')} active={draw?.mode === 'line'} label="Meta" icon="finish" />
             <MapButton onClick={tool('sector')} active={draw?.mode === 'sector'} label={sectors.length ? `Tramos · ${sectors.length + 1}` : 'Tramos'} icon="timer" />
-          </span>
+          </span>}
         </div>
       )}
     <div className="relative min-h-64 flex-1">

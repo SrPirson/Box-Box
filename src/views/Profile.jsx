@@ -13,8 +13,9 @@ const hm = (s) => `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60
 function byTrack(laps) {
   const groups = new Map();
   for (const l of laps) {
-    const key = l.track_id ?? `sin:${l.team ?? ''}`;
-    if (!groups.has(key)) groups.set(key, { name: l.track ?? 'Pista sin guardar', team: l.team, laps: [] });
+    // Vueltas de un evento: agrupadas por evento (su pista es la del organizador); si no, por pista del equipo.
+    const key = l.event_id ? `ev:${l.event_id}` : l.track_id ?? `sin:${l.team ?? ''}`;
+    if (!groups.has(key)) groups.set(key, { name: l.event_id ? l.event ?? 'Evento eliminado' : l.track ?? 'Pista sin guardar', isEvent: !!l.event_id, team: l.team, laps: [] });
     groups.get(key).laps.push(l);
   }
   return [...groups.values()].map((g) => {
@@ -70,14 +71,14 @@ export default function Profile() {
               <LapChart laps={laps.map((l) => ({ ...l, driver: l.track ?? l.team }))} avg={avg} bestId={best.id} />
             </Card>
 
-            <Card title="Por pista" flush>
+            <Card title="Por evento y pista" flush>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] text-[14px]">
-                  <thead className="bg-raised text-left"><tr className="label"><Th>Pista</Th><Th right>Vueltas</Th><Th right>Mejor</Th><Th right>Media</Th><Th>Mejores tramos</Th><Th right>Vuelta ideal</Th></tr></thead>
+                  <thead className="bg-raised text-left"><tr className="label"><Th>Evento o pista</Th><Th right>Vueltas</Th><Th right>Mejor</Th><Th right>Media</Th><Th>Mejores tramos</Th><Th right>Vuelta ideal</Th></tr></thead>
                   <tbody>
                     {tracks.map((t) => (
                       <tr key={t.name + t.team} className="border-t border-line">
-                        <td className="px-4 py-2.5"><div className="font-semibold">{t.name}</div>{t.team && <div className="text-[12px] text-muted">{t.team}</div>}</td>
+                        <td className="px-4 py-2.5"><div className="flex items-center gap-1.5 font-semibold">{t.isEvent && <Icon name="finish" size={14} className="text-accent" />}{t.name}</div>{t.team && <div className="text-[12px] text-muted">{t.team}</div>}</td>
                         <td className="num px-4 py-2.5 text-right">{t.laps.length}</td>
                         <td className="num px-4 py-2.5 text-right font-bold text-ok">{fmtLap(t.best)}</td>
                         <td className="num px-4 py-2.5 text-right">{fmtLap(Math.round(t.avg))}</td>
@@ -94,12 +95,12 @@ export default function Profile() {
               <Card title="Tus vueltas" flush>
                 <div className="max-h-[480px] overflow-auto">
                   <table className="w-full min-w-[620px] text-[14px]">
-                    <thead className="sticky top-0 bg-raised text-left"><tr className="label"><Th>Fecha</Th><Th>Pista</Th><Th right>Tiempo</Th><Th right>vs tu media</Th><Th right>Temp. máx</Th><Th right>Vel. máx</Th></tr></thead>
+                    <thead className="sticky top-0 bg-raised text-left"><tr className="label"><Th>Fecha</Th><Th>Evento o pista</Th><Th right>Tiempo</Th><Th right>vs tu media</Th><Th right>Temp. máx</Th><Th right>Vel. máx</Th></tr></thead>
                     <tbody>
                       {[...laps].reverse().map((l) => (
                         <tr key={l.id} className={`border-t border-line ${l.id === best.id ? 'bg-ok-soft' : ''}`}>
                           <td className="num px-4 py-2 text-fg-2">{new Date(l.started_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                          <td className="px-4 py-2">{l.track ?? 'Pista sin guardar'}{l.team && <span className="text-[12px] text-muted"> · {l.team}</span>}</td>
+                          <td className="px-4 py-2">{l.event_id ? l.event ?? 'Evento eliminado' : l.track ?? 'Pista sin guardar'}{l.team && <span className="text-[12px] text-muted"> · {l.team}</span>}</td>
                           <td className="num px-4 py-2 text-right font-bold">{fmtLap(l.ms)}</td>
                           <td className="px-4 py-2 text-right"><Delta ms={l.ms - avg} /></td>
                           <td className="num px-4 py-2 text-right">{l.max_temp == null ? '—' : `${fmt(l.max_temp)} °C`}</td>

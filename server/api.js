@@ -172,8 +172,12 @@ const routes = [
       if (e.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
       eventId = e.id;
     }
-    const t = await one('insert into teams (name, invite_code, owner_id, limits, event_id) values ($1, $2, $3, $4, $5) returning id',
-      [str(body.name, 'Nombre del equipo', { max: 60 }), await uniqueCode(), user.id, LIMITS, eventId]);
+    // En un evento, el siguiente dorsal libre (para no tener varios «#1»); el equipo puede cambiarlo después.
+    const dorsal = eventId
+      ? String((await one(`select coalesce(max(nullif(regexp_replace(dorsal, '[^0-9]', '', 'g'), '')::int), 0) + 1 as n from teams where event_id = $1`, [eventId])).n)
+      : '1';
+    const t = await one('insert into teams (name, invite_code, owner_id, limits, event_id, dorsal) values ($1, $2, $3, $4, $5, $6) returning id',
+      [str(body.name, 'Nombre del equipo', { max: 60 }), await uniqueCode(), user.id, LIMITS, eventId, dorsal]);
     await joinTeam(user, t.id);
     return session(await reload(user.id));
   }],
