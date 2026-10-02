@@ -33,8 +33,8 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 // ── Respuestas ──
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id });
 // Columnas de un evento (la fecha como texto: un date de Postgres llega como Date a medianoche local y se desplaza).
-const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed";
-const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed });
+const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private";
+const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private });
 
 async function teamPayload(teamId) {
   const t = await one('select * from teams where id = $1', [teamId]);
@@ -78,7 +78,8 @@ async function eventPayload(e) {
   const teams = await q(`select t.id, t.name, t.dorsal, t.invite_code,
       coalesce(json_agg(json_build_object('id', u.id, 'name', u.name) order by u.created_at) filter (where u.id is not null), '[]') as members
     from teams t left join users u on u.team_id = t.id where t.event_id = $1 group by t.id order by t.created_at`, [e.id]);
-  return { ...eventSummary(e), inviteCode: e.invite_code, track: e.track, organizerId: e.organizer_id,
+  const org = e.organizer_id && await one('select name from users where id = $1', [e.organizer_id]);
+  return { ...eventSummary(e), inviteCode: e.invite_code, track: e.track, organizerId: e.organizer_id, organizer: org?.name ?? null,
     teams: teams.map((t) => ({ id: t.id, name: t.name, dorsal: t.dorsal, inviteCode: t.invite_code, members: t.members })) };
 }
 const eventFields = (body) => {
@@ -90,6 +91,7 @@ const eventFields = (body) => {
     set.starts_on = body.startsOn || null;
   }
   if ('closed' in body) set.closed = !!body.closed;
+  if ('private' in body) set.private = !!body.private;
   if ('track' in body) { const geo = trackGeometry(body.track); set.track = Object.keys(geo).length ? geo : null; }
   return set;
 };
@@ -161,14 +163,42 @@ const routes = [
     await kick(u.id); // las demás sesiones con la contraseña antigua quedan fuera
     return session(u, true);
   }],
+  // Perfil: el nombre se cambia sin más; el email (con el que se entra) pide la contraseña actual.
+  ['PATCH', '/api/me', 'user', async ({ user, body }) => {
+    const set = {};
+    if ('name' in body) set.name = str(body.name, 'Nombre', { max: 60 });
+    if ('email' in body) {
+      const e = email(body.email);
+      if (e !== user.email) {
+        if (!(await checkPassword(String(body.password ?? ''), user.pass))) fail(400, 'La contraseña no es correcta.');
+        if (await one('select 1 from users where email = $1', [e])) fail(409, 'Ya existe una cuenta con ese email.');
+        set.email = e;
+      }
+    }
+    const keys = Object.keys(set);
+    if (keys.length) await q(`update users set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`, [user.id, ...keys.map((k) => set[k])]);
+    if (user.team_id) await teamChanged(user.team_id); // el equipo ve el nombre nuevo
+    return session(await reload(user.id));
+  }],
+  // Eliminar la cuenta: sale de su equipo (pasando la capitanía) y sus vueltas quedan sin piloto.
+  ['DELETE', '/api/me', 'user', async ({ user, body }) => {
+    if (!(await checkPassword(String(body.password ?? ''), user.pass))) fail(400, 'La contraseña no es correcta.');
+    if (user.role === 'admin' && (await one("select count(*)::int as n from users where role = 'admin'")).n === 1) fail(409, 'Eres el único administrador: nombra antes a otro.');
+    await leaveTeam(user);
+    await q('delete from users where id = $1', [user.id]);
+    return { ok: true };
+  }],
 
   // Equipos
   // Con eventCode, el equipo se inscribe en ese evento; sin él, es un equipo de entrenamiento.
+  // Con eventId (desde la lista de eventos), solo si es público.
   ['POST', '/api/teams', 'user', async ({ user, body }) => {
     let eventId = null;
-    if (body.eventCode) {
-      const e = await one('select id, closed from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()]);
-      if (!e) fail(404, 'Ese código de evento no existe.');
+    if (body.eventCode || body.eventId) {
+      const e = body.eventCode
+        ? await one('select id, closed from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()])
+        : await one('select id, closed from events where id = $1 and not private', [Number(body.eventId)]);
+      if (!e) fail(404, body.eventCode ? 'Ese código de evento no existe.' : 'Ese evento no existe o es privado.');
       if (e.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
       eventId = e.id;
     }
@@ -196,6 +226,23 @@ const routes = [
     if (!t) fail(404, 'Ese código de invitación no existe. Pide al equipo uno nuevo.');
     await joinTeam(user, t.id);
     return session(await reload(user.id));
+  }],
+  // El capitán inscribe a su equipo (con sus pilotos y su coche) en un evento público o con código, o lo saca
+  // del evento (eventId null). Si su dorsal ya lo lleva otro equipo del evento, toma el siguiente libre.
+  ['POST', '/api/team/enroll', 'team', async ({ user, team, body }) => {
+    if (!isOwner(user, team)) fail(403, 'Solo el capitán puede inscribir al equipo en un evento.');
+    let e = null;
+    if (body.eventCode) e = await one('select id, closed from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()]);
+    else if (body.eventId != null) e = await one('select id, closed from events where id = $1 and not private', [Number(body.eventId)]);
+    if ((body.eventCode || body.eventId != null) && !e) fail(404, 'Ese evento no existe o es privado.');
+    if (e?.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
+    let dorsal = team.dorsal;
+    if (e && (await one('select 1 from teams where event_id = $1 and dorsal = $2 and id <> $3', [e.id, dorsal, team.id]))) {
+      dorsal = String((await one(`select coalesce(max(nullif(regexp_replace(dorsal, '[^0-9]', '', 'g'), '')::int), 0) + 1 as n from teams where event_id = $1`, [e.id])).n);
+    }
+    await q('update teams set event_id = $1, dorsal = $2 where id = $3', [e?.id ?? null, dorsal, team.id]);
+    await teamChanged(team.id);
+    return teamPayload(team.id);
   }],
   ['POST', '/api/team/leave', 'team', async ({ user }) => { await leaveTeam(user); return session(await reload(user.id)); }],
   ['GET', '/api/team', 'team', ({ team }) => teamPayload(team.id)],
@@ -311,9 +358,22 @@ const routes = [
   }],
 
   // Eventos (organizadores; el admin ve y gestiona todos).
-  ['GET', '/api/events', 'organizer', ({ user }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed,
-      (select count(*)::int from teams t where t.event_id = e.id) as teams
-    from events e where $1 or e.organizer_id = $2 order by e.starts_on desc nulls last, e.created_at desc`, [user.role === 'admin', user.id])],
+  // Lista del organizador (sus eventos) o del admin (todos, con su organizador).
+  ['GET', '/api/events', 'organizer', ({ user, url }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, e.private,
+      o.name as organizer, (select count(*)::int from teams t where t.event_id = e.id) as teams
+    from events e left join users o on o.id = e.organizer_id
+    where ($1 and $3) or e.organizer_id = $2 order by e.starts_on desc nulls last, e.created_at desc`,
+  [user.role === 'admin', user.id, url.searchParams.get('all') === '1'])],
+  // Para los pilotos: eventos públicos con inscripción abierta, próximos (por fecha) o pasados, con buscador.
+  ['GET', '/api/events/public', 'user', ({ url }) => {
+    const past = url.searchParams.get('past') === '1';
+    return q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, o.name as organizer,
+        (select count(*)::int from teams t where t.event_id = e.id) as teams
+      from events e left join users o on o.id = e.organizer_id
+      where not e.private and ($1 = '' or e.name ilike '%' || $1 || '%' or e.place ilike '%' || $1 || '%')
+        and ${past ? 'e.starts_on < current_date' : '(e.starts_on is null or e.starts_on >= current_date) and not e.closed'}
+      order by e.starts_on ${past ? 'desc' : 'asc'} nulls last, e.created_at desc limit 100`, [String(url.searchParams.get('q') ?? '').trim().slice(0, 60)]);
+  }],
   ['POST', '/api/events', 'organizer', async ({ user, body }) => {
     const f = eventFields({ name: body.name, place: body.place ?? '', startsOn: body.startsOn });
     const e = await one('insert into events (name, place, starts_on, organizer_id, invite_code) values ($1, $2, $3, $4, $5) returning id',
@@ -324,6 +384,13 @@ const routes = [
   ['PATCH', /^\/api\/events\/(\d+)$/, 'organizer', async ({ user, params, body }) => {
     const e = await ownEvent(user, Number(params[0]));
     const set = eventFields(body);
+    // Cambiar el organizador: solo el admin, y a alguien con ese rol.
+    if ('organizerId' in body) {
+      if (user.role !== 'admin') fail(403, 'Solo el administrador puede cambiar el organizador.');
+      const o = await one("select id from users where id = $1 and role in ('organizer', 'admin')", [Number(body.organizerId)]);
+      if (!o) fail(400, 'Esa persona no es organizadora.');
+      set.organizer_id = o.id;
+    }
     const keys = Object.keys(set);
     if (keys.length) await q(`update events set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`, [e.id, ...keys.map((k) => set[k])]);
     if (keys.length) await eventTeamsChanged(e.id); // los equipos ven nombre, fecha, estado y pista del evento
@@ -333,6 +400,33 @@ const routes = [
     const e = await ownEvent(user, Number(params[0]));
     await q('update events set invite_code = $1 where id = $2', [await uniqueCode(), e.id]);
     return eventPayload(await ownEvent(user, e.id));
+  }],
+  // Gestión de inscritos. Echar a un equipo del evento: sigue existiendo, como equipo de entrenamiento.
+  ['DELETE', /^\/api\/events\/(\d+)\/teams\/(\d+)$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const t = await one('update teams set event_id = null where id = $1 and event_id = $2 returning id', [Number(params[1]), e.id]);
+    if (!t) fail(404, 'Ese equipo no está en el evento.');
+    await teamChanged(t.id);
+    return eventPayload(e);
+  }],
+  // Sacar a un piloto de su equipo (si era el capitán, la capitanía pasa al siguiente).
+  ['DELETE', /^\/api\/events\/(\d+)\/teams\/(\d+)\/members\/(\d+)$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const u = await one('select u.* from users u join teams t on t.id = u.team_id where u.id = $1 and t.id = $2 and t.event_id = $3', [Number(params[2]), Number(params[1]), e.id]);
+    if (!u) fail(404, 'Ese piloto no está en el equipo.');
+    await leaveTeam(u);
+    return eventPayload(e);
+  }],
+  // Meter a un piloto ya registrado (por su email) en un equipo del evento; sale del equipo en el que estuviera.
+  ['POST', /^\/api\/events\/(\d+)\/teams\/(\d+)\/members$/, 'organizer', async ({ user, params, body }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const t = await one('select id from teams where id = $1 and event_id = $2', [Number(params[1]), e.id]);
+    if (!t) fail(404, 'Ese equipo no está en el evento.');
+    const u = await one('select * from users where email = $1', [email(body.email)]);
+    if (!u) fail(404, 'No hay ninguna cuenta con ese email: tiene que registrarse antes.');
+    await joinTeam(u, t.id);
+    await kick(u.id); // sus conexiones abiertas se reconectan ya en el equipo nuevo
+    return eventPayload(e);
   }],
   // Borrar el evento: sus equipos siguen, como equipos de entrenamiento; las vueltas conservan el evento en el historial.
   ['DELETE', /^\/api\/events\/(\d+)$/, 'organizer', async ({ user, params }) => {
@@ -429,7 +523,7 @@ export async function handleApi(req, res) {
         if (!ctx.team) fail(409, 'No perteneces a ningún equipo.');
       }
     }
-    ctx.body = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readBody(req) : {};
+    ctx.body = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req) : {}; // DELETE /api/me lleva la contraseña
     send(200, await handler(ctx));
   } catch (e) {
     if (!(e instanceof HttpError)) console.error(e);

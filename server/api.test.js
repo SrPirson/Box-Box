@@ -213,6 +213,51 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   for (const s of [so, sp]) s.close();
 });
 
+test('lista pública de eventos, gestión de inscritos por el organizador y perfil', async () => {
+  const admin = await call('/api/login', { method: 'POST', body: { email: 'jefe@cencerro.es', password: 'adminadmin' } });
+  const reg = (name, email) => call('/api/register', { method: 'POST', body: { name, email, password: 'pistapista' } });
+  const org = await reg('Oriol', 'oriol@x.es');
+  await call(`/api/admin/users/${org.user.id}`, { token: admin.token, method: 'PATCH', body: { role: 'organizer' } });
+  const pub = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Resistencia Cheste', startsOn: '2099-05-01', place: 'Cheste' } });
+  const priv = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Privado Club', startsOn: '2099-05-02' } });
+  await call(`/api/events/${priv.id}`, { token: org.token, method: 'PATCH', body: { private: true } });
+
+  // El piloto ve solo el público, lo encuentra buscando y se inscribe sin código; el privado no se puede así.
+  const rita = await reg('Rita', 'rita@x.es');
+  const list = Object.values(await call('/api/events/public?q=chest', { token: rita.token })).filter((x) => typeof x === 'object');
+  assert.deepEqual(list.map((e) => e.name), ['Resistencia Cheste']);
+  assert.equal(Object.values(await call('/api/events/public?q=Privado', { token: rita.token })).filter((x) => typeof x === 'object').length, 0);
+  assert.equal((await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'X', eventId: priv.id } })).status, 404);
+  const team = (await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'Rita Racing', eventId: pub.id } })).team;
+  assert.equal(team.event.name, 'Resistencia Cheste');
+
+  // El organizador mete a un piloto registrado por su email, lo saca y echa al equipo del evento.
+  const sam = await reg('Sam', 'sam@x.es');
+  const added = await call(`/api/events/${pub.id}/teams/${team.id}/members`, { token: org.token, method: 'POST', body: { email: 'SAM@x.es' } });
+  assert.deepEqual(added.teams[0].members.map((m) => m.name), ['Rita', 'Sam']);
+  assert.equal((await call(`/api/events/${pub.id}/teams/${team.id}/members`, { token: org.token, method: 'POST', body: { email: 'nadie@x.es' } })).status, 404);
+  const removed = await call(`/api/events/${pub.id}/teams/${team.id}/members/${sam.user.id}`, { token: org.token, method: 'DELETE' });
+  assert.deepEqual(removed.teams[0].members.map((m) => m.name), ['Rita']);
+  const expelled = await call(`/api/events/${pub.id}/teams/${team.id}`, { token: org.token, method: 'DELETE' });
+  assert.equal(expelled.teams.length, 0);
+  assert.equal((await call('/api/me', { token: rita.token })).team.event, null); // sigue como equipo de entrenamiento
+  // El capitán vuelve a inscribir a su mismo equipo desde la lista, y lo saca.
+  assert.equal((await call('/api/team/enroll', { token: rita.token, method: 'POST', body: { eventId: pub.id } })).event.name, 'Resistencia Cheste');
+  assert.equal((await call('/api/team/enroll', { token: rita.token, method: 'POST', body: { eventId: null } })).event, null);
+
+  // Solo el admin cambia el organizador.
+  assert.equal((await call(`/api/events/${pub.id}`, { token: org.token, method: 'PATCH', body: { organizerId: admin.user.id } })).status, 403);
+  assert.equal((await call(`/api/events/${pub.id}`, { token: admin.token, method: 'PATCH', body: { organizerId: admin.user.id } })).organizer, 'Jefe');
+
+  // Perfil: nombre libre; email con la contraseña; eliminar la cuenta con la contraseña.
+  assert.equal((await call('/api/me', { token: rita.token, method: 'PATCH', body: { name: 'Rita G.' } })).user.name, 'Rita G.');
+  assert.equal((await call('/api/me', { token: rita.token, method: 'PATCH', body: { email: 'rita2@x.es', password: 'mala' } })).status, 400);
+  assert.equal((await call('/api/me', { token: rita.token, method: 'PATCH', body: { email: 'rita2@x.es', password: 'pistapista' } })).user.email, 'rita2@x.es');
+  assert.equal((await call('/api/me', { token: sam.token, method: 'DELETE', body: { password: 'mala' } })).status, 400);
+  assert.equal((await call('/api/me', { token: sam.token, method: 'DELETE', body: { password: 'pistapista' } })).ok, true);
+  assert.equal((await call('/api/login', { method: 'POST', body: { email: 'sam@x.es', password: 'pistapista' } })).status, 401);
+});
+
 test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
   const eva = await call('/api/register', { method: 'POST', body: { name: 'Eva', email: 'eva@x.es', password: 'pistapista' } });
   const { token } = eva;

@@ -101,5 +101,7 @@ export function SCHEMA() {
   create index if not exists teams_event on teams (event_id);
   -- Evento de cada vuelta: el historial por evento se conserva aunque el equipo salga de él o se elimine.
   alter table laps add column if not exists event_id int;
-  create index if not exists laps_event on laps (event_id, started_at);`;
+  create index if not exists laps_event on laps (event_id, started_at);
+  -- Privado: no sale en la lista de eventos de los pilotos; solo se entra con su código.
+  alter table events add column if not exists private boolean not null default false;`;
 }
