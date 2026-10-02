@@ -47,7 +47,7 @@ export default function Pilot({ onNav }) {
   const reply = (answer) => {
     const m = inbox[0];
     if (m.id) socket.emit('ack', { id: m.id, car: team.dorsal, answer, ts: Date.now() });
-    speechSynthesis.cancel();
+    globalThis.speechSynthesis?.cancel();
     setInbox((q) => q.slice(1));
   };
 

@@ -65,7 +65,9 @@ export function useSocket(handlers = {}) {
   return { socket: s, connected };
 }
 
+// El WebView de la app Android no trae síntesis de voz: ahí no se habla, pero tampoco se rompe nada.
 export const speak = (text) => {
+  if (!globalThis.speechSynthesis) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'es-ES';
