@@ -6,6 +6,7 @@ import { sim, useGateway, start, stop } from '../lib/gateway.js';
 import { setMode, useThemeMode } from '../lib/theme.js';
 import { api, logout, setSession, useSession } from '../lib/session.js';
 import { Capacitor } from '@capacitor/core';
+import { APK_URL } from './Update.jsx';
 import { Page, Card, Field, Segmented, Switch, Pill, ErrorText, input, btn } from './ui.jsx';
 
 const POLL_STEPS = [200, 250, 300, 400, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000];
@@ -128,9 +129,6 @@ function TelemetryCard() {
     </Card>
   );
 }
-
-// La compila y publica .github/workflows/android.yml en la release "apk" con cada cambio de la parte Android.
-const APK_URL = 'https://github.com/SrPirson/Box-Box/releases/download/apk/cencerro.apk';
 
 function AppCard() {
   return (

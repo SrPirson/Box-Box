@@ -5,6 +5,7 @@ import Settings from './views/Settings.jsx';
 import Team from './views/Team.jsx';
 import Stats from './views/Stats.jsx';
 import Admin from './views/Admin.jsx';
+import UpdateBanner from './views/Update.jsx';
 import { Login, ForcedPassword, TeamGate } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
@@ -24,6 +25,15 @@ const fromHash = () => location.hash.slice(1);
 const initial = () => (fromHash() in VIEWS ? fromHash() : innerWidth < 900 ? 'piloto' : 'box');
 
 export default function App() {
+  return (
+    <div className="flex h-full flex-col">
+      <UpdateBanner />
+      <div className="min-h-0 flex-1"><Views /></div>
+    </div>
+  );
+}
+
+function Views() {
   const session = useSession();
   const [view, setView] = useState(initial);
   const [muted, setMuted] = useState(false);

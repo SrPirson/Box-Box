@@ -27,7 +27,7 @@ jobs:
         env: { KEYSTORE: "${{ secrets.ANDROID_KEYSTORE }}" }
         run: |
           if [ -n "$KEYSTORE" ]; then mkdir -p ~/.android && echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore; fi
-      - run: chmod +x gradlew && ./gradlew assembleDebug
+      - run: chmod +x gradlew && ./gradlew assembleDebug -PversionCode=${{ github.run_number }}
         working-directory: android
       - name: Publicar en la release "apk"
         env: { GH_TOKEN: "${{ github.token }}" }
@@ -35,3 +35,5 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk cencerro.apk
           gh release view apk >/dev/null 2>&1 || gh release create apk --title "App Android" --notes "APK de Cencerro para el móvil del coche. Se actualiza sola con cada cambio de la parte Android."
           gh release upload apk cencerro.apk --clobber
+          # El título termina en el versionCode: la app lo lee de la API de GitHub para saber si hay versión nueva.
+          gh release edit apk --title "App Android · ${{ github.run_number }}"
