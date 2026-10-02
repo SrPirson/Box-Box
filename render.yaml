@@ -13,19 +13,11 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: DATABASE_URL      # URL interna del Postgres de abajo (misma región, sin SSL)
-        fromDatabase:
-          name: cencerro-racing-db
-          property: connectionString
+      - key: DATABASE_URL      # Postgres de Neon (gratis, Frankfurt): postgresql://…?sslmode=verify-full
+        sync: false
       - key: ADMIN_EMAIL       # el email con el que te registres será administrador de la plataforma
         sync: false
       - key: AUTH_SECRET       # firma de las sesiones: Render la genera al azar
         generateValue: true
-
-databases:
-  - name: cencerro-racing-db
-    databaseName: cencerro_racing_db
-    user: cencerro_racing_db_user
-    region: frankfurt
-    plan: free                 # caduca a los 30 días: pasar a "basic_256mb" para conservar los datos
-    postgresMajorVersion: "18"
+# La base de datos está en Neon (plan gratuito, no caduca), creada desde la integración de Vercel.
+# El Postgres gratuito de Render caducaba a los 30 días; los datos se pasaron con server/migrate.js (MIGRATE_TO).

@@ -27,7 +27,7 @@ ELM327 + GPS) con el portátil del muro de BOX, por WebSocket y con baja latenci
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
 | Último commit | `5310d77` Meta con un toque sobre el trazado y borrado de meta y trazado desde el mapa |
 | Despliegue | https://cencerro-racing.onrender.com · servicio `srv-davb06flk1mc739c6vlg` (Frankfurt, free). Creado a mano con el conector, no ligado al Blueprint |
-| Base de datos | **Postgres de Render** `cencerro-racing-db` (free, **caduca el 31/10/2026**: pasar a plan de pago antes) |
+| Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, plan gratuito sin caducidad; creada desde la integración de Vercel). Migrada desde el Postgres de Render el 02/10/2026 con `server/migrate.js`. El de Render (`cencerro-racing-db`) queda como copia hasta que caduque el 31/10/2026 |
 | Tests | `npm test` → 11 en verde (ELM327, alertas, cronometraje con y sin trazado, integración API + tiempo real) |
 | Sin commitear | `package-lock.json` local sin campos `libc` (npm antiguo en Windows). **No subirlo**: descartar con `git checkout package-lock.json` |
 
@@ -92,7 +92,7 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 
 ## Pendiente / próximos pasos
 
-1. **Base de datos antes del 31/10/2026**: pasar `cencerro-racing-db` a `basic_256mb` o se borra.
+1. ~~Base de datos antes del 31/10/2026~~: hecho, migrada a Neon el 02/10/2026.
 2. **Media de vuelta representativa**: hoy la media incluye vueltas de relevo y de boxes, que la
    distorsionan (en la prueba subió de 30 s a 46 s). Propuesta: excluir las vueltas de más del 107 % de
    la mejor, o usar la mediana. **Pendiente de decidir con el usuario.**
