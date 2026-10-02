@@ -22,13 +22,20 @@ jobs:
         with: { distribution: temurin, java-version: 21 }
       - run: npm ci && npm run build && npx cap sync android
       # Clave de firma fija (secreto ANDROID_KEYSTORE, keystore en base64 con alias androiddebugkey / clave android).
-      # Sin ella se firma con una clave nueva en cada compilación y Android obliga a desinstalar para actualizar.
+      # Sin ella cada APK saldría con otra firma y Android no la instalaría encima: mejor fallar que publicarla.
       - name: Clave de firma
         env: { KEYSTORE: "${{ secrets.ANDROID_KEYSTORE }}" }
         run: |
-          if [ -n "$KEYSTORE" ]; then mkdir -p ~/.android && echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore; fi
+          if [ -z "$KEYSTORE" ]; then echo "::error::Falta el secreto ANDROID_KEYSTORE"; exit 1; fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/cencerro.keystore"
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/cencerro.keystore" >> "$GITHUB_ENV"
       - run: chmod +x gradlew && ./gradlew assembleDebug -PversionCode=${{ github.run_number }}
         working-directory: android
+      # Comprobación antes de publicar: el APK tiene que llevar el certificado de la clave fija.
+      - name: Verificar firma
+        run: |
+          signer=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$signer" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee /dev/stderr | grep -q "CN=Cencerro Racing"
       - name: Publicar en la release "apk"
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |

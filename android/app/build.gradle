@@ -17,7 +17,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Firma fija para que cada APK se instale encima de la anterior. El workflow deja la clave del secreto
+    // ANDROID_KEYSTORE en KEYSTORE_FILE; en local, sin esa variable, se usa la clave de depuración de siempre.
+    def keystore = System.getenv('KEYSTORE_FILE')
+    signingConfigs {
+        if (keystore) {
+            fixed {
+                storeFile file(keystore)
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
     buildTypes {
+        debug {
+            if (keystore) signingConfig signingConfigs.fixed
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
