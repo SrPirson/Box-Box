@@ -14,8 +14,6 @@ const ACTIONS = [
   { type: 'pit', label: 'Salgo a box', icon: 'pitIn', cls: 'text-ok border-ok' },
   { type: 'fuel', label: 'Repostar y cambio', icon: 'fuel', cls: 'text-info border-info' },
   { type: 'damage', label: 'Pinchazo / daño', icon: 'damage', cls: 'text-crit border-crit' },
-  { type: 'rain', label: 'Lluvia en pista', icon: 'rain', cls: 'text-accent border-accent' },
-  { type: 'sc', label: 'Safety car', icon: 'car', cls: 'text-warn border-warn' },
 ];
 
 export default function Pilot({ onNav }) {
@@ -53,6 +51,7 @@ export default function Pilot({ onNav }) {
   };
 
   const o = gw.data?.obd ?? {};
+  const bat = gw.data?.phoneBattery;
   return (
     <div className="pilot flex h-full flex-col bg-bg text-fg">
       {/* Estado: solo lo que el piloto puede usar de un vistazo */}
@@ -66,12 +65,15 @@ export default function Pilot({ onNav }) {
           <span className={`h-3.5 w-3.5 rounded-full ${connected ? 'bg-ok' : 'pulse bg-crit'}`} />BOX
         </span>
         <span className={o.coolant > team.limits.tempCrit ? 'text-crit' : ''}>{o.coolant ?? '—'}°</span>
+        <span className={`flex items-center gap-1 ${bat != null && bat < team.limits.phoneWarn ?'text-crit' : ''}`} title="Batería del móvil">
+          <Icon name="battery" size={20} />{bat ?? '—'}<span className="text-sm text-muted">%</span>
+        </span>
         <span className="hidden min-[430px]:inline">{o.rpm ?? '—'}<span className="text-sm text-muted"> rpm</span></span>
         <span className="ml-auto text-muted">#{team.dorsal}</span>
         <button onClick={toggleTheme} className="grid h-10 w-10 place-items-center" aria-label="Cambiar tema">
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={22} />
         </button>
-        <button onClick={() => onNav('config')} className="grid h-10 w-10 place-items-center text-muted" aria-label="Configuración">
+        <button onClick={() => onNav('ajustes')} className="grid h-10 w-10 place-items-center text-muted" aria-label="Configuración">
           <Icon name="sliders" size={22} />
         </button>
       </div>
@@ -91,7 +93,7 @@ export default function Pilot({ onNav }) {
       )}
 
       {/* Rejilla táctil para guantes */}
-      <div inert={!isDriver} className={`grid min-h-0 flex-1 grid-cols-2 grid-rows-3 gap-3 p-3 landscape:grid-cols-3 landscape:grid-rows-2 ${isDriver ? '' : 'opacity-35'}`}>
+      <div inert={!isDriver} className={`grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-3 p-3 ${isDriver ? '' : 'opacity-35'}`}>
         {ACTIONS.map((a) => {
           const done = sent?.type === a.type;
           return (

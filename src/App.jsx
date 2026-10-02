@@ -9,6 +9,7 @@ import { Login, ForcedPassword, TeamGate } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
 import { refresh, useSession } from './lib/session.js';
+import { useGateway } from './lib/gateway.js';
 import { toggleTheme, useTheme } from './lib/theme.js';
 
 const VIEWS = {
@@ -51,10 +52,18 @@ export default function App() {
 }
 
 function Frame({ view, setView, muted, setMuted, noTeam, children }) {
+  const gw = useGateway();
   return (
     <div className="flex h-full flex-col">
       <Header view={view} setView={setView} muted={muted} setMuted={setMuted} noTeam={noTeam} />
       <main className="min-h-0 flex-1">{children}</main>
+      {/* Este móvil está al volante: vuelta a Piloto con un objetivo táctil para guantes */}
+      {gw.obd === 'on' && (
+        <button onClick={() => setView('piloto')}
+          className="flex h-16 shrink-0 items-center justify-center gap-3 bg-accent text-2xl font-bold uppercase tracking-[0.04em] text-panel">
+          <Icon name="wheel" size={30} />Volver a Piloto
+        </button>
+      )}
     </div>
   );
 }
@@ -76,11 +85,19 @@ function Header({ view, setView, muted, setMuted, noTeam }) {
       <nav className="-mb-px flex min-w-0 items-stretch overflow-x-auto" aria-label="Vistas">
         {noTeam && <button onClick={() => setView('box')} className="border-b-2 border-transparent px-2 text-[13px] font-semibold uppercase tracking-[0.08em] text-muted hover:text-fg sm:px-3">← Inicio</button>}
         {items.map(([id, v]) => (
+          id === 'piloto' ? (
+            // Destacado: el piloto que sale de su vista sin querer tiene que poder volver de un toque.
+            <button key={id} onClick={() => setView(id)} title={v.label}
+              className="my-1 mr-1 flex shrink-0 items-center gap-2 rounded-md bg-accent px-3 text-[15px] font-bold uppercase tracking-[0.06em] text-panel sm:mr-2 sm:px-4">
+              <Icon name={v.icon} size={20} />{v.label}
+            </button>
+          ) : (
           <button key={id} onClick={() => setView(id)} aria-current={id === view ? 'page' : undefined} title={v.label}
             className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2 text-[13px] font-semibold uppercase tracking-[0.08em] transition-colors sm:px-3 ${id === view ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
             <Icon name={v.icon} size={15} className="lg:hidden" />
             <span className="hidden lg:inline">{v.label}</span>
           </button>
+          )
         ))}
       </nav>
       <div className="ml-auto flex shrink-0 items-center gap-2 text-[13px] sm:gap-4">
