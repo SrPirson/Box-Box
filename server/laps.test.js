@@ -53,12 +53,12 @@ test('mide la distancia al trazado y el progreso a lo largo de él', () => {
 });
 
 // Vueltas de 60 s alrededor del trazado; `step` = muestras por vuelta, `dir` = sentido de giro.
-function drive(route, { laps = 3, step = 240, dir = 1, line = route.line } = {}) {
+function drive(route, { laps = 3, step = 240, dir = 1, line = route.line, cuts } = {}) {
   const timer = createLapTimer();
   const done = [];
   for (let i = 1; i <= laps * step; i++) {
     const pt = ring(dir * ((2 * Math.PI * i) / step + 0.01));
-    const lap = timer.push({ ts: (i * 60000) / step, lat: pt[0], lng: pt[1], at: route.locate(pt).at }, line);
+    const lap = timer.push({ ts: (i * 60000) / step, lat: pt[0], lng: pt[1], at: route.locate(pt).at }, line, cuts);
     if (lap) done.push(lap);
   }
   return done;
@@ -71,6 +71,21 @@ test('con trazado y sin meta, la meta es el inicio del trazado; da igual el sent
     assert.equal(laps.length, 2, JSON.stringify(opts));
     for (const l of laps) assert.ok(Math.abs(l.ms - 60000) < 300, `${JSON.stringify(opts)}: ${l.ms} ms`);
   }
+});
+
+test('parciales por tramo: dos cortes a un tercio y dos tercios dan tres tramos de 20 s', () => {
+  const route = createRoute(PATH);
+  // Cortes colocados en orden inverso: los parciales siguen el orden en que se cruzan.
+  const cuts = [route.lineAt(ring((4 * Math.PI) / 3)), route.lineAt(ring((2 * Math.PI) / 3))];
+  const laps = drive(route, { cuts });
+  assert.equal(laps.length, 2);
+  for (const l of laps) {
+    assert.equal(l.sectors.length, 3);
+    for (const s of l.sectors) assert.ok(Math.abs(s - 20000) < 300, `tramo de ${s} ms`);
+    assert.ok(Math.abs(l.sectors.reduce((a, b) => a + b) - l.ms) <= 2); // redondeo por tramo
+  }
+  // Sin cortes, la vuelta no lleva parciales.
+  assert.equal(drive(route)[0].sectors, null);
 });
 
 test('con trazado, un cruce de meta sin recorrer el circuito no es vuelta', () => {

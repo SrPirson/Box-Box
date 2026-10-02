@@ -89,10 +89,12 @@ export function attachLive(server, userFromToken) {
         const s = { ts, lat: num(g.lat), lng: num(g.lng), speed: num(g.speed), coolant: num(o.coolant), rpm: num(o.rpm), throttle: num(o.throttle), voltage: num(o.voltage) };
         const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
         s.at = loc?.at;
-        const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line);
+        const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
         if (lap) {
-          q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10)',
-            [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt]).catch((e) => console.error('lap', e.message));
+          // JSON.stringify: pg mandaría un array JS como array de Postgres, no como jsonb.
+          q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12)',
+            [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors), st.team.track?.id ?? null])
+            .catch((e) => console.error('lap', e.message));
           io.to(r).emit('lap', { ...lap, driver: u.name, driverId: u.id });
         }
         if (ts - st.lastStored >= 1000) {
@@ -102,7 +104,7 @@ export function attachLive(server, userFromToken) {
         }
         // Fuera de pista: metros al trazado descontando el error del GPS, para no avisar por un fix impreciso.
         const offTrack = loc ? Math.round(Math.max(0, loc.dist - (num(g.acc) ?? 0))) : null;
-        out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: u.name, lapStartedAt: st.lap.startedAt });
+        out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: u.name, lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
       }
       batch ? socket.to(r).emit('telemetry:batch', { packets: out }) : socket.to(r).emit('telemetry', out[0]);
     };

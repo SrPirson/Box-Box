@@ -35,10 +35,13 @@ const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.rol
 async function teamPayload(teamId) {
   const t = await one('select * from teams where id = $1', [teamId]);
   if (!t) return null;
-  const members = await q('select id, name, role from users where team_id = $1 order by created_at', [teamId]);
+  const [members, tracks] = await Promise.all([
+    q('select id, name, role from users where team_id = $1 order by created_at', [teamId]),
+    q('select id, name from tracks where team_id = $1 order by name', [teamId]),
+  ]);
   return {
     id: t.id, name: t.name, inviteCode: t.invite_code, ownerId: t.owner_id, dorsal: t.dorsal, phone: t.phone,
-    limits: { ...LIMITS, ...t.limits }, track: t.track, members,
+    limits: { ...LIMITS, ...t.limits }, track: t.track, tracks, members,
   };
 }
 const session = async (u, withToken) => ({
@@ -75,6 +78,21 @@ async function joinTeam(u, teamId) {
   await leaveTeam(u);
   await q('update users set team_id = $1 where id = $2', [teamId, u.id]);
   await teamChanged(teamId);
+}
+
+// Geometría de una pista validada: trazado, meta y cortes de tramo (lo demás, como id y nombre, se descarta).
+function trackGeometry(t) {
+  const { line, path, sectors } = t ?? {};
+  const pts = (a, min, max) => Array.isArray(a) && a.length >= min && a.length <= max && a.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum));
+  if (line != null && !pts(line, 2, 2)) fail(400, 'La línea de meta necesita dos puntos.');
+  if (path != null && !pts(path, 3, 2000)) fail(400, 'El trazado necesita entre 3 y 2000 puntos.');
+  if (sectors != null && !(Array.isArray(sectors) && sectors.length <= 20 && sectors.every((s) => pts(s, 2, 2)))) fail(400, 'Hasta 20 tramos, cada corte con dos puntos.');
+  return { ...(line && { line }), ...(path && { path }), ...(sectors?.length && { sectors }) };
+}
+async function setActiveTrack(teamId, track) {
+  await q('update teams set track = $1 where id = $2', [track, teamId]);
+  await teamChanged(teamId);
+  return teamPayload(teamId);
 }
 
 const reload = (id) => one('select * from users where id = $1', [id]);
@@ -131,17 +149,36 @@ const routes = [
       set.limits = l;
     }
     if ('track' in body) {
-      const { line, path } = body.track ?? {};
-      const pts = (a, min, max) => Array.isArray(a) && a.length >= min && a.length <= max && a.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum));
-      if (line != null && !pts(line, 2, 2)) fail(400, 'La línea de meta necesita dos puntos.');
-      if (path != null && !pts(path, 3, 2000)) fail(400, 'El trazado necesita entre 3 y 2000 puntos.');
-      set.track = line || path ? { ...(line && { line }), ...(path && { path }) } : null;
+      const geo = trackGeometry(body.track);
+      // Editar una pista guardada la guarda también: la próxima vez que se elija sale con los cambios.
+      const saved = isNum(body.track?.id) && await one('update tracks set track = $1 where id = $2 and team_id = $3 returning id, name', [geo, body.track.id, team.id]);
+      set.track = saved ? { ...geo, id: saved.id, name: saved.name } : Object.keys(geo).length ? geo : null;
     }
     const keys = Object.keys(set);
     if (keys.length) {
       await q(`update teams set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`, [team.id, ...keys.map((k) => set[k])]);
       await teamChanged(team.id);
     }
+    return teamPayload(team.id);
+  }],
+
+  // Pistas guardadas: la elegida se copia como pista activa del equipo (la que se cronometra).
+  ['POST', '/api/tracks', 'team', async ({ team, body }) => {
+    const geo = trackGeometry(team.track);
+    if (!Object.keys(geo).length) fail(400, 'Dibuja antes el trazado, la meta o los tramos de la pista.');
+    const t = await one('insert into tracks (team_id, name, track) values ($1, $2, $3) returning id, name', [team.id, str(body.name, 'Nombre de la pista', { max: 60 }), geo]);
+    return setActiveTrack(team.id, { ...geo, id: t.id, name: t.name });
+  }],
+  ['POST', /^\/api\/tracks\/(\d+)\/apply$/, 'team', async ({ team, params }) => {
+    const t = await one('select id, name, track from tracks where id = $1 and team_id = $2', [Number(params[0]), team.id]);
+    if (!t) fail(404, 'Esa pista ya no existe.');
+    return setActiveTrack(team.id, { ...t.track, id: t.id, name: t.name });
+  }],
+  ['DELETE', /^\/api\/tracks\/(\d+)$/, 'team', async ({ team, params }) => {
+    const id = Number(params[0]);
+    await q('delete from tracks where id = $1 and team_id = $2', [id, team.id]);
+    // Si era la activa, su dibujo sigue en el mapa como pista sin guardar.
+    if (team.track?.id === id) return setActiveTrack(team.id, Object.keys(trackGeometry(team.track)).length ? trackGeometry(team.track) : null);
     return teamPayload(team.id);
   }],
   ['POST', '/api/team/invite', 'team', async ({ user, team }) => {
@@ -165,7 +202,7 @@ const routes = [
     if (Number.isNaN(since.getTime())) fail(400, 'Fecha no válida.');
     const args = [team.id, since];
     const [laps, metrics, drivers] = await Promise.all([
-      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.avg_rpm, l.max_rpm, l.max_speed, l.min_volt, l.driver_id, u.name as driver
+      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.avg_rpm, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id, l.driver_id, u.name as driver
          from laps l left join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 order by l.started_at`, args),
       one(`select count(*)::int as samples,
              avg(coolant)::float8 as avg_temp, max(coolant)::float8 as max_temp,

@@ -1,10 +1,10 @@
 // Estadísticas del equipo: vueltas, comparación con la media, pilotos y medias de telemetría.
 import { useEffect, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
-import { api } from '../lib/session.js';
+import { api, useSession } from '../lib/session.js';
 import { useSocket } from '../lib/store.js';
 import { fmt } from '../lib/limits.js';
-import { Page, Card, Segmented, fmtLap, fmtDelta } from './ui.jsx';
+import { Page, Card, Segmented, fmtLap, fmtDelta, fmtSplit } from './ui.jsx';
 
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 export const RANGES = {
@@ -26,6 +26,23 @@ export function useStats(range) {
 
 export const lapAvg = (laps) => (laps.length ? laps.reduce((a, l) => a + l.ms, 0) / laps.length : null);
 
+// Tramos de la pista activa: solo cuentan sus vueltas con todos los parciales (otra pista u otros cortes no
+// son comparables). Por tramo: mejor (y de quién), media, última y dispersión; y la vuelta ideal.
+export function sectorStats(laps, track) {
+  const n = track?.sectors?.length ? track.sectors.length + 1 : 0;
+  const valid = n ? laps.filter((l) => l.sectors?.length === n && (l.track_id ?? null) === (track.id ?? null)) : [];
+  const per = Array.from({ length: n }, (_, i) => {
+    const v = valid.map((l) => l.sectors[i]);
+    const best = valid.reduce((b, l) => (!b || l.sectors[i] < b.sectors[i] ? l : b), null);
+    const avg = v.length ? v.reduce((a, x) => a + x, 0) / v.length : null;
+    return {
+      best: best?.sectors[i] ?? null, bestDriver: best?.driver, avg, last: v.at(-1) ?? null,
+      sd: v.length > 1 ? Math.sqrt(v.reduce((a, x) => a + (x - avg) ** 2, 0) / (v.length - 1)) : null,
+    };
+  });
+  return { n, laps: valid, per, ideal: valid.length ? per.reduce((a, s) => a + s.best, 0) : null };
+}
+
 export default function Stats() {
   const [range, setRange] = useState('today');
   const { data, error } = useStats(range);
@@ -33,6 +50,8 @@ export default function Stats() {
   const avg = lapAvg(laps);
   const best = laps.reduce((b, l) => (!b || l.ms < b.ms ? l : b), null);
   const m = data?.metrics ?? {};
+  const { team } = useSession();
+  const sec = sectorStats(laps, team.track);
 
   return (
     <Page title="Estadísticas" subtitle="Vueltas cronometradas al cruzar la línea de meta y telemetría guardada cada segundo."
@@ -62,11 +81,12 @@ export default function Stats() {
               <Card title="Tiempos por vuelta" badge={<span className="num text-[12px] text-muted">media {fmtLap(Math.round(avg))}</span>}>
                 <LapChart laps={laps} avg={avg} bestId={best.id} />
               </Card>
+              <SectorsCard sec={sec} bestLap={sec.laps.length ? Math.min(...sec.laps.map((l) => l.ms)) : null} />
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <DriversTable drivers={data.drivers} teamAvg={avg} />
                 <MetricsTable m={m} />
               </div>
-              <LapsTable laps={laps} avg={avg} bestId={best.id} />
+              <LapsTable laps={laps} avg={avg} bestId={best.id} sec={sec} />
             </>
           )}
           {laps.length === 0 && <MetricsTable m={m} />}
@@ -172,6 +192,64 @@ function DriversTable({ drivers, teamAvg }) {
   );
 }
 
+function SectorsCard({ sec, bestLap }) {
+  if (!sec.n) return (
+    <Card title="Tramos">
+      <p className="flex items-start gap-3 text-[14px] leading-snug text-fg-2">
+        <Icon name="timer" size={20} className="mt-0.5 text-muted" />
+        <span>Divide la pista en tramos desde el mapa de <b className="text-fg">BOX</b> («Tramos»): verás el tiempo de cada tramo, el mejor, la media y la vuelta ideal.</span>
+      </p>
+    </Card>
+  );
+  if (!sec.laps.length) return <Card title={`Tramos · ${sec.n}`}><p className="text-[14px] text-fg-2">Sin vueltas completas con estos tramos en este periodo.</p></Card>;
+  // Mejor parcial de cada piloto en cada tramo.
+  const drivers = [...new Set(sec.laps.map((l) => l.driver ?? '—'))].map((name) => {
+    const own = sec.laps.filter((l) => (l.driver ?? '—') === name);
+    return { name, best: sec.per.map((_, i) => Math.min(...own.map((l) => l.sectors[i]))) };
+  });
+  return (
+    <Card title={`Tramos · ${sec.n}`} flush
+      badge={<span className="num text-[12px] text-muted">vuelta ideal <b className="text-fg">{fmtLap(sec.ideal)}</b>{bestLap && <> · {fmtDelta(sec.ideal - bestLap)} vs mejor vuelta</>}</span>}>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-[14px]">
+          <thead className="bg-raised text-left"><tr className="label">
+            <Th>Tramo</Th><Th right>Mejor</Th><Th>De</Th><Th right>Media</Th><Th right>Última</Th><Th right>Última vs mejor</Th><Th right>Constancia</Th>
+          </tr></thead>
+          <tbody>
+            {sec.per.map((s, i) => (
+              <tr key={i} className="border-t border-line">
+                <td className="px-4 py-2.5"><span className="sector-label inline-grid">{i + 1}</span></td>
+                <td className="num px-4 py-2.5 text-right font-bold text-ok">{fmtSplit(s.best)}</td>
+                <td className="px-4 py-2.5 font-semibold">{s.bestDriver ?? '—'}</td>
+                <td className="num px-4 py-2.5 text-right">{fmtSplit(s.avg)}</td>
+                <td className="num px-4 py-2.5 text-right">{fmtSplit(s.last)}</td>
+                <td className="px-4 py-2.5 text-right"><Delta ms={s.last - s.best} /></td>
+                <td className="num px-4 py-2.5 text-right text-fg-2" title="Desviación típica: cuanto menor, más constante">{s.sd == null ? '—' : `± ${(s.sd / 1000).toFixed(3)}`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {drivers.length > 1 && (
+        <div className="overflow-x-auto border-t border-line">
+          <table className="w-full text-[14px]">
+            <thead className="bg-raised text-left"><tr className="label"><Th>Mejor tramo por piloto</Th>{sec.per.map((_, i) => <Th key={i} right>T{i + 1}</Th>)}<Th right>Ideal</Th></tr></thead>
+            <tbody>
+              {drivers.map((d) => (
+                <tr key={d.name} className="border-t border-line">
+                  <td className="px-4 py-2 font-semibold">{d.name}</td>
+                  {d.best.map((ms, i) => <td key={i} className={`num px-4 py-2 text-right ${ms === sec.per[i].best ? 'font-bold text-ok' : ''}`}>{fmtSplit(ms)}</td>)}
+                  <td className="num px-4 py-2 text-right">{fmtLap(d.best.reduce((a, b) => a + b, 0))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function MetricsTable({ m }) {
   const rows = [
     ['Temperatura motor', m.avg_temp, 0, '°C', 'máx', m.max_temp],
@@ -198,13 +276,15 @@ function MetricsTable({ m }) {
   );
 }
 
-function LapsTable({ laps, avg, bestId }) {
+function LapsTable({ laps, avg, bestId, sec }) {
   return (
     <Card title="Vueltas" flush>
       <div className="max-h-[480px] overflow-auto">
         <table className="w-full min-w-[720px] text-[14px]">
           <thead className="sticky top-0 bg-raised text-left"><tr className="label">
-            <Th>#</Th><Th>Hora</Th><Th>Piloto</Th><Th right>Tiempo</Th><Th right>vs media</Th><Th right>Temp. media</Th><Th right>Vel. máx</Th><Th right>Bat. mín</Th>
+            <Th>#</Th><Th>Hora</Th><Th>Piloto</Th><Th right>Tiempo</Th><Th right>vs media</Th>
+            {sec.per.map((_, i) => <Th key={i} right>T{i + 1}</Th>)}
+            <Th right>Temp. media</Th><Th right>Vel. máx</Th><Th right>Bat. mín</Th>
           </tr></thead>
           <tbody>
             {laps.map((l, i) => (
@@ -214,6 +294,10 @@ function LapsTable({ laps, avg, bestId }) {
                 <td className="px-4 py-2 font-semibold">{l.driver ?? '—'}</td>
                 <td className="num px-4 py-2 text-right font-bold">{fmtLap(l.ms)}{l.id === bestId && <span className="ml-1.5 text-[11px] text-ok">MEJOR</span>}</td>
                 <td className="px-4 py-2 text-right"><Delta ms={l.ms - avg} /></td>
+                {sec.per.map((s, i) => {
+                  const ms = sec.laps.includes(l) ? l.sectors[i] : null; // de otra pista o incompleta: sin parcial
+                  return <td key={i} className={`num px-4 py-2 text-right ${ms != null && ms === s.best ? 'font-bold text-ok' : ''}`}>{fmtSplit(ms)}</td>;
+                })}
                 <td className="num px-4 py-2 text-right">{l.avg_temp == null ? '—' : `${fmt(l.avg_temp)} °C`}</td>
                 <td className="num px-4 py-2 text-right">{l.max_speed == null ? '—' : `${fmt(l.max_speed)} km/h`}</td>
                 <td className="num px-4 py-2 text-right">{l.min_volt == null ? '—' : `${fmt(l.min_volt, 2)} V`}</td>

@@ -50,6 +50,17 @@ function SCHEMA() {
     avg_temp real, max_temp real, avg_rpm real, max_rpm real, max_speed real, min_volt real
   );
   create index if not exists laps_team_time on laps (team_id, started_at);
+  -- Pistas guardadas del equipo: trazado, meta y cortes de tramo. La activa se copia en teams.track.
+  create table if not exists tracks (
+    id serial primary key,
+    team_id int not null references teams(id) on delete cascade,
+    name text not null,
+    track jsonb not null,
+    created_at timestamptz not null default now()
+  );
+  -- Parciales por tramo (ms) y pista en la que se hizo la vuelta (null: pista sin guardar).
+  alter table laps add column if not exists sectors jsonb;
+  alter table laps add column if not exists track_id int;
   -- Telemetría muestreada a 1 Hz para estadísticas (la de 4 Hz solo va en directo).
   create table if not exists samples (
     team_id int not null references teams(id) on delete cascade,

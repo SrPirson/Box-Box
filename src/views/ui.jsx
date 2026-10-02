@@ -112,4 +112,6 @@ export const fmtLap = (ms) => {
   const s = ((ms % 60000) / 1000).toFixed(3).padStart(6, '0');
   return `${m}:${s}`;
 };
-export const fmtDelta = (ms) => (ms == null || Number.isNaN(ms) ? '—' : `${ms < 0 ? '−' : '+'}${(Math.abs(ms) / 1000).toFixed(3)}`);
+// Parcial de tramo: segundos con milésimas, y minutos solo si pasa de uno (los tramos suelen durar segundos).
+export const fmtSplit = (ms) => (ms == null ? '—' : ms < 60000 ? (ms / 1000).toFixed(3) : fmtLap(Math.round(ms)));
+export const fmtDelta =(ms) => (ms == null || Number.isNaN(ms) ? '—' : `${ms < 0 ? '−' : '+'}${(Math.abs(ms) / 1000).toFixed(3)}`);

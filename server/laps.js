@@ -52,13 +52,22 @@ export function createRoute(path) {
   return route;
 }
 
+// Parciales de una vuelta: tiempo de cada tramo entre meta → corte 1 → … → corte n → meta, en el orden
+// en que se cruzaron. null si no se cruzaron todos los cortes (vuelta sin parciales fiables).
+export function splitTimes(start, end, marks, count) {
+  if (!count || marks.length !== count) return null;
+  const pts = [start, ...marks.map((m) => m.at).sort((a, b) => a - b), end];
+  return pts.slice(1).map((t, i) => Math.round(t - pts[i]));
+}
+
 export function createLapTimer() {
   let prev = null;
   let start = null;
   let acc = null;
   let seen = new Set(); // sectores del trazado recorridos en la vuelta en curso
+  let marks = []; // cortes de tramo cruzados en la vuelta en curso: { i, at }
   let prevAt = null;
-  const reset = () => { acc = { n: 0, temp: 0, maxTemp: -Infinity, rpm: 0, maxRpm: 0, maxSpeed: 0, minVolt: Infinity }; seen = new Set(); };
+  const reset = () => { acc = { n: 0, temp: 0, maxTemp: -Infinity, rpm: 0, maxRpm: 0, maxSpeed: 0, minVolt: Infinity }; seen = new Set(); marks = []; };
   reset();
   // Marca los sectores entre dos muestras por el arco más corto: sirve con muestreo lento y en ambos sentidos de dibujo.
   const cover = (a, b) => {
@@ -71,9 +80,17 @@ export function createLapTimer() {
 
   return {
     // s: { ts, lat, lng, coolant, rpm, speed, voltage, at? }. `at`: progreso en el trazado, si lo hay.
-    // Devuelve la vuelta completada o null.
-    push(s, line) {
+    // `cuts`: líneas de corte de tramo ([[A, B], ...]). Devuelve la vuelta completada o null.
+    push(s, line, cuts = []) {
       let lap = null;
+      // Cortes de tramo: cuenta el primer cruce de cada uno en la vuelta (el ruido del GPS no duplica).
+      if (start != null && prev && s.lat != null) {
+        cuts.forEach(([A, B], i) => {
+          if (marks.some((m) => m.i === i)) return;
+          const t = crossing(prev, s, A, B);
+          if (t != null) marks.push({ i, at: prev.ts + t * (s.ts - prev.ts) });
+        });
+      }
       if (line && prev && s.lat != null) {
         const t = crossing(prev, s, line[0], line[1]);
         if (t != null) {
@@ -86,6 +103,7 @@ export function createLapTimer() {
               avgTemp: acc.temp / n, maxTemp: Number.isFinite(acc.maxTemp) ? acc.maxTemp : null,
               avgRpm: acc.rpm / n, maxRpm: acc.maxRpm, maxSpeed: acc.maxSpeed,
               minVolt: Number.isFinite(acc.minVolt) ? acc.minVolt : null,
+              sectors: splitTimes(start, at, marks, cuts.length),
             };
             start = at;
             reset();
@@ -105,6 +123,8 @@ export function createLapTimer() {
     },
     // Vuelta en curso (para el cronómetro en vivo de BOX).
     get startedAt() { return start == null ? null : Math.round(start); },
+    // Tiempo desde la meta en cada corte cruzado de la vuelta en curso (parciales en vivo).
+    get splits() { return start == null ? [] : marks.map((m) => Math.round(m.at - start)).sort((a, b) => a - b); },
     restart() { prev = null; prevAt = null; start = null; reset(); },
   };
 }

@@ -80,6 +80,12 @@ button:disabled { cursor: not-allowed; }
 .finish-a { stroke: #fff; }
 .finish-b { stroke: #000; stroke-dasharray: 7 7; }
 .finish-dot { stroke: #fff; stroke-width: 2; fill: #000; fill-opacity: 1; }
+/* Cortes de tramo: ámbar con su número, distintos de la meta (cuadros) y del trazado (azul) */
+.sector-cut { stroke: var(--warn); }
+.sector-label {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--warn); color: #000; border: 2px solid #fff; font: 700 12px/1 var(--font-mono);
+}
 .car-icon { background: none; border: none; }
 .car-dot {
   display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;

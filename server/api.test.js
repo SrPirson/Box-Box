@@ -117,3 +117,31 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
 
   for (const s of [sa, sb, so]) s.close();
 });
+
+test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
+  const eva = await call('/api/register', { method: 'POST', body: { name: 'Eva', email: 'eva@x.es', password: 'pistapista' } });
+  const { token } = eva;
+  await call('/api/teams', { token, method: 'POST', body: { name: 'Pistas' } });
+  const line = [[40, -3.0001], [40, -2.9999]];
+  const cut = [[40.001, -3.0001], [40.001, -2.9999]];
+  assert.equal((await call('/api/tracks', { token, method: 'POST', body: { name: 'Jarama' } })).status, 400); // nada dibujado
+  assert.equal((await call('/api/team', { token, method: 'PATCH', body: { track: { line, sectors: [[[40, -3]]] } } })).status, 400); // corte de un punto
+
+  await call('/api/team', { token, method: 'PATCH', body: { track: { line, sectors: [cut] } } });
+  const jarama = await call('/api/tracks', { token, method: 'POST', body: { name: 'Jarama' } });
+  assert.deepEqual(jarama.tracks.map((t) => t.name), ['Jarama']);
+  assert.equal(jarama.track.name, 'Jarama');
+
+  // Editar la pista activa guardada la actualiza también en la lista.
+  await call('/api/team', { token, method: 'PATCH', body: { track: { ...jarama.track, sectors: [cut, cut] } } });
+  await call('/api/team', { token, method: 'PATCH', body: { track: { line: [[41, -3.0001], [41, -2.9999]] } } }); // pista nueva sin guardar
+  const applied = await call(`/api/tracks/${jarama.track.id}/apply`, { token, method: 'POST' });
+  assert.deepEqual(applied.track.line, line);
+  assert.equal(applied.track.sectors.length, 2);
+
+  // Eliminarla deja el dibujo como pista sin guardar.
+  const gone = await call(`/api/tracks/${jarama.track.id}`, { token, method: 'DELETE' });
+  assert.deepEqual(gone.tracks, []);
+  assert.equal(gone.track.id, undefined);
+  assert.deepEqual(gone.track.line, line);
+});

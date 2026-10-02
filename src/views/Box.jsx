@@ -1,12 +1,12 @@
 // Vista BOX (portátil en el muro): equipo y vueltas, alarmas por niveles, gauges con media, mapa y mensajería con acuse.
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { useSocket, useLive } from '../lib/store.js';
 import { api, setTeam, useSession } from '../lib/session.js';
 import { carAlarms, worst, limitsOf, lateMs, fmt, fmtAge, PHONE_HOT } from '../lib/limits.js';
-import { useStats, lapAvg } from './Stats.jsx';
-import { fmtLap, fmtDelta } from './ui.jsx';
+import { useStats, lapAvg, sectorStats } from './Stats.jsx';
+import { fmtLap, fmtDelta, fmtSplit, ConfirmButton } from './ui.jsx';
 
 const NO_ACK_MS = 10000; // acuse pendiente → «sin respuesta»
 const TRAIL_MAX = 600; // ~2,5 min a 4 Hz
@@ -93,7 +93,7 @@ export default function Box({ muted }) {
         onDone={(id) => setBreakdowns((b) => b.filter((x) => x.id !== id))} />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-auto bg-line lg:grid-cols-[220px_minmax(0,1fr)_360px] lg:overflow-hidden 2xl:grid-cols-[260px_minmax(0,1fr)_420px]">
-        <TeamColumn team={team} laps={today.data?.laps ?? []} lapStartedAt={cars[sel]?.lapStartedAt} now={now} />
+        <TeamColumn team={team} laps={today.data?.laps ?? []} lapStartedAt={cars[sel]?.lapStartedAt} splits={cars[sel]?.lapSplits} now={now} />
 
         <section className="flex flex-col gap-px bg-line lg:min-h-0" aria-label="Telemetría">
           {p ? (
@@ -103,14 +103,59 @@ export default function Box({ muted }) {
             </>
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
-            <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus}
-              line={team.track?.line} onSetLine={(line) => api('/api/team', { method: 'PATCH', body: { track: { ...team.track, line } } }).then(setTeam)}
-              path={team.track?.path} onSetPath={(path) => api('/api/team', { method: 'PATCH', body: { track: { ...team.track, path } } }).then(setTeam)} />
+            <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus} track={team.track}
+              onTrack={(track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
+              toolbar={<TrackPicker team={team} />} />
           </div>
         </section>
 
         <Messages dorsal={team.dorsal} log={log} now={now} send={send} />
       </div>
+    </div>
+  );
+}
+
+// ── Pistas guardadas: elegir una la aplica al mapa y al cronometraje; editar la activa la guarda sola ──
+function TrackPicker({ team }) {
+  const [naming, setNaming] = useState(false);
+  const [error, setError] = useState('');
+  const t = team.track;
+  const saved = team.tracks ?? []; // sesiones guardadas antes de existir las pistas no lo traen
+  const drawn =!!(t?.line || t?.path || t?.sectors);
+  const run = (p) => { setError(''); return p.then(setTeam).catch((e) => setError(e.message)); };
+  const saveAs = (e) => {
+    e.preventDefault();
+    run(api('/api/tracks', { method: 'POST', body: { name: new FormData(e.currentTarget).get('name') } })).then(() => setNaming(false));
+  };
+  const fresh = () => run(api('/api/team', { method: 'PATCH', body: { track: null } }));
+  const small = 'flex h-8 items-center gap-1.5 rounded-[4px] border border-line px-2.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-fg-2 hover:bg-raised';
+
+  if (naming) return (
+    <form onSubmit={saveAs} className="flex items-center gap-2">
+      <input name="name" required maxLength={60} autoFocus placeholder="Nombre de la pista" className="h-8 w-44 rounded-[4px] border border-line bg-sunken px-2 text-[14px]" />
+      <button className={`${small} border-accent text-accent`}>Guardar</button>
+      <button type="button" onClick={() => setNaming(false)} className={small}>Cancelar</button>
+      {error && <span className="text-[12px] text-crit">{error}</span>}
+    </form>
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1.5 rounded-[4px] border border-line pl-2 text-fg-2">
+        <Icon name="flag" size={15} /><span className="sr-only">Pista</span>
+        <select value={t?.id ?? ''} onChange={(e) => e.target.value && run(api(`/api/tracks/${e.target.value}/apply`, { method: 'POST' }))}
+          className="h-8 max-w-48 bg-transparent pr-2 text-[13px] font-semibold text-fg">
+          <option value="" disabled>{drawn ? 'Pista sin guardar' : saved.length ? 'Elige una pista…' : 'Sin pistas guardadas'}</option>
+          {saved.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+      {drawn && !t.id && <button onClick={() => setNaming(true)} className={`${small} border-accent text-accent`}><Icon name="plus" size={14} />Guardar pista</button>}
+      {/* Una pista guardada no se pierde al empezar otra; una sin guardar sí, así que se confirma */}
+      {t?.id || !drawn
+        ? drawn && <button onClick={fresh} className={small}><Icon name="plus" size={14} />Nueva</button>
+        : <ConfirmButton label="Nueva" confirm="Descartar dibujo" icon={<Icon name="plus" size={14} />} onConfirm={fresh} />}
+      {t?.id && <ConfirmButton label="Eliminar" confirm={`Eliminar «${t.name}»`} icon={<Icon name="trash" size={14} />}
+        onConfirm={() => run(api(`/api/tracks/${t.id}`, { method: 'DELETE' }))} />}
+      {error && <span className="text-[12px] text-crit">{error}</span>}
     </div>
   );
 }
@@ -158,8 +203,11 @@ const BannerButton = ({ icon, children, ...p }) => (
 );
 
 // ── Columna izquierda: equipo (quién está y quién conduce) + vueltas en vivo ──
-function TeamColumn({ team, laps, lapStartedAt, now }) {
+function TeamColumn({ team, laps, lapStartedAt, splits = [], now }) {
   const live = useLive();
+  const sec = sectorStats(laps, team.track);
+  // Parciales de la vuelta en curso: tiempo de cada tramo ya cerrado (de corte a corte).
+  const done = splits.map((t, i) => t - (splits[i - 1] ?? 0));
   const avg = lapAvg(laps);
   const last = laps.at(-1);
   const best = laps.reduce((b, l) => (!b || l.ms < b.ms ? l : b), null);
@@ -174,6 +222,17 @@ function TeamColumn({ team, laps, lapStartedAt, now }) {
           <div className="label flex items-center gap-1.5"><Icon name="timer" size={13} />Vuelta en curso</div>
           <div className="num text-[30px] font-bold leading-tight">{lapStartedAt ? fmtLap(Math.max(0, now - lapStartedAt)).slice(0, -2) : '—'}</div>
           {!team.track?.line && !team.track?.path && <div className="text-[12px] leading-snug text-muted">Define la meta o dibuja el trazado en el mapa para cronometrar.</div>}
+          {sec.n > 0 && lapStartedAt && (
+            <div className="num mt-1.5 grid grid-cols-[auto_1fr_auto] gap-x-2 text-[13px]">
+              {sec.per.map((s, i) => (
+                <Fragment key={i}>
+                  <span className="text-muted">T{i + 1}</span>
+                  <span className={i < done.length ? 'font-semibold' : 'text-muted'}>{i < done.length ? fmtSplit(done[i]) : i === done.length ? 'en curso' : '—'}</span>
+                  <span>{i < done.length && s.best != null ? <DeltaText ms={done[i] - s.best} /> : ''}</span>
+                </Fragment>
+              ))}
+            </div>
+          )}
         </div>
         <LapStat label="Última" value={fmtLap(last?.ms)} sub={last && avg != null && <DeltaText ms={last.ms - avg} />} />
         <LapStat label="Mejor" value={fmtLap(best?.ms)} sub={best?.driver} />
@@ -183,10 +242,15 @@ function TeamColumn({ team, laps, lapStartedAt, now }) {
       {laps.length > 0 && (
         <ol className="border-b border-line">
           {laps.slice(-8).reverse().map((l) => (
-            <li key={l.id} className={`num flex items-baseline gap-2 border-b border-line px-3 py-1.5 text-[13px] last:border-b-0 ${l.id === best?.id ? 'bg-ok-soft' : ''}`}>
+            <li key={l.id} className={`num flex flex-wrap items-baseline gap-x-2 border-b border-line px-3 py-1.5 text-[13px] last:border-b-0 ${l.id === best?.id ? 'bg-ok-soft' : ''}`}>
               <span className="w-6 text-muted">{laps.indexOf(l) + 1}</span>
               <span className="font-semibold">{fmtLap(l.ms)}</span>
               <span className="ml-auto"><DeltaText ms={l.ms - avg} /></span>
+              {sec.laps.includes(l) && (
+                <span className="basis-full pl-8 text-[11px] text-muted">
+                  {l.sectors.map((ms, i) => <span key={i} className={`mr-2 ${ms === sec.per[i].best ? 'font-bold text-ok' : ''}`}>{fmtSplit(ms)}</span>)}
+                </span>
+              )}
             </li>
           ))}
         </ol>
