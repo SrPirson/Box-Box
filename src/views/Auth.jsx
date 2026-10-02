@@ -3,16 +3,21 @@ import { useState } from 'react';
 import Icon from '../icons.jsx';
 import { api, setSession, logout, pendingInvite, clearInvite, useSession } from '../lib/session.js';
 
+// Logotipo con la versión de su tema: letras blancas en oscuro, casi negras en claro.
+export const Wordmark = ({ className }) => (
+  <>
+    <img src="/logo-light.png" alt="Box Box" className={`${className} w-auto dark:hidden`} />
+    <img src="/logo-dark.png" alt="Box Box" className={`${className} hidden w-auto dark:block`} />
+  </>
+);
+
 const input = 'h-11 w-full rounded-[4px] border border-line-strong bg-sunken px-3 text-[16px] text-fg placeholder:text-muted';
 
 export const Shell = ({ children, wide }) => (
   <div className="flex min-h-full flex-col items-center justify-center gap-6 bg-bg p-4">
-    <div className="flex items-center gap-3">
-      <img src="/icon.svg" alt="" className="h-10 w-10 rounded-md" />
-      <div className="leading-none">
-        <div className="text-2xl font-bold uppercase tracking-[0.14em]">Box Box</div>
-        <div className="text-[13px] font-semibold uppercase tracking-[0.3em] text-muted">Racing · Comms & Telemetry</div>
-      </div>
+    <div className="flex flex-col items-center gap-2">
+      <Wordmark className="h-14 sm:h-16" />
+      <div className="text-[13px] font-semibold uppercase tracking-[0.3em] text-muted">Racing · Comms & Telemetry</div>
     </div>
     <div className={`w-full ${wide ? 'max-w-3xl' : 'max-w-sm'}`}>{children}</div>
   </div>

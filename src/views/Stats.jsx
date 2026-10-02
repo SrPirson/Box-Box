@@ -73,7 +73,7 @@ export default function Stats() {
             <Card title="Tiempos por vuelta">
               <p className="flex items-start gap-3 text-[14px] leading-snug text-fg-2">
                 <Icon name="finish" size={20} className="mt-0.5 text-muted" />
-                <span>Sin vueltas en este periodo. Para cronometrarlas, define la línea de meta en el mapa de <b className="text-fg">BOX</b> («Definir meta»): cada cruce cierra una vuelta. La primera solo abre el cronómetro.</span>
+                <span>Sin vueltas en este periodo. Para cronometrarlas, define la línea de meta en el mapa de <b className="text-fg">BOX</b> («Meta»): cada cruce cierra una vuelta. La primera solo abre el cronómetro.</span>
               </p>
             </Card>
           ) : (

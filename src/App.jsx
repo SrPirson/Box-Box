@@ -7,7 +7,7 @@ import Stats from './views/Stats.jsx';
 import Admin from './views/Admin.jsx';
 import UpdateBanner from './views/Update.jsx';
 import Profile from './views/Profile.jsx';
-import { Login, ForcedPassword, TeamGate } from './views/Auth.jsx';
+import { Login, ForcedPassword, TeamGate, Wordmark } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
 import { refresh, useSession } from './lib/session.js';
@@ -90,8 +90,9 @@ function Header({ view, setView, muted, setMuted, noTeam }) {
   return (
     <header className="flex h-11 shrink-0 items-stretch gap-2 border-b border-line bg-panel px-2 sm:gap-4 sm:px-3">
       <div className="flex items-center gap-2 sm:pr-2">
-        <img src="/icon.svg" alt="" className="h-6 w-6 rounded-[3px]" />
-        <span className="hidden text-lg font-bold uppercase tracking-[0.12em] xl:inline">Box Box</span>
+        {/* Pantallas estrechas: solo el símbolo; anchas: el logotipo completo */}
+        <img src="/icon-192.png" alt="Box Box" className="h-7 w-7 xl:hidden" />
+        <span className="hidden xl:contents"><Wordmark className="h-6" /></span>
         {team && <span className="hidden max-w-40 truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-muted 2xl:inline">· {team.name}</span>}
       </div>
       <nav className="-mb-px flex min-w-0 items-stretch overflow-x-auto" aria-label="Vistas">
