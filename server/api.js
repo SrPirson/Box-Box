@@ -41,7 +41,7 @@ async function teamPayload(teamId) {
   ]);
   return {
     id: t.id, name: t.name, inviteCode: t.invite_code, ownerId: t.owner_id, dorsal: t.dorsal, phone: t.phone,
-    limits: { ...LIMITS, ...t.limits }, track: t.track, tracks, carIcon: t.car_icon, members,
+    limits: { ...LIMITS, ...t.limits }, track: t.track, tracks, carIcon: t.car_icon, carIconStyle: t.car_icon_style, members,
   };
 }
 const session = async (u, withToken) => ({
@@ -145,6 +145,10 @@ const routes = [
       const v = body.carIcon;
       if (v != null && !(typeof v === 'string' && v.length <= 80_000 && /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(v))) fail(400, 'La imagen no es válida o es demasiado grande.');
       set.car_icon = v ?? null;
+    }
+    if ('carIconStyle' in body) {
+      if (!['round', 'sprite'].includes(body.carIconStyle)) fail(400, 'Estilo de icono no válido.');
+      set.car_icon_style = body.carIconStyle;
     }
     if ('phone' in body) set.phone =str(body.phone, 'Teléfono', { min: 0, max: 30 });
     if ('limits' in body) {

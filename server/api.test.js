@@ -147,7 +147,10 @@ test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
 
   // Icono del coche: solo imágenes en base64; nada que pueda inyectar HTML en el marcador del mapa.
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-  assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: png } })).carIcon, png);
+  const withIcon = await call('/api/team', { token, method: 'PATCH', body: { carIcon: png, carIconStyle: 'sprite' } });
+  assert.equal(withIcon.carIcon, png);
+  assert.equal(withIcon.carIconStyle, 'sprite');
+  assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIconStyle: 'gigante' } })).status, 400);
   for (const bad of ['data:image/svg+xml;base64,PHN2Zz4=', 'data:image/png;base64,AAA" onerror="alert(1)', 'x'.repeat(10)]) {
     assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: bad } })).status, 400, bad);
   }

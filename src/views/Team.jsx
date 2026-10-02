@@ -5,6 +5,7 @@ import { api, inviteLink, setSession, setTeam, useSession } from '../lib/session
 import { useLive } from '../lib/store.js';
 import { LIMITS, limitErrors } from '../lib/limits.js';
 import { Page, Card, Field, Pill, NumInput, ConfirmButton, ErrorText, input, btn } from './ui.jsx';
+import CarIconEditor from './CarIconEditor.jsx';
 
 export default function Team() {
   const { user, team } = useSession();
@@ -73,30 +74,33 @@ function CarCard({ team, save }) {
   );
 }
 
-// Icono del coche en el mapa: la imagen se recorta al centro y se reduce a 96 px aquí, antes de subirla.
-const ICON_PX = 96;
+// Icono del coche en el mapa: se encuadra en el editor y se sube ya reducido a 96 px.
 function CarIconField({ team, save }) {
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null); // imagen elegida, pendiente de encuadrar
   const pick = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // permite volver a elegir el mismo archivo
     if (!file) return;
     setError('');
-    try {
-      const img = await createImageBitmap(file);
-      const side = Math.min(img.width, img.height);
-      const c = document.createElement('canvas');
-      c.width = c.height = ICON_PX;
-      c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, ICON_PX, ICON_PX);
-      save({ carIcon: c.toDataURL('image/webp', 0.85) }); // sin WebP (Safari antiguo) sale PNG, también válido
-    } catch { setError('No se pudo leer la imagen. Prueba con una foto JPG o PNG.'); }
+    try { setEditing(await createImageBitmap(file)); } catch { setError('No se pudo leer la imagen. Prueba con una foto JPG o PNG.'); }
   };
+  if (editing) return (
+    <CarIconEditor img={editing} onCancel={() => setEditing(null)}
+      onSave={async (carIcon, carIconStyle) => { if (await save({ carIcon, carIconStyle })) setEditing(null); }} />
+  );
+  const sprite = team.carIconStyle === 'sprite';
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <div className="car-dot has-img" data-state="ok">{team.carIcon ? <img src={team.carIcon} alt="" /> : <Icon name="car" size={22} />}<span>{team.dorsal}</span></div>
+      {team.carIcon && sprite
+        ? <div className="car-sprite" data-state="ok"><img src={team.carIcon} alt="" /><span>{team.dorsal}</span></div>
+        : <div className="car-dot has-img" data-state="ok">{team.carIcon ? <img src={team.carIcon} alt="" /> : <Icon name="car" size={22} />}<span>{team.dorsal}</span></div>}
       <div className="min-w-0 flex-1">
         <div className="text-[14px] font-semibold uppercase tracking-[0.04em]">Icono en el mapa</div>
-        <div className="text-[13px] text-muted">Una foto de tu coche (o lo que quieras) para seguirlo en el mapa de BOX. Se recorta en círculo.</div>
+        <div className="text-[13px] text-muted">
+          {team.carIcon ? (sprite ? 'Silueta: en el mapa gira según hacia dónde va el coche.' : 'Foto en círculo.')
+            : 'Una foto de tu coche, o un coche visto desde arriba sin fondo, para seguirlo en el mapa de BOX.'}
+        </div>
         {error && <div className="text-[13px] text-crit">{error}</div>}
       </div>
       <label className={`${btn.ghost} cursor-pointer`}>

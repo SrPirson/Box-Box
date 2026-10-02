@@ -100,7 +100,15 @@ button:disabled { cursor: not-allowed; }
 .car-dot.has-img[data-state='warn'] { border-color: var(--warn-solid); background: var(--panel); }
 .car-dot.has-img[data-state='crit'] { border-color: var(--crit-solid); background: var(--panel); }
 .car-dot.has-img img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.car-dot.has-img span {
+/* Silueta: sin fondo ni círculo; gira con el rumbo y el estado se ve como un halo */
+.car-sprite { position: relative; width: 52px; height: 52px; }
+.car-sprite img {
+  width: 100%; height: 100%; transition: transform 0.3s linear;
+  filter: drop-shadow(0 0 2px var(--ok-solid)) drop-shadow(0 2px 3px rgb(0 0 0 / 0.6));
+}
+.car-sprite[data-state='warn'] img { filter: drop-shadow(0 0 3px var(--warn-solid)) drop-shadow(0 0 3px var(--warn-solid)); }
+.car-sprite[data-state='crit'] img { filter: drop-shadow(0 0 3px var(--crit-solid)) drop-shadow(0 0 3px var(--crit-solid)); }
+.car-dot.has-img span, .car-sprite span {
   position: absolute; right: -10px; bottom: -6px; padding: 0 4px; border-radius: 4px;
   background: var(--panel); color: var(--text); font-size: 11px; line-height: 16px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
 }

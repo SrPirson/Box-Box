@@ -31,7 +31,7 @@ const NO_CUTS = []; // estable entre renders: los cortes solo se redibujan si ca
 const OPTIONS = [['auto', 'Auto'], ...Object.entries(BASEMAPS).map(([id, b]) => [id, b.label])];
 
 // track: pista activa { line?, path?, sectors?, id?, name? }; onTrack(nueva) la guarda. `toolbar`: selector de pistas.
-export default function TrackMap({ cars, trails, sel, states, focus, track, onTrack, toolbar, carIcon }) {
+export default function TrackMap({ cars, trails, sel, states, focus, track, onTrack, toolbar, carIcon, carIconStyle }) {
   const { line, path, sectors = NO_CUTS } = track ?? {};
   const theme = useTheme();
   const el = useRef(null);
@@ -141,18 +141,26 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
         if (!Object.keys(layers.current).length) map.current.setView(pos, 17);
         l = layers.current[p.car] = {
           trail: L.polyline([], { className: 'trail', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(map.current),
-          dot: L.marker(pos, { icon: carMarker(p.car, carIcon), zIndexOffset: 1000 }).addTo(map.current),
-          icon: carIcon,
+          dot: L.marker(pos, { icon: carMarker(p.car, carIcon, carIconStyle), zIndexOffset: 1000 }).addTo(map.current),
+          icon: carIcon + carIconStyle,
+          from: pos, heading: 0,
         };
       }
-      if (l.icon !== carIcon) { l.dot.setIcon(carMarker(p.car, carIcon)); l.icon = carIcon; } // el equipo cambió el icono
+      if (l.icon !== carIcon + carIconStyle) { l.dot.setIcon(carMarker(p.car, carIcon, carIconStyle)); l.icon = carIcon + carIconStyle; } // el equipo cambió el icono
       l.trail.setLatLngs(trails[p.car] ?? []);
       l.dot.setLatLng(pos);
+      // Rumbo acumulado sin saltos (179° → −179° gira 2°, no 358°) para que la transición CSS no dé la vuelta.
+      const h = bearing(l.from, pos);
+      if (h != null) { l.heading += ((h - l.heading + 540) % 360) - 180; l.from = pos; }
       const dot = l.dot.getElement()?.firstChild;
-      if (dot) { dot.dataset.state = states[p.car]; dot.dataset.sel = String(p.car === sel); }
+      if (dot) {
+        dot.dataset.state = states[p.car]; dot.dataset.sel = String(p.car === sel);
+        const img = dot.classList.contains('car-sprite') && dot.firstChild;
+        if (img) img.style.transform = `rotate(${l.heading}deg)`;
+      }
       if (follow && p.car === sel) map.current.panTo(pos, { animate: true, duration: 0.25 });
     }
-  }, [cars, sel, trails, states, follow, carIcon]);
+  }, [cars, sel, trails, states, follow, carIcon, carIconStyle]);
 
   useEffect(() => {
     const p = cars[sel];
@@ -257,11 +265,22 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
 // Marcador del coche: el dorsal en un círculo de color de estado, o el icono del equipo con el dorsal en una pastilla.
 // `img` viene validado por el servidor (data URL base64 de imagen), así que no puede romper el HTML.
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const carMarker = (car, img) => L.divIcon({
+const carMarker = (car, img, style) => L.divIcon({
   className: 'car-icon',
-  html: img ? `<div class="car-dot has-img"><img src="${img}" alt=""><span>${esc(car)}</span></div>` : `<div class="car-dot">${esc(car)}</div>`,
-  iconSize: img ? [44, 44] : [28, 28],
+  html: !img ? `<div class="car-dot">${esc(car)}</div>`
+    : style === 'sprite' ? `<div class="car-sprite"><img src="${img}" alt=""><span>${esc(car)}</span></div>`
+      : `<div class="car-dot has-img"><img src="${img}" alt=""><span>${esc(car)}</span></div>`,
+  iconSize: !img ? [28, 28] : style === 'sprite' ? [52, 52] : [44, 44],
 });
+
+// Rumbo (grados desde el norte, sentido horario) entre dos posiciones; null si apenas se ha movido
+// (parado, el ruido del GPS haría girar el coche sobre sí mismo).
+const MIN_MOVE_M = 3;
+function bearing(a, b) {
+  const dy = (b[0] - a[0]) * 110540;
+  const dx = (b[1] - a[1]) * 111320 * Math.cos((b[0] * Math.PI) / 180);
+  return Math.hypot(dx, dy) < MIN_MOVE_M ? null : (Math.atan2(dx, dy) * 180) / Math.PI;
+}
 
 const MapButton =({ active, label, icon, ...p }) => (
   <button {...p} aria-pressed={active} title={label}
