@@ -1,6 +1,8 @@
 // Copia única de todos los datos a otra base de datos Postgres (de Render a Neon). Se lanza al arrancar si
 // existe MIGRATE_TO: lee de la base actual (DATABASE_URL) y escribe en MIGRATE_TO. La base actual no se toca,
 // y si el destino ya tiene datos no se copia nada. Al acabar, se cambia DATABASE_URL al destino y se quita MIGRATE_TO.
+// Se usó una vez (Render → Neon, 02/10/2026), antes de existir los eventos: para reutilizarla, añadir la tabla
+// events y las columnas teams.event_id y laps.event_id.
 import { q, SCHEMA } from './db.js';
 
 // En orden de dependencias (los pilotos apuntan a equipos; vueltas y muestras, a ambos).

@@ -8,13 +8,18 @@ let io;
 const states = new Map(); // teamId → Promise<estado>
 const room = (teamId) => `team:${teamId}`;
 
+// En un evento, la pista que se cronometra es la del organizador, igual para todos los equipos.
 async function loadTeam(id) {
-  const t = await one('select id, dorsal, limits, track from teams where id = $1', [id]);
+  const t = await one(`select t.id, t.name, t.dorsal, t.limits, t.event_id, case when t.event_id is null then t.track else e.track end as track
+    from teams t left join events e on e.id = t.event_id where t.id = $1`, [id]);
   return t && { ...t, limits: { ...LIMITS, ...t.limits }, route: t.track?.path ? createRoute(t.track.path) : null };
 }
+// Sala del organizador: un resumen de cada equipo del evento (posición, piloto, vuelta), nunca sus mensajes.
+const eventRoom = (eventId) => `event:${eventId}`;
+const EVENT_EVERY_MS = 1000;
 function state(teamId) {
   if (!states.has(teamId)) {
-    states.set(teamId, loadTeam(teamId).then((team) => ({ team, driver: null, pit: null, lap: createLapTimer(), lastStored: 0, online: new Map() })));
+    states.set(teamId, loadTeam(teamId).then((team) => ({ team, driver: null, pit: null, lap: createLapTimer(), lastStored: 0, lastEvent: 0, online: new Map() })));
   }
   return states.get(teamId);
 }
@@ -69,15 +74,24 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 export function attachLive(server, userFromToken) {
   io = server;
+  // Entran los miembros de un equipo y, aunque no tengan equipo, los organizadores (para seguir sus eventos).
   io.use(async (socket, next) => {
     const u = await userFromToken(socket.handshake.auth?.token).catch(() => null);
-    if (!u?.team_id) return next(new Error('unauthorized'));
+    if (!u || (!u.team_id && !['organizer', 'admin'].includes(u.role))) return next(new Error('unauthorized'));
     socket.data.user = u;
     next();
   });
 
   io.on('connection', async (socket) => {
     const u = socket.data.user;
+    // El organizador sigue un evento suyo (el admin, cualquiera).
+    socket.on('event:watch', async (eventId) => {
+      const e = await one('select id, organizer_id from events where id = $1', [Number(eventId)]).catch(() => null);
+      if (e && (u.role === 'admin' || (u.role === 'organizer' && e.organizer_id === u.id))) socket.join(eventRoom(e.id));
+    });
+    socket.on('event:unwatch', (eventId) => socket.leave(eventRoom(Number(eventId))));
+    if (!u.team_id) return;
+
     const st = await state(u.team_id);
     if (!st.team) return socket.disconnect(true);
     const r = room(u.team_id);
@@ -117,8 +131,10 @@ export function attachLive(server, userFromToken) {
         const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
         if (lap) {
           // JSON.stringify: pg mandaría un array JS como array de Postgres, no como jsonb.
-          q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12)',
-            [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors), st.team.track?.id ?? null])
+          q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id, event_id) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+            [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors),
+              st.team.event_id ? null : st.team.track?.id ?? null, st.team.event_id])
+            .then(() => st.team.event_id && io.to(eventRoom(st.team.event_id)).emit('event:lap', { teamId: st.team.id, team: st.team.name, ms: lap.ms, driver: u.name }))
             .catch((e) => console.error('lap', e.message));
           io.to(r).emit('lap', { ...lap, driver: u.name, driverId: u.id });
         }
@@ -132,6 +148,15 @@ export function attachLive(server, userFromToken) {
         out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: u.name, lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
       }
       batch ? socket.to(r).emit('telemetry:batch', { packets: out }) : socket.to(r).emit('telemetry', out[0]);
+      // Resumen para el organizador del evento, como mucho una vez por segundo.
+      const last = out.at(-1);
+      if (st.team.event_id && now - st.lastEvent >= EVENT_EVERY_MS) {
+        st.lastEvent = now;
+        io.to(eventRoom(st.team.event_id)).emit('event:car', {
+          teamId: st.team.id, team: st.team.name, car: st.team.dorsal, driver: u.name, ts: last.ts,
+          gps: last.gps ?? null, compass: last.compass ?? null, lapStartedAt: last.lapStartedAt, pit: st.pit?.arrived ? st.pit.reason : null,
+        });
+      }
     };
     socket.on('telemetry', (p) => telemetry([p], false));
     socket.on('telemetry:batch', (b) => telemetry(b?.packets, true));

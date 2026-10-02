@@ -160,6 +160,58 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   for (const s of [sa, sb, so]) s.close();
 });
 
+test('eventos: organizador, inscripción de equipos, pista común, seguimiento en vivo y clasificación', async () => {
+  const admin = await call('/api/login', { method: 'POST', body: { email: 'jefe@cencerro.es', password: 'adminadmin' } });
+  const olga = await call('/api/register', { method: 'POST', body: { name: 'Olga', email: 'olga@x.es', password: 'pistapista' } });
+  // Un piloto no puede crear eventos; el admin la hace organizadora.
+  assert.equal((await call('/api/events', { token: olga.token, method: 'POST', body: { name: 'X' } })).status, 403);
+  await call(`/api/admin/users/${olga.user.id}`, { token: admin.token, method: 'PATCH', body: { role: 'organizer' } });
+
+  const ev = await call('/api/events', { token: olga.token, method: 'POST', body: { name: '24h Jarama', startsOn: '2026-11-07', place: 'Jarama' } });
+  assert.equal(ev.startsOn, '2026-11-07');
+  const line = [[40, -3.0001], [40, -2.9999]];
+  await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { track: { line } } });
+
+  // Un piloto inscribe su equipo con el código del evento: hereda la pista y no puede cambiarla.
+  const pepe = await call('/api/register', { method: 'POST', body: { name: 'Pepe', email: 'pepe@x.es', password: 'pistapista' } });
+  const look = await call(`/api/code/${ev.inviteCode.toLowerCase()}`, { token: pepe.token });
+  assert.deepEqual([look.kind, look.event.name], ['event', '24h Jarama']);
+  const reg = await call('/api/teams', { token: pepe.token, method: 'POST', body: { name: 'Los Rápidos', eventCode: ev.inviteCode } });
+  assert.equal(reg.team.event.name, '24h Jarama');
+  assert.deepEqual(reg.team.track.line, line);
+  assert.equal((await call('/api/team', { token: pepe.token, method: 'PATCH', body: { track: { line: [[1, 1], [2, 2]] } } })).status, 403);
+
+  // Otro piloto se une al equipo con el código del equipo.
+  const quique = await call('/api/register', { method: 'POST', body: { name: 'Quique', email: 'quique@x.es', password: 'pistapista' } });
+  assert.equal((await call(`/api/code/${reg.team.inviteCode}`, { token: quique.token })).kind, 'team');
+  await call('/api/teams/join', { token: quique.token, method: 'POST', body: { code: reg.team.inviteCode } });
+  const detail = await call(`/api/events/${ev.id}`, { token: olga.token });
+  assert.deepEqual(detail.teams[0].members.map((m) => m.name), ['Pepe', 'Quique']);
+  assert.equal((await call(`/api/events/${ev.id}`, { token: pepe.token })).status, 403);
+
+  // En vivo: Olga (sin equipo) sigue el evento y ve el coche y las vueltas; luego la clasificación.
+  const [so, sp] = await Promise.all([connect(olga.token), connect(pepe.token)]);
+  so.emit('event:watch', ev.id);
+  await new Promise((r) => setTimeout(r, 200));
+  const car = next(so, 'event:car');
+  const lapSeen = next(so, 'event:lap');
+  sp.emit('drive');
+  const t0 = Date.now() - 100_000;
+  const packets = Array.from({ length: 361 }, (_, i) => ({ ts: t0 + i * 250, obd: {}, gps: { lat: 40 - 0.001 + 0.002 * (((i * 250) % 30_000) / 30_000), lng: -3, speed: 120 } }));
+  sp.emit('telemetry:batch', { packets });
+  assert.deepEqual([(await car).team, (await car).driver], ['Los Rápidos', 'Pepe']);
+  assert.equal((await lapSeen).team, 'Los Rápidos');
+  await new Promise((r) => setTimeout(r, 300));
+  const standing = (await call(`/api/events/${ev.id}/standings`, { token: olga.token }))[0]; // call convierte la lista en objeto
+  assert.equal(standing.laps, 2);
+  assert.ok(Math.abs(standing.best - 30_000) < 300, `${standing.best} ms`);
+  assert.equal(standing.best_driver, 'Pepe');
+  // El perfil de Pepe sabe en qué evento dio cada vuelta.
+  assert.equal((await call('/api/me/stats', { token: pepe.token })).laps[0].event, '24h Jarama');
+
+  for (const s of [so, sp]) s.close();
+});
+
 test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
   const eva = await call('/api/register', { method: 'POST', body: { name: 'Eva', email: 'eva@x.es', password: 'pistapista' } });
   const { token } = eva;

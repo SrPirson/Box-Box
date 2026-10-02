@@ -83,5 +83,23 @@ export function SCHEMA() {
   alter table samples drop constraint if exists samples_team_id_fkey;
   alter table samples add constraint samples_team_id_fkey foreign key (team_id) references teams(id) on delete set null not valid;
   create index if not exists laps_driver_time on laps (driver_id, started_at);
-  create index if not exists samples_driver_time on samples (driver_id, ts);`;
+  create index if not exists samples_driver_time on samples (driver_id, ts);
+  -- Eventos: los crea un organizador (rol 'organizer') con su pista; los pilotos se inscriben creando un equipo
+  -- en el evento o uniéndose a uno. Un equipo sin evento es un equipo de entrenamiento, como antes.
+  create table if not exists events (
+    id serial primary key,
+    name text not null,
+    starts_on date,
+    place text not null default '',
+    organizer_id int references users(id) on delete set null,
+    invite_code text unique not null,
+    track jsonb,
+    closed boolean not null default false,
+    created_at timestamptz not null default now()
+  );
+  alter table teams add column if not exists event_id int references events(id) on delete set null;
+  create index if not exists teams_event on teams (event_id);
+  -- Evento de cada vuelta: el historial por evento se conserva aunque el equipo salga de él o se elimine.
+  alter table laps add column if not exists event_id int;
+  create index if not exists laps_event on laps (event_id, started_at);`;
 }
