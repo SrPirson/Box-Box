@@ -7,6 +7,7 @@ import { useSession } from '../lib/session.js';
 import { useGateway, start, stop, lastGps } from '../lib/gateway.js';
 import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
+import { PHONE_HOT } from '../lib/limits.js';
 
 // Cada acción tiene un color fijo para memoria muscular. Solo AVERÍA va rellena: es la única que llama.
 const ACTIONS = [
@@ -52,6 +53,7 @@ export default function Pilot({ onNav }) {
 
   const o = gw.data?.obd ?? {};
   const bat = gw.data?.phoneBattery;
+  const temp = gw.data?.phoneTemp;
   return (
     <div className="pilot flex h-full flex-col bg-bg text-fg">
       {/* Estado: solo lo que el piloto puede usar de un vistazo */}
@@ -68,6 +70,11 @@ export default function Pilot({ onNav }) {
         <span className={`flex items-center gap-1 ${bat != null && bat < team.limits.phoneWarn ?'text-crit' : ''}`} title="Batería del móvil">
           <Icon name="battery" size={20} />{bat ?? '—'}<span className="text-sm text-muted">%</span>
         </span>
+        {temp != null && (
+          <span className={temp >= PHONE_HOT ? 'text-crit' : ''} title="Temperatura del móvil">
+            {temp}°<span className="text-sm text-muted"> móvil</span>
+          </span>
+        )}
         <span className="hidden min-[430px]:inline">{o.rpm ?? '—'}<span className="text-sm text-muted"> rpm</span></span>
         <span className="ml-auto text-muted">#{team.dorsal}</span>
         <button onClick={toggleTheme} className="grid h-10 w-10 place-items-center" aria-label="Cambiar tema">

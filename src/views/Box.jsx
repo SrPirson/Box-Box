@@ -4,7 +4,7 @@ import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { useSocket, useLive } from '../lib/store.js';
 import { api, setTeam, useSession } from '../lib/session.js';
-import { carAlarms, worst, limitsOf, lateMs, fmt, fmtAge } from '../lib/limits.js';
+import { carAlarms, worst, limitsOf, lateMs, fmt, fmtAge, PHONE_HOT } from '../lib/limits.js';
 import { useStats, lapAvg } from './Stats.jsx';
 import { fmtLap, fmtDelta } from './ui.jsx';
 
@@ -235,6 +235,7 @@ function CarHeader({ p, state, alarms, now }) {
       </span>
       <span className="ml-auto flex flex-wrap gap-x-5 gap-y-1">
         <Stat icon="battery" label="Móvil" value={p.phoneBattery == null ? '—' : `${p.phoneBattery} %`} warn={p.phoneBattery != null && p.phoneBattery < limitsOf(p).phoneWarn} />
+        {p.phoneTemp != null && <Stat icon="thermo" label="Temp. móvil" value={`${p.phoneTemp} °C`} warn={p.phoneTemp >= PHONE_HOT} />}
         <Stat icon="signal" label="Red" value={(p.net?.type ?? '—').toUpperCase()} />
         <Stat icon="pin" label="GPS" value={p.gps?.acc == null ? '—' : `± ${p.gps.acc} m`} />
         <Stat icon="crosshair" label="Dato" value={`hace ${fmtAge(now - p.ts)}`} />

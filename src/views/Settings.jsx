@@ -5,6 +5,7 @@ import { useConfig, setConfig, speak } from '../lib/store.js';
 import { sim, useGateway, start, stop } from '../lib/gateway.js';
 import { setMode, useThemeMode } from '../lib/theme.js';
 import { api, logout, setSession, useSession } from '../lib/session.js';
+import { Capacitor } from '@capacitor/core';
 import { Page, Card, Field, Segmented, Switch, Pill, ErrorText, input, btn } from './ui.jsx';
 
 const POLL_STEPS = [200, 250, 300, 400, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000];
@@ -63,6 +64,7 @@ export default function Settings() {
 
         <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
           <TelemetryCard />
+          {!Capacitor.isNativePlatform() && <AppCard />}
           <AccountCard />
         </div>
       </div>
@@ -123,6 +125,18 @@ function TelemetryCard() {
           )}
         </div>
       </details>
+    </Card>
+  );
+}
+
+// La compila y publica .github/workflows/android.yml en la release "apk" con cada cambio de la parte Android.
+const APK_URL = 'https://github.com/SrPirson/Box-Box/releases/download/apk/cencerro.apk';
+
+function AppCard() {
+  return (
+    <Card title="App Android">
+      <p className="text-[13px] text-muted">El móvil del coche necesita la app para mandar la temperatura del teléfono. Al instalarla, Android pedirá permitir apps de origen desconocido.</p>
+      <a href={APK_URL} className={btn.primary}><Icon name="download" size={16} />Descargar APK</a>
     </Card>
   );
 }

@@ -9,7 +9,9 @@ export const LIMITS = {
   phoneWarn: 20, phoneCrit: 10,         // % batería del móvil (<)
   offWarn: 25, offCrit: 50,             // m fuera del trazado dibujado (>)
 };
-export const limitsOf = (p) => ({ ...LIMITS, ...p?.limits });
+// Batería del móvil a 45 °C o más: Android empieza a recortar rendimiento y carga, y cerca de 50 °C se apaga.
+export const PHONE_HOT = 45;
+export const limitsOf =(p) => ({ ...LIMITS, ...p?.limits });
 // Retraso del paquete respecto a cuando tocaba el siguiente: con intervalos largos (pruebas) no es "sin señal".
 export const lateMs = (p, now) => now - p.ts - (p.pollMs ?? 0);
 

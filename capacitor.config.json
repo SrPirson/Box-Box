@@ -1,0 +1,9 @@
+{
+  "appId": "com.cencerro.racing",
+  "appName": "Cencerro",
+  "webDir": "dist",
+  "server": {
+    "url": "https://cencerro-racing.onrender.com",
+    "cleartext": false
+  }
+}

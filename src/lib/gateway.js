@@ -4,6 +4,11 @@ import { useSyncExternalStore } from 'react';
 import { createElm, connectBle } from './elm327.js';
 import { getConfig, getSocket } from './store.js';
 import { getSession } from './session.js';
+import { registerPlugin } from '@capacitor/core';
+
+// Temperatura del móvil (de la batería): solo existe en la app Android; en el navegador queda en null.
+const Thermal = registerPlugin('Thermal');
+const phoneTemp = () => Thermal.read().then((r) => Math.round(r.celsius), () => null);
 
 const QUEUE_KEY = 'cencerro.queue';
 const QUEUE_MAX = 5000; // ponytail: ~20 min a 4 Hz en memoria; IndexedDB si hacen falta tandas más largas sin cobertura
@@ -128,6 +133,7 @@ export async function start() {
       obd,
       gps: gps ?? (cfg.source === 'sim' ? simGps() : null),
       phoneBattery: battery ? Math.round(battery.level * 100) : null,
+      phoneTemp: await phoneTemp(),
       net: { online: navigator.onLine, type: navigator.connection?.effectiveType ?? null, socket: s.connected },
     };
     if (s.connected && queue.length) flush(s); // señal recuperada: ráfaga con lo pendiente

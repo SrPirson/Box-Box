@@ -1,0 +1,37 @@
+# Compila la app Android y la publica en la release "apk" (el botón de Ajustes descarga de ahí).
+# La app carga la web desplegada en Render, así que solo hay que recompilar cuando cambia la parte nativa.
+name: APK Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [android/**, capacitor.config.json, package.json, .github/workflows/android.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci && npm run build && npx cap sync android
+      # Clave de firma fija (secreto ANDROID_KEYSTORE, keystore en base64 con alias androiddebugkey / clave android).
+      # Sin ella se firma con una clave nueva en cada compilación y Android obliga a desinstalar para actualizar.
+      - name: Clave de firma
+        env: { KEYSTORE: "${{ secrets.ANDROID_KEYSTORE }}" }
+        run: |
+          if [ -n "$KEYSTORE" ]; then mkdir -p ~/.android && echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore; fi
+      - run: chmod +x gradlew && ./gradlew assembleDebug
+        working-directory: android
+      - name: Publicar en la release "apk"
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk cencerro.apk
+          gh release view apk >/dev/null 2>&1 || gh release create apk --title "App Android" --notes "APK de Cencerro para el móvil del coche. Se actualiza sola con cada cambio de la parte Android."
+          gh release upload apk cencerro.apk --clobber
