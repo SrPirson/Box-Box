@@ -95,7 +95,10 @@ export async function start() {
     (p) => {
       // (0, 0) es el valor de "sin fix" de algunos navegadores/emuladores: no es una posición real.
       if (!p.coords.latitude && !p.coords.longitude) return;
-      gps = { lat: p.coords.latitude, lng: p.coords.longitude, speed: p.coords.speed == null ? null : Math.round(p.coords.speed * 3.6), acc: Math.round(p.coords.accuracy) };
+      // heading: rumbo del GPS (0-360°, desde el norte); null o NaN si el móvil está parado.
+      const h = p.coords.heading;
+      gps = { lat: p.coords.latitude, lng: p.coords.longitude, speed: p.coords.speed == null ? null : Math.round(p.coords.speed * 3.6), acc: Math.round(p.coords.accuracy),
+        heading: Number.isFinite(h) ? Math.round(h) : null };
     },
     () => {},
     { enableHighAccuracy: true, maximumAge: 0 },

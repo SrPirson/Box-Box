@@ -149,9 +149,14 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
       if (l.icon !== carIcon + carIconStyle) { l.dot.setIcon(carMarker(p.car, carIcon, carIconStyle)); l.icon = carIcon + carIconStyle; } // el equipo cambió el icono
       l.trail.setLatLngs(trails[p.car] ?? []);
       l.dot.setLatLng(pos);
-      // Rumbo acumulado sin saltos (179° → −179° gira 2°, no 358°) para que la transición CSS no dé la vuelta.
-      const h = bearing(l.from, pos);
-      if (h != null) { l.heading += ((h - l.heading + 540) % 360) - 180; l.from = pos; }
+      // Rumbo: el del GPS del móvil si va en marcha (como el puntero de Google Maps); si no lo da, el calculado
+      // entre posiciones. Parado se queda como estaba. Acumulado sin saltos (179° → −179° gira 2°, no 358°)
+      // para que la transición CSS no dé la vuelta entera.
+      const moved = bearing(l.from, pos);
+      if (moved != null) l.from = pos;
+      const gpsHeading = Number(p.gps.heading);
+      const h = p.gps.heading != null && Number.isFinite(gpsHeading) && (p.gps.speed ?? 0) >= MIN_SPEED_KMH ? gpsHeading : moved;
+      if (h != null) l.heading += ((h - l.heading + 540) % 360) - 180;
       const dot = l.dot.getElement()?.firstChild;
       if (dot) {
         dot.dataset.state = states[p.car]; dot.dataset.sel = String(p.car === sel);
@@ -276,6 +281,7 @@ const carMarker = (car, img, style) => L.divIcon({
 // Rumbo (grados desde el norte, sentido horario) entre dos posiciones; null si apenas se ha movido
 // (parado, el ruido del GPS haría girar el coche sobre sí mismo).
 const MIN_MOVE_M = 3;
+const MIN_SPEED_KMH = 5; // por debajo, el rumbo del GPS es ruido
 function bearing(a, b) {
   const dy = (b[0] - a[0]) * 110540;
   const dx = (b[1] - a[1]) * 111320 * Math.cos((b[0] * Math.PI) / 180);
