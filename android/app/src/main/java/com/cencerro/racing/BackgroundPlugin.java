@@ -76,6 +76,23 @@ public class BackgroundPlugin extends Plugin {
         call.resolve();
     }
 
+    // Permiso de ubicación concedido ahora mismo ("Solo esta vez" caduca; denegado dos veces, Android ya no pregunta).
+    @PluginMethod
+    public void permissions(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("location", ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED);
+        call.resolve(ret);
+    }
+
+    // Ajustes de la app (Permisos → Ubicación): lo único que funciona cuando Android ya no deja volver a preguntar.
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            android.net.Uri.fromParts("package", getContext().getPackageName(), null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
+        call.resolve();
+    }
+
     @PluginMethod
     public void stop(PluginCall call) {
         halt();

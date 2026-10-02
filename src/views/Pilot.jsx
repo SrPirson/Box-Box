@@ -1,10 +1,10 @@
 // Vista PILOTO (móvil en el salpicadero): minimalista, máximo contraste, objetivos táctiles para guantes.
 // Único ajuste visible: tema claro (sol) / oscuro (noche).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { useSocket, useLive, speak, hush } from '../lib/store.js';
 import { useSession } from '../lib/session.js';
-import { useGateway, usePhone, start, stop, lastGps } from '../lib/gateway.js';
+import { useGateway, usePhone, start, stop, lastGps, hasLocation, openAppSettings } from '../lib/gateway.js';
 import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
@@ -25,6 +25,14 @@ export default function Pilot({ onNav }) {
   const isDriver = driver?.id === user.id;
   const [inbox, setInbox] = useState([]); // mensajes pendientes de responder (el primero se muestra)
   const [sent, setSent] = useState(null);
+  // Permiso de ubicación (app Android): se mira al entrar y cada vez que se vuelve a la app, p. ej. desde Ajustes.
+  const [noLocation, setNoLocation] = useState(false);
+  useEffect(() => {
+    const check = () => hasLocation().then((ok) => setNoLocation(ok === false));
+    check();
+    addEventListener('visibilitychange', check);
+    return () => removeEventListener('visibilitychange', check);
+  }, []);
 
   const push = (m) => {
     setInbox((q) => [...q, m]);
@@ -103,6 +111,15 @@ export default function Pilot({ onNav }) {
           <span className="flex flex-col items-center text-accent"><Icon name="phone" size={22} /><span className="text-[11px] tracking-[0.08em]">MÓVIL</span></span>
         </div>
       </div>
+      {noLocation && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 bg-crit-solid px-3 py-2 text-on-crit">
+          <Icon name="pin" size={24} stroke={2.5} />
+          <span className="min-w-0 flex-1 text-lg font-bold leading-tight">Sin permiso de ubicación: BOX no verá el coche en el mapa.
+            <span className="block text-[14px] font-semibold">En Ajustes → Permisos → Ubicación, elige «Permitir mientras se usa la app».</span>
+          </span>
+          <button onClick={openAppSettings} className="h-12 rounded-md bg-on-crit px-4 text-lg font-bold uppercase text-crit-solid">Dar permiso</button>
+        </div>
+      )}
       {gw.error && <div role="alert" className="bg-crit-solid px-3 py-2 text-lg font-bold text-on-crit">{gw.error}</div>}
       {gw.notice && <div role="status" className="bg-info-soft px-3 py-2 text-lg font-bold text-info">{gw.notice}</div>}
       {gw.obd === 'on' && gw.obdLink === 'lost' && (

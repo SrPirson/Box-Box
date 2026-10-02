@@ -101,6 +101,10 @@ async function startBackground() {
   ]);
   await Background.start();
 }
+// Permiso de ubicación en la app Android: null fuera de ella (el navegador pregunta por su cuenta).
+export const hasLocation = () => (native ? Background.permissions().then((p) => p.location, () => null) : Promise.resolve(null));
+export const openAppSettings = () => Background.openSettings();
+
 function stopBackground() {
   bgSubs.forEach((s) => s.remove());
   bgSubs = [];
