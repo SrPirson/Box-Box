@@ -41,7 +41,7 @@ async function teamPayload(teamId) {
   ]);
   return {
     id: t.id, name: t.name, inviteCode: t.invite_code, ownerId: t.owner_id, dorsal: t.dorsal, phone: t.phone,
-    limits: { ...LIMITS, ...t.limits }, track: t.track, tracks, members,
+    limits: { ...LIMITS, ...t.limits }, track: t.track, tracks, carIcon: t.car_icon, members,
   };
 }
 const session = async (u, withToken) => ({
@@ -140,7 +140,13 @@ const routes = [
     const set = {};
     if ('name' in body) { if (!isOwner(user, team)) fail(403, 'Solo el capitán puede renombrar el equipo.'); set.name = str(body.name, 'Nombre del equipo', { max: 60 }); }
     if ('dorsal' in body) set.dorsal = str(body.dorsal, 'Dorsal', { max: 6 });
-    if ('phone' in body) set.phone = str(body.phone, 'Teléfono', { min: 0, max: 30 });
+    if ('carIcon' in body) {
+      // Solo una imagen en base64 (el cliente la reduce a 96 px): nada que pueda escapar del src del marcador.
+      const v = body.carIcon;
+      if (v != null && !(typeof v === 'string' && v.length <= 80_000 && /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(v))) fail(400, 'La imagen no es válida o es demasiado grande.');
+      set.car_icon = v ?? null;
+    }
+    if ('phone' in body) set.phone =str(body.phone, 'Teléfono', { min: 0, max: 30 });
     if ('limits' in body) {
       const l = { ...LIMITS };
       for (const k of Object.keys(LIMITS)) if (isNum(body.limits?.[k])) l[k] = body.limits[k];

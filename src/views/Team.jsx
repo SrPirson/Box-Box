@@ -53,9 +53,12 @@ function CarCard({ team, save }) {
           <SavedInput className="num" type="tel" placeholder="+34 600 000 000" value={team.phone} onSave={(phone) => save({ phone })} />
         </Field>
       </div>
+      <CarIconField team={team} save={save} />
+      {team.track?.name && <p className="flex items-center gap-2 text-[14px]"><Icon name="flag" size={16} className="text-muted" />Pista activa: <b>{team.track.name}</b></p>}
       {[
-        ['line', 'finish', 'Línea de meta', 'Definida: cada cruce cierra una vuelta.', team.track?.path ? 'Sin definir: hace de meta el primer punto del trazado.' : 'Sin definir. Dibújala en el mapa de BOX con «Definir meta».'],
-        ['path', 'route', 'Trazado del circuito', 'Dibujado: BOX avisa si el coche se sale y solo cuenta vueltas completas.', 'Sin dibujar. Dibújalo en el mapa de BOX con «Dibujar trazado».'],
+        ['line', 'finish', 'Línea de meta', 'Definida: cada cruce cierra una vuelta.', team.track?.path ? 'Sin definir: hace de meta el primer punto del trazado.' : 'Sin definir. Dibújala en el mapa de BOX con «Meta».'],
+        ['path', 'route', 'Trazado del circuito', 'Dibujado: BOX avisa si el coche se sale y solo cuenta vueltas completas.', 'Sin dibujar. Dibújalo en el mapa de BOX con «Trazado».'],
+        ['sectors', 'timer', 'Tramos', `${(team.track?.sectors?.length ?? 0) + 1} tramos: BOX y Estadísticas muestran el parcial de cada uno.`, 'Sin tramos. Márcalos en el mapa de BOX con «Tramos».'],
       ].map(([key, icon, name, yes, no]) => (
         <div key={key} className="flex flex-wrap items-center gap-3 rounded-[4px] bg-sunken px-3 py-2.5">
           <Icon name={icon} size={18} className="text-muted" />
@@ -67,6 +70,41 @@ function CarCard({ team, save }) {
         </div>
       ))}
     </Card>
+  );
+}
+
+// Icono del coche en el mapa: la imagen se recorta al centro y se reduce a 96 px aquí, antes de subirla.
+const ICON_PX = 96;
+function CarIconField({ team, save }) {
+  const [error, setError] = useState('');
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo
+    if (!file) return;
+    setError('');
+    try {
+      const img = await createImageBitmap(file);
+      const side = Math.min(img.width, img.height);
+      const c = document.createElement('canvas');
+      c.width = c.height = ICON_PX;
+      c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, ICON_PX, ICON_PX);
+      save({ carIcon: c.toDataURL('image/webp', 0.85) }); // sin WebP (Safari antiguo) sale PNG, también válido
+    } catch { setError('No se pudo leer la imagen. Prueba con una foto JPG o PNG.'); }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="car-dot has-img" data-state="ok">{team.carIcon ? <img src={team.carIcon} alt="" /> : <Icon name="car" size={22} />}<span>{team.dorsal}</span></div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-semibold uppercase tracking-[0.04em]">Icono en el mapa</div>
+        <div className="text-[13px] text-muted">Una foto de tu coche (o lo que quieras) para seguirlo en el mapa de BOX. Se recorta en círculo.</div>
+        {error && <div className="text-[13px] text-crit">{error}</div>}
+      </div>
+      <label className={`${btn.ghost} cursor-pointer`}>
+        <Icon name="download" size={15} className="rotate-180" />{team.carIcon ? 'Cambiar' : 'Subir imagen'}
+        <input type="file" accept="image/*" onChange={pick} className="sr-only" />
+      </label>
+      {team.carIcon && <ConfirmButton label="Quitar" confirm="Sí, quitar" onConfirm={() => save({ carIcon: null })} />}
+    </div>
   );
 }
 

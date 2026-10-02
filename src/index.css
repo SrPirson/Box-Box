@@ -95,3 +95,12 @@ button:disabled { cursor: not-allowed; }
 .car-dot[data-state='warn'] { background: var(--warn-solid); color: var(--on-warn); }
 .car-dot[data-state='crit'] { background: var(--crit-solid); color: var(--on-crit); }
 .car-dot[data-sel='true'] { outline: 3px solid var(--accent); outline-offset: 1px; }
+/* Con icono propio: la imagen en círculo, el estado en el aro y el dorsal en una pastilla */
+.car-dot.has-img { position: relative; width: 44px; height: 44px; background: var(--panel); color: var(--text); border: 3px solid var(--ok-solid); }
+.car-dot.has-img[data-state='warn'] { border-color: var(--warn-solid); background: var(--panel); }
+.car-dot.has-img[data-state='crit'] { border-color: var(--crit-solid); background: var(--panel); }
+.car-dot.has-img img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.car-dot.has-img span {
+  position: absolute; right: -10px; bottom: -6px; padding: 0 4px; border-radius: 4px;
+  background: var(--panel); color: var(--text); font-size: 11px; line-height: 16px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+}

@@ -105,7 +105,7 @@ export default function Box({ muted }) {
           <div className="min-h-[320px] flex-1 bg-panel">
             <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus} track={team.track}
               onTrack={(track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
-              toolbar={<TrackPicker team={team} />} />
+              toolbar={<TrackPicker team={team} />} carIcon={team.carIcon} />
           </div>
         </section>
 

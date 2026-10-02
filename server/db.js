@@ -61,6 +61,8 @@ function SCHEMA() {
   -- Parciales por tramo (ms) y pista en la que se hizo la vuelta (null: pista sin guardar).
   alter table laps add column if not exists sectors jsonb;
   alter table laps add column if not exists track_id int;
+  -- Icono del coche en el mapa: imagen pequeña (data URL) que sube el equipo.
+  alter table teams add column if not exists car_icon text;
   -- Telemetría muestreada a 1 Hz para estadísticas (la de 4 Hz solo va en directo).
   create table if not exists samples (
     team_id int not null references teams(id) on delete cascade,

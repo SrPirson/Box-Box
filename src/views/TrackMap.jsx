@@ -31,7 +31,7 @@ const NO_CUTS = []; // estable entre renders: los cortes solo se redibujan si ca
 const OPTIONS = [['auto', 'Auto'], ...Object.entries(BASEMAPS).map(([id, b]) => [id, b.label])];
 
 // track: pista activa { line?, path?, sectors?, id?, name? }; onTrack(nueva) la guarda. `toolbar`: selector de pistas.
-export default function TrackMap({ cars, trails, sel, states, focus, track, onTrack, toolbar }) {
+export default function TrackMap({ cars, trails, sel, states, focus, track, onTrack, toolbar, carIcon }) {
   const { line, path, sectors = NO_CUTS } = track ?? {};
   const theme = useTheme();
   const el = useRef(null);
@@ -141,16 +141,18 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
         if (!Object.keys(layers.current).length) map.current.setView(pos, 17);
         l = layers.current[p.car] = {
           trail: L.polyline([], { className: 'trail', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(map.current),
-          dot: L.marker(pos, { icon: L.divIcon({ className: 'car-icon', html: `<div class="car-dot">${p.car}</div>`, iconSize: [28, 28] }), zIndexOffset: 1000 }).addTo(map.current),
+          dot: L.marker(pos, { icon: carMarker(p.car, carIcon), zIndexOffset: 1000 }).addTo(map.current),
+          icon: carIcon,
         };
       }
+      if (l.icon !== carIcon) { l.dot.setIcon(carMarker(p.car, carIcon)); l.icon = carIcon; } // el equipo cambió el icono
       l.trail.setLatLngs(trails[p.car] ?? []);
       l.dot.setLatLng(pos);
       const dot = l.dot.getElement()?.firstChild;
       if (dot) { dot.dataset.state = states[p.car]; dot.dataset.sel = String(p.car === sel); }
       if (follow && p.car === sel) map.current.panTo(pos, { animate: true, duration: 0.25 });
     }
-  }, [cars, sel, trails, states, follow]);
+  }, [cars, sel, trails, states, follow, carIcon]);
 
   useEffect(() => {
     const p = cars[sel];
@@ -252,7 +254,16 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
   );
 }
 
-const MapButton = ({ active, label, icon, ...p }) => (
+// Marcador del coche: el dorsal en un círculo de color de estado, o el icono del equipo con el dorsal en una pastilla.
+// `img` viene validado por el servidor (data URL base64 de imagen), así que no puede romper el HTML.
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const carMarker = (car, img) => L.divIcon({
+  className: 'car-icon',
+  html: img ? `<div class="car-dot has-img"><img src="${img}" alt=""><span>${esc(car)}</span></div>` : `<div class="car-dot">${esc(car)}</div>`,
+  iconSize: img ? [44, 44] : [28, 28],
+});
+
+const MapButton =({ active, label, icon, ...p }) => (
   <button {...p} aria-pressed={active} title={label}
     aria-label={label} className={`flex h-8 items-center gap-1.5 rounded-[4px] border px-2.5 text-[12px] font-semibold uppercase tracking-[0.06em] shadow-sm transition-colors ${active ? 'border-accent bg-accent text-panel' : 'border-line bg-panel/95 text-fg-2 hover:bg-raised'}`}>
     <Icon name={icon} size={15} /><span className="hidden sm:inline">{label}</span>

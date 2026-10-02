@@ -144,4 +144,12 @@ test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
   assert.deepEqual(gone.tracks, []);
   assert.equal(gone.track.id, undefined);
   assert.deepEqual(gone.track.line, line);
+
+  // Icono del coche: solo imágenes en base64; nada que pueda inyectar HTML en el marcador del mapa.
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: png } })).carIcon, png);
+  for (const bad of ['data:image/svg+xml;base64,PHN2Zz4=', 'data:image/png;base64,AAA" onerror="alert(1)', 'x'.repeat(10)]) {
+    assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: bad } })).status, 400, bad);
+  }
+  assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: null } })).carIcon, null);
 });
