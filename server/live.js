@@ -17,6 +17,19 @@ async function loadTeam(id) {
 // Sala del organizador: un resumen de cada equipo del evento (posición, piloto, vuelta), nunca sus mensajes.
 const eventRoom = (eventId) => `event:${eventId}`;
 const EVENT_EVERY_MS = 1000;
+
+// Dirección de carrera: la bandera actual de cada evento llega a todos sus equipos y se queda hasta que el
+// organizador la cambia; la verde la retira. Solo en memoria. seen: equipos que la han visto (pulsan «Visto»).
+const FLAGS = ['green', 'yellow', 'sc', 'red', 'text'];
+const flags = new Map(); // eventId → { type, text, ts, seen: Set<teamId> }
+const flagOf = (eventId) => { const f = flags.get(eventId); return f ? { type: f.type, text: f.text, ts: f.ts, age: Date.now() - f.ts } : null; };
+const flagStatus = (eventId) => { const f = flags.get(eventId); return f && { ...flagOf(eventId), seen: [...f.seen] }; };
+const canRun = (u, e) => e && (u.role === 'admin' || (u.role === 'organizer' && e.organizer_id === u.id));
+async function setFlag(eventId, type, text) {
+  flags.set(eventId, { type, text, ts: Date.now(), seen: new Set() });
+  for (const t of await q('select id from teams where event_id = $1', [eventId])) io.to(room(t.id)).emit('flag', flagOf(eventId));
+  io.to(eventRoom(eventId)).emit('event:flag', flagStatus(eventId));
+}
 function state(teamId) {
   if (!states.has(teamId)) {
     states.set(teamId, loadTeam(teamId).then((team) => ({ team, driver: null, pit: null, lap: createLapTimer(), lastStored: 0, lastEvent: 0, online: new Map() })));
@@ -58,6 +71,9 @@ export async function teamChanged(teamId) {
     else if (JSON.stringify(st.team.track) !== before) st.lap.restart();
   }
   io.to(room(teamId)).emit('team');
+  // Entra en un evento o sale de él: su bandera, o ninguna.
+  const t = await one('select event_id from teams where id = $1', [teamId]);
+  io.to(room(teamId)).emit('flag', t?.event_id ? flagOf(t.event_id) : null);
 }
 
 // Expulsa las conexiones de un usuario (eliminado, sacado del equipo o cambiado de equipo); al reconectar
@@ -87,7 +103,14 @@ export function attachLive(server, userFromToken) {
     // El organizador sigue un evento suyo (el admin, cualquiera).
     socket.on('event:watch', async (eventId) => {
       const e = await one('select id, organizer_id from events where id = $1', [Number(eventId)]).catch(() => null);
-      if (e && (u.role === 'admin' || (u.role === 'organizer' && e.organizer_id === u.id))) socket.join(eventRoom(e.id));
+      if (!canRun(u, e)) return;
+      socket.join(eventRoom(e.id));
+      socket.emit('event:flag', flagStatus(e.id));
+    });
+    socket.on('event:flag', async (d) => {
+      const e = await one('select id, organizer_id from events where id = $1', [Number(d?.eventId)]).catch(() => null);
+      const text = String(d?.text ?? '').trim().slice(0, 120);
+      if (canRun(u, e) && FLAGS.includes(d.type) && (d.type !== 'text' || text)) await setFlag(e.id, d.type, d.type === 'text' ? text : null);
     });
     socket.on('event:unwatch', (eventId) => socket.leave(eventRoom(Number(eventId))));
     if (!u.team_id) return;
@@ -100,6 +123,15 @@ export function attachLive(server, userFromToken) {
     presence(st);
     socket.emit('driver', st.driver);
     socket.emit('pit', st.pit);
+    socket.emit('flag', st.team.event_id ? flagOf(st.team.event_id) : null);
+    // Alguien del equipo ha visto la bandera: el organizador lo ve en la clasificación.
+    socket.on('flag:seen', (ts) => {
+      const ev = st.team.event_id;
+      const f = flags.get(ev);
+      if (!f || f.ts !== ts) return;
+      f.seen.add(st.team.id);
+      io.to(eventRoom(ev)).emit('event:flag', flagStatus(ev));
+    });
     // BOX confirma la llegada del coche ('arrived', empieza la cuenta) o termina/cancela la parada (false).
     socket.on('pit', (action) => setPit(st, action === 'arrived'
       ? { since: Date.now(), reason: st.pit?.reason ?? 'Marcado desde BOX', arrived: true }

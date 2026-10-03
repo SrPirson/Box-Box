@@ -210,7 +210,27 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   // El perfil de Pepe sabe en qué evento dio cada vuelta.
   assert.equal((await call('/api/me/stats', { token: pepe.token })).laps[0].event, '24h Jarama');
 
-  for (const s of [so, sp]) s.close();
+  // Dirección de carrera: un piloto no puede dar banderas; la organizadora sí, y llega a todo el equipo.
+  const pepeFlag = new Promise((r, j) => { sp.once('flag', j); setTimeout(r, 300); });
+  sp.emit('event:flag', { eventId: ev.id, type: 'red' });
+  await pepeFlag;
+  const redP = next(sp, 'flag');
+  const status = next(so, 'event:flag');
+  so.emit('event:flag', { eventId: ev.id, type: 'red' });
+  const red = await redP;
+  assert.equal(red.type, 'red');
+  assert.deepEqual((await status).seen, []);
+  // Quien se conecta después la recibe al entrar; al pulsar «Visto», la organizadora lo ve.
+  const sq = io(BASE, { transports: ['websocket'], auth: { token: quique.token }, reconnection: false });
+  assert.equal((await next(sq, 'flag')).ts, red.ts);
+  const seen = next(so, 'event:flag');
+  sq.emit('flag:seen', red.ts);
+  assert.deepEqual((await seen).seen, [reg.team.id]);
+  const msg = next(sp, 'flag');
+  so.emit('event:flag', { eventId: ev.id, type: 'text', text: '  Aceite en la curva 3  ' });
+  assert.equal((await msg).text, 'Aceite en la curva 3');
+
+  for (const s of [so, sp, sq]) s.close();
 });
 
 test('lista pública de eventos, gestión de inscritos por el organizador y perfil', async () => {

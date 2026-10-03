@@ -8,6 +8,7 @@ import { useGateway, usePhone, start, stop, lastGps, hasLocation, openAppSetting
 import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
+import { RaceFlagScreen, RaceFlagBanner } from './RaceFlag.jsx';
 
 // Cada acción tiene un color fijo para memoria muscular. Solo AVERÍA va rellena: es la única que llama.
 const ACTIONS = [
@@ -111,6 +112,7 @@ export default function Pilot({ onNav }) {
           <span className="flex flex-col items-center text-accent"><Icon name="phone" size={22} /><span className="text-[11px] tracking-[0.08em]">MÓVIL</span></span>
         </div>
       </div>
+      <RaceFlagBanner big />
       {noLocation && (
         <div role="alert" className="flex flex-wrap items-center gap-3 bg-crit-solid px-3 py-2 text-on-crit">
           <Icon name="pin" size={24} stroke={2.5} />
@@ -162,6 +164,9 @@ export default function Pilot({ onNav }) {
           {lapDone ? 'Vuelta anulada · empieza en meta' : armed ? 'Toca otra vez para anular' : 'Anular vuelta'}
         </button>
       )}
+
+      {/* Dirección de carrera: por encima de todo, también de los mensajes de BOX */}
+      <RaceFlagScreen />
 
       {/* Interrupción prioritaria de BOX */}
       {inbox[0] && (

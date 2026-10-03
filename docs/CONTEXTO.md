@@ -18,7 +18,7 @@ alto) y cada modo solo muestra sus vistas (`src/lib/mode.js`, `MODE_VIEWS` en `s
 | Modo | Vistas |
 |---|---|
 | Admin | **Cuentas** (usuarios, roles, contraseñas, bajas, equipos) y **Eventos** (todos: abrir, cambiar organizador, cerrar, borrar; no crea) |
-| Organizador | **Mis eventos**: crear (nombre, fecha, lugar), público/privado, abrir/cerrar inscripciones, código, pista común (trazado, meta, tramos), clasificación en vivo, mapa con todos los coches, echar equipos, sacar pilotos, añadir pilotos registrados por email |
+| Organizador | **Mis eventos**: crear (nombre, fecha, lugar), público/privado, abrir/cerrar inscripciones, código, pista común (trazado, meta, tramos), clasificación en vivo, mapa con todos los coches, **dirección de carrera** (bandera verde, amarilla, safety car, roja o aviso de texto), echar equipos, sacar pilotos, añadir pilotos registrados por email |
 | Piloto | **Piloto** (fila grande bajo la cabecera), **Box**, **Estadísticas**, **Eventos** (lista por fecha con buscador, próximos/pasados, inscripción; sin equipo: «Tengo un código» y «Equipo para entrenar»), **Equipo** (personas: evento, invitar, miembros, nombre, salir) y **Ajustes** (coche: dorsal, icono, teléfono del mecánico, alertas; móvil: OBD, intervalo, simulador, telemetría, APK) |
 | Todos | **Perfil** (botón con la inicial): nombre, email (con contraseña), contraseña, modo, tema, cerrar sesión, eliminar cuenta y estadísticas personales |
 
@@ -29,6 +29,9 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 - **Piloto**: 4 botones grandes (Avería, Salgo a box, Repostar, Pinchazo), «Anular vuelta» (doble toque),
   fila Coche (temp. motor, rpm) / Móvil (batería, temperatura) en directo. Mensajes de BOX a pantalla
   completa con voz (nativa en la APK) y respuestas OK / NO / PROBLEMA. Aviso si falta el permiso de ubicación.
+- **Dirección de carrera**: la bandera del evento llega a todos sus equipos. En Piloto sale a pantalla completa con
+  voz hasta pulsar «Visto»; después queda una franja fija de su color (también en Box). La verde se anuncia
+  3 s y la retira. El organizador ve en la clasificación qué equipos la han visto.
 - **Box**: vueltas y parciales en vivo, alarmas por niveles, gauges, mapa (barra de pista: pistas guardadas,
   trazado, meta, tramos; en un evento, la del organizador sin editar), mensajería, «Viene a boxes / En boxes».
 - **Estadísticas**: vueltas, pilotos, telemetría y tramos (mejor, media, última, constancia, vuelta ideal).
@@ -38,11 +41,11 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 | | |
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
-| Último commit | `dc7bbe4` Vistas por modo (Admin, Organizador, Piloto) y perfil de cuenta |
+| Último commit | Dirección de carrera: banderas del organizador a todos los equipos del evento |
 | Despliegue | **https://boxracing.onrender.com** · servicio `boxracing` `srv-db02jqad0e5s739s56gg` (Frankfurt, free, autodeploy de `main`). La antigua https://cencerro-racing.onrender.com (servicio `cencerro` `srv-davb06flk1mc739c6vlg`) sigue activa con `REDIRECT_TO`: los navegadores van a la nueva y las APK antiguas (WebView, `; wv)`) la siguen cargando para actualizarse. **Borrarla cuando todos los móviles tengan la APK v9 o posterior.** `box-box` y `boxbox` en Render estaban cogidas |
 | Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, gratis sin caducidad; creada desde la integración de Vercel). `DATABASE_URL` con `sslmode=verify-full`. Migrada desde Render el 02/10 con `server/migrate.js`. El Postgres de Render (`cencerro-racing-db`) caduca el 31/10/2026 y ya no se usa |
 | APK | Release `apk` de GitHub, **versión 11** (`cencerro.apk`). La compila `.github/workflows/android.yml` en cada cambio de `android/`, `capacitor.config.json` o `package.json`; firma fija con el secreto `ANDROID_KEYSTORE` (CN=Cencerro Racing), verificada con apksigner antes de publicar. La app avisa de versión nueva e instala encima |
-| Tests | `npm test` → **18 en verde** (ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
+| Tests | `npm test` → **18 en verde** (banderas, ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
 
 ## Cómo arrancar
 
@@ -80,6 +83,8 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
   cuenta y se callan sin señal/batería/rpm/pista; termina a ≥ 40 km/h o con «Fin de boxes».
 - **Eventos**: `events` (organizador, código, pista, cerrado, privado) y `teams.event_id`. Códigos de equipo y
   de evento únicos entre ambos; `/api/code/:code` dice cuál es. Clasificación en `/api/events/:id/standings`.
+- **Banderas**: `flags` en `live.js`, en memoria (eventId → bandera + equipos que la han visto). Se emite a la
+  sala de cada equipo del evento (`flag`) y a la del organizador (`event:flag`); quien conecta la recibe al entrar.
 - **Perfil**: las vueltas y muestras son también del piloto; si el equipo se borra, quedan con `team_id` null.
 - **App Android (Capacitor 8)**: carga `server.url` remoto. Plugins propios en
   `android/app/src/main/java/com/cencerro/racing/`: `Thermal` (temperatura y nivel de batería), `Updater`
@@ -114,15 +119,16 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 
 ## Pendiente / próximos pasos
 
-1. **Borrar el servicio antiguo `cencerro`** en Render cuando todos los móviles tengan la APK v9+.
-2. **Avisos de dirección de carrera** a todos los pilotos del evento (bandera roja, safety car, amarilla).
+1. **Borrar el servicio antiguo `cencerro`** y el Postgres `cencerro-racing-db` en Render (ya se puede: todos
+   tienen la APK v9+). El MCP de Render no permite borrar: desde el panel.
+2. Probar las banderas en pista con varios móviles.
 3. **Icono propio de cada coche en el mapa del evento** (ahora todos salen como círculo con dorsal).
 4. **ELM327 de Bluetooth clásico** (el KUULAA v2.2 puede serlo): plugin de puerto serie en la APK;
    `createElm()` ya acepta otro transporte.
 5. **Gestión de stints y combustible** (tiempo al volante por piloto, consumo, ventana de boxes) y tiempos
    en la vista Piloto (última vuelta y delta).
 6. **Media de vuelta representativa** (excluir vueltas > 107 % de la mejor o usar la mediana): pendiente de decidir.
-7. **Limitar intentos de login** y **persistir el historial de mensajes** de BOX.
+7. **Limitar intentos de login** y **persistir el historial de mensajes** de BOX (y la bandera activa).
 8. Probar en un móvil real: pantalla apagada (y ajuste de batería «Sin restricciones» en Xiaomi/Samsung),
    brújula en el soporte, OBD BLE nativo, permisos y actualización encima con la v11.
 9. Opcional: dividir el bundle (aviso de Vite) y actualizar las acciones de GitHub a v5.

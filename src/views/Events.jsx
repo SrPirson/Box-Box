@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { api, inviteLink } from '../lib/session.js';
-import { useSocket } from '../lib/store.js';
+import { useSocket, FLAG_INFO } from '../lib/store.js';
 import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, btn, fmtLap, fmtDelta } from './ui.jsx';
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
@@ -81,6 +81,7 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
   const [order, setOrder] = useState('best');
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
+  const [flag, setFlag] = useState(null); // bandera actual del evento y equipos que la han visto
   const run = (p) => p.then((e) => { setEv(e); onChanged(); }).catch((e) => setError(e.message));
   const patch = (body) => run(api(`/api/events/${id}`, { method: 'PATCH', body }));
   const loadStandings = () => api(`/api/events/${id}/standings`).then((s) => setStandings(Object.values(s))).catch(() => {});
@@ -95,6 +96,7 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
       setCars((c) => ({ ...c, [p.teamId]: p }));
     },
     'event:lap': () => loadStandings(),
+    'event:flag': setFlag,
     connect: () => socket.emit('event:watch', id), // al reconectar, volver a la sala del evento
   });
   useEffect(() => {
@@ -155,6 +157,8 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
         <p className="text-[13px] text-muted">Eliminar el evento no borra nada de los equipos: siguen como equipos de entrenamiento y sus vueltas conservan el evento en el historial.</p>
       </Card>
 
+      <RaceControl flag={flag} teams={ev.teams.length} send={(type, text) => socket.emit('event:flag', { eventId: id, type, text })} />
+
       <Card title="Clasificación" flush badge={<Segmented value={order} onChange={setOrder} options={[['best', 'Mejor vuelta'], ['laps', 'Más vueltas']]} />}>
         {rows.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">Aún no hay equipos inscritos. Comparte el código de inscripción.</p> : (
           <div className="overflow-x-auto">
@@ -178,7 +182,12 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
                       <td className="num px-3 py-2 text-right text-fg-2">{gap ?? '—'}</td>
                       <td className="num px-3 py-2 text-right">{fmtLap(r.last)}</td>
                       <td className="num px-3 py-2">{c?.lapStartedAt ? fmtLap(Math.max(0, now - c.lapStartedAt)).slice(0, -2) : '—'}</td>
-                      <td className="px-3 py-2">{!c ? <Pill tone="muted">Sin señal</Pill> : c.pit ? <Pill tone="warn">Boxes</Pill> : <Pill tone="ok">En pista · {c.driver}</Pill>}</td>
+                      <td className="px-3 py-2"><span className="flex items-center gap-1.5">
+                        {!c ? <Pill tone="muted">Sin señal</Pill> : c.pit ? <Pill tone="warn">Boxes</Pill> : <Pill tone="ok">En pista · {c.driver}</Pill>}
+                        {flag && flag.type !== 'green' && (flag.seen.includes(r.id)
+                          ? <span title="Ha visto la bandera" className="text-ok"><Icon name="check" size={16} /></span>
+                          : <span title="Aún no ha visto la bandera" className="text-warn"><Icon name="flag" size={16} /></span>)}
+                      </span></td>
                     </tr>
                   );
                 })}
@@ -206,6 +215,41 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
         )}
       </Card>
     </div>
+  );
+}
+
+// Dirección de carrera: la bandera llega a todos los equipos del evento y sigue activa hasta que se cambia;
+// la verde la retira. Cada botón pide un segundo toque para no dar una bandera roja por error.
+function RaceControl({ flag, teams, send }) {
+  const [armed, setArmed] = useState(null);
+  const [text, setText] = useState('');
+  const fire = (type) => {
+    if (armed !== type) { setArmed(type); setTimeout(() => setArmed((a) => (a === type ? null : a)), 3000); return; }
+    setArmed(null);
+    send(type, text);
+    if (type === 'text') setText('');
+  };
+  const active = flag && flag.type !== 'green';
+  const button = (type, label = FLAG_INFO[type].label) => (
+    <button type="button" onClick={() => fire(type)}
+      className={`flex h-12 items-center justify-center gap-2 rounded-[4px] px-3 text-[15px] font-bold uppercase ${FLAG_INFO[type].cls} ${armed === type ? 'ring-4 ring-fg ring-offset-2 ring-offset-panel' : ''}`}>
+      <Icon name="flag" size={16} />{armed === type ? 'Toca otra vez' : label}
+    </button>
+  );
+  return (
+    <Card title="Dirección de carrera" badge={active
+      ? <Pill tone="warn">{flag.type === 'text' ? 'Aviso' : FLAG_INFO[flag.type].label} · visto por {flag.seen.length}/{teams}</Pill>
+      : <Pill tone="ok">Pista libre</Pill>}>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {button('green', active ? 'Verde · retirar' : 'Bandera verde')}{button('yellow')}{button('sc')}{button('red')}
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) fire('text'); }} className="flex flex-wrap gap-2">
+        <input className={`${input} min-w-0 flex-1`} value={text} onChange={(e) => setText(e.target.value)} maxLength={120}
+          placeholder="Aviso a todos los pilotos: «Aceite en la curva 3»" />
+        <button disabled={!text.trim()} className={armed === 'text' ? btn.dangerSolid : btn.primary}>{armed === 'text' ? 'Toca otra vez' : 'Enviar aviso'}</button>
+      </form>
+      {active && <p className="text-[13px] text-muted">Activa desde las {new Date(flag.ts).toLocaleTimeString('es-ES')}{flag.type === 'text' && <> · «{flag.text}»</>}. En la clasificación, ✓ = el equipo la ha visto.</p>}
+    </Card>
   );
 }
 
