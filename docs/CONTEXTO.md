@@ -49,11 +49,11 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 | | |
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
-| Último commit | Dirección de carrera: banderas del organizador a todos los equipos del evento |
+| Último commit | `856ffc0` Estadísticas: pista de cada vuelta y filtro por pista en libre (más el commit de docs) |
 | Despliegue | **https://boxracing.onrender.com** · servicio `boxracing` `srv-db02jqad0e5s739s56gg` (Frankfurt, free, autodeploy de `main`). La antigua https://cencerro-racing.onrender.com (servicio `cencerro` `srv-davb06flk1mc739c6vlg`) sigue activa con `REDIRECT_TO`: los navegadores van a la nueva y las APK antiguas (WebView, `; wv)`) la siguen cargando para actualizarse. **Borrarla cuando todos los móviles tengan la APK v9 o posterior.** `box-box` y `boxbox` en Render estaban cogidas |
 | Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, gratis sin caducidad; creada desde la integración de Vercel). `DATABASE_URL` con `sslmode=verify-full`. Migrada desde Render el 02/10 con `server/migrate.js`. El Postgres de Render (`cencerro-racing-db`) caduca el 31/10/2026 y ya no se usa |
-| APK | Release `apk` de GitHub, **versión 11** (`cencerro.apk`). La compila `.github/workflows/android.yml` en cada cambio de `android/`, `capacitor.config.json` o `package.json`; firma fija con el secreto `ANDROID_KEYSTORE` (CN=Cencerro Racing), verificada con apksigner antes de publicar. La app avisa de versión nueva e instala encima |
-| Tests | `npm test` → **18 en verde** (banderas, ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
+| APK | Release `apk` de GitHub, **versión 13** (`cencerro.apk`; v12 trajo Bluetooth clásico y pedir ubicación, v13 la ubicación por red y el aviso de GPS apagado). La compila `.github/workflows/android.yml` en cada cambio de `android/`, `capacitor.config.json` o `package.json`; firma fija con el secreto `ANDROID_KEYSTORE` (CN=Cencerro Racing), verificada con apksigner antes de publicar. La app avisa de versión nueva e instala encima |
+| Tests | `npm test` → **18 en verde** (banderas, participar en eventos y tipos de vuelta, estadísticas por pista, sin OBD, ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
 
 ## Cómo arrancar
 
@@ -128,19 +128,26 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 
 ## Pendiente / próximos pasos
 
-1. **Borrar el servicio antiguo `cencerro`** y el Postgres `cencerro-racing-db` en Render (ya se puede: todos
-   tienen la APK v9+). El MCP de Render no permite borrar: desde el panel.
-2. Probar las banderas en pista con varios móviles.
-3. ~~Icono propio de cada coche en el mapa del evento~~ (hecho el 03/10).
-4. **Probar el Bluetooth clásico con un adaptador real** (plugin `ClassicBt`, APK v12) y el permiso de
-   ubicación pedido desde Ajustes → Permisos. Más adelante, si hace falta: ELM327 WiFi.
-5. **Gestión de stints y combustible** (tiempo al volante por piloto, consumo, ventana de boxes) y tiempos
+**Próximo día — empezar por aquí:**
+
+1. **Borrar en Render** (desde el panel; el MCP no permite borrar) el servicio antiguo `cencerro`
+   (`srv-davb06flk1mc739c6vlg`) y el Postgres `cencerro-racing-db` (caduca el 31/10). Todos tienen la APK v9+.
+2. **Repasar en pantalla lo hecho el 03/10** (nada se vio en el navegador, solo tests y build):
+   banderas (pantalla completa en Piloto, franja, panel del organizador), «Participar en el evento» (Box, Equipo,
+   Eventos, franja del día), sesión y clasificación por sesión del organizador, filtros de Estadísticas
+   (tipo y pista) y perfil, Sin OBD (Piloto, Box, Estadísticas, Alertas) y la tarjeta Ubicación.
+3. **Probar en el coche con la APK v13**: Bluetooth clásico con el KUULAA (emparejar en Android, elegir en
+   Ajustes → Sensor OBD2), ubicación (ya funciona según el usuario) y banderas con varios móviles.
+
+**Después:**
+
+4. **Gestión de stints y combustible** (tiempo al volante por piloto, consumo, ventana de boxes) y tiempos
    en la vista Piloto (última vuelta y delta).
-6. **Media de vuelta representativa** (excluir vueltas > 107 % de la mejor o usar la mediana): pendiente de decidir.
-7. **Limitar intentos de login** y **persistir el historial de mensajes** de BOX (y la bandera activa).
-8. Probar en un móvil real: pantalla apagada (y ajuste de batería «Sin restricciones» en Xiaomi/Samsung),
-   brújula en el soporte, OBD BLE nativo, permisos y actualización encima con la v11.
-9. Opcional: dividir el bundle (aviso de Vite) y actualizar las acciones de GitHub a v5.
+5. **Media de vuelta representativa** (excluir vueltas > 107 % de la mejor o usar la mediana): pendiente de decidir.
+6. **Limitar intentos de login** y **persistir** el historial de mensajes de BOX y la bandera activa (hoy en memoria).
+7. Probar en un móvil real: pantalla apagada (batería «Sin restricciones» en Xiaomi/Samsung) y brújula en el soporte.
+8. Opcional: ELM327 WiFi, que el organizador pueda poner a todos los equipos a participar, dividir el bundle
+   (aviso de Vite) y actualizar las acciones de GitHub a v5.
 
 ## Requisitos de pista (no olvidar)
 
