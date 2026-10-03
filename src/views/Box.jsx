@@ -108,7 +108,7 @@ export default function Box({ muted }) {
             <>
               <CarHeader p={p} driver={driver?.name ?? p.driver} state={states[p.car]} alarms={alarms[p.car]} now={now}
                 onPit={!pit && (() => socket.emit('pit', 'arrived'))} />
-              <Gauges p={p} stale={lateMs(p, now) > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />
+              {team.obd && <Gauges p={p} stale={lateMs(p, now) > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />}
             </>
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
@@ -497,7 +497,7 @@ function EmptyTelemetry() {
     <div className="flex flex-col items-start gap-2 bg-panel px-6 py-8">
       <span className="label">Esperando telemetría</span>
       <p className="max-w-xl text-[15px] leading-snug text-fg-2">
-        Abre la vista <b className="text-fg">Piloto</b> en el móvil del coche y pulsa <b className="text-fg">SIM</b> u <b className="text-fg">OBD</b>.
+        Abre la vista <b className="text-fg">Piloto</b> en el móvil del coche y pulsa <b className="text-fg">SIM</b>, <b className="text-fg">OBD</b> o <b className="text-fg">GPS</b>.
         Los coches del mismo canal aparecerán en la lista de coches.
       </p>
     </div>

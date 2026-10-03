@@ -7,7 +7,9 @@ import { api, getSession, refresh, setTeam, useSession } from './session.js';
 
 const KEY = 'cencerro.config';
 export const DEFAULTS = {
-  source: 'sim',       // 'sim' | 'ble'
+  source: 'sim',       // 'sim' | 'ble' | 'classic' (Bluetooth clásico, solo en la app) | 'gps' (sin adaptador)
+  classicAddr: null,   // MAC del adaptador de Bluetooth clásico emparejado que se eligió
+  classicName: '',
   pollMs: 250,         // ciclo de lectura OBD + envío (200 ms - 5 min; lo largo, para medir consumo)
 };
 

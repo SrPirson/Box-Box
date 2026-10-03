@@ -60,12 +60,12 @@ export default function Stats() {
       {!data ? <p className="text-muted">Cargando…</p> : (
         <div className="flex flex-col gap-4">
           {/* KPIs */}
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[4px] border border-line bg-line sm:grid-cols-3 xl:grid-cols-6">
+          <div className={`grid grid-cols-2 gap-px overflow-hidden rounded-[4px] border border-line bg-line sm:grid-cols-3 ${team.obd ? 'xl:grid-cols-6' : 'xl:grid-cols-4'}`}>
             <Kpi label="Vueltas" value={laps.length} />
             <Kpi label="Mejor vuelta" value={fmtLap(best?.ms)} sub={best?.driver} />
             <Kpi label="Media de vuelta" value={fmtLap(avg && Math.round(avg))} />
-            <Kpi label="Temp. media" value={m.avg_temp == null ? '—' : `${fmt(m.avg_temp)} °C`} sub={m.max_temp != null && `máx ${fmt(m.max_temp)} °C`} />
-            <Kpi label="Batería mínima" value={m.min_volt == null ? '—' : `${fmt(m.min_volt, 2)} V`} sub={m.avg_volt != null && `media ${fmt(m.avg_volt, 2)} V`} />
+            {team.obd && <Kpi label="Temp. media" value={m.avg_temp == null ? '—' : `${fmt(m.avg_temp)} °C`} sub={m.max_temp != null && `máx ${fmt(m.max_temp)} °C`} />}
+            {team.obd && <Kpi label="Batería mínima" value={m.min_volt == null ? '—' : `${fmt(m.min_volt, 2)} V`} sub={m.avg_volt != null && `media ${fmt(m.avg_volt, 2)} V`} />}
             <Kpi label="Velocidad máx." value={m.max_speed == null ? '—' : `${fmt(m.max_speed)} km/h`} sub={m.avg_speed != null && `media ${fmt(m.avg_speed)} km/h`} />
           </div>
 
@@ -84,12 +84,12 @@ export default function Stats() {
               <SectorsCard sec={sec} bestLap={sec.laps.length ? Math.min(...sec.laps.map((l) => l.ms)) : null} />
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <DriversTable drivers={data.drivers} teamAvg={avg} />
-                <MetricsTable m={m} />
+                <MetricsTable m={m} obd={team.obd} />
               </div>
-              <LapsTable laps={laps} avg={avg} bestId={best.id} sec={sec} />
+              <LapsTable laps={laps} avg={avg} bestId={best.id} sec={sec} obd={team.obd} />
             </>
           )}
-          {laps.length === 0 && <MetricsTable m={m} />}
+          {laps.length === 0 && <MetricsTable m={m} obd={team.obd} />}
         </div>
       )}
     </Page>
@@ -250,14 +250,15 @@ function SectorsCard({ sec, bestLap }) {
   );
 }
 
-function MetricsTable({ m }) {
+// obd: false si el coche no lleva lector (solo queda la velocidad del GPS).
+function MetricsTable({ m, obd }) {
   const rows = [
-    ['Temperatura motor', m.avg_temp, 0, '°C', 'máx', m.max_temp],
-    ['Batería', m.avg_volt, 2, 'V', 'mín', m.min_volt],
-    ['Régimen', m.avg_rpm, 0, 'rpm', 'máx', m.max_rpm],
+    obd && ['Temperatura motor', m.avg_temp, 0, '°C', 'máx', m.max_temp],
+    obd && ['Batería', m.avg_volt, 2, 'V', 'mín', m.min_volt],
+    obd && ['Régimen', m.avg_rpm, 0, 'rpm', 'máx', m.max_rpm],
     ['Velocidad GPS', m.avg_speed, 0, 'km/h', 'máx', m.max_speed],
-    ['Acelerador', m.avg_throttle, 0, '%'],
-  ];
+    obd && ['Acelerador', m.avg_throttle, 0, '%'],
+  ].filter(Boolean);
   return (
     <Card title="Telemetría" badge={<span className="num text-[12px] text-muted">{fmt(m.samples ?? 0)} muestras</span>} flush>
       <table className="w-full text-[14px]">
@@ -276,7 +277,7 @@ function MetricsTable({ m }) {
   );
 }
 
-function LapsTable({ laps, avg, bestId, sec }) {
+function LapsTable({ laps, avg, bestId, sec, obd }) {
   return (
     <Card title="Vueltas" flush>
       <div className="max-h-[480px] overflow-auto">
@@ -284,7 +285,7 @@ function LapsTable({ laps, avg, bestId, sec }) {
           <thead className="sticky top-0 bg-raised text-left"><tr className="label">
             <Th>#</Th><Th>Hora</Th><Th>Piloto</Th><Th right>Tiempo</Th><Th right>vs media</Th>
             {sec.per.map((_, i) => <Th key={i} right>T{i + 1}</Th>)}
-            <Th right>Temp. media</Th><Th right>Vel. máx</Th><Th right>Bat. mín</Th>
+            {obd && <Th right>Temp. media</Th>}<Th right>Vel. máx</Th>{obd && <Th right>Bat. mín</Th>}
           </tr></thead>
           <tbody>
             {laps.map((l, i) => (
@@ -298,9 +299,9 @@ function LapsTable({ laps, avg, bestId, sec }) {
                   const ms = sec.laps.includes(l) ? l.sectors[i] : null; // de otra pista o incompleta: sin parcial
                   return <td key={i} className={`num px-4 py-2 text-right ${ms != null && ms === s.best ? 'font-bold text-ok' : ''}`}>{fmtSplit(ms)}</td>;
                 })}
-                <td className="num px-4 py-2 text-right">{l.avg_temp == null ? '—' : `${fmt(l.avg_temp)} °C`}</td>
+                {obd && <td className="num px-4 py-2 text-right">{l.avg_temp == null ? '—' : `${fmt(l.avg_temp)} °C`}</td>}
                 <td className="num px-4 py-2 text-right">{l.max_speed == null ? '—' : `${fmt(l.max_speed)} km/h`}</td>
-                <td className="num px-4 py-2 text-right">{l.min_volt == null ? '—' : `${fmt(l.min_volt, 2)} V`}</td>
+                {obd && <td className="num px-4 py-2 text-right">{l.min_volt == null ? '—' : `${fmt(l.min_volt, 2)} V`}</td>}
               </tr>
             ))}
           </tbody>

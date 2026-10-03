@@ -52,6 +52,10 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   const patched = await call('/api/team', { token: beto.token, method: 'PATCH', body: { dorsal: '44', limits: { tempCrit: 105 }, track: { line } } });
   assert.equal(patched.dorsal, '44');
   assert.equal(patched.limits.tempCrit, 105);
+  // Coche sin lector OBD (solo GPS) y vuelta a con OBD.
+  assert.equal(patched.obd, true);
+  assert.equal((await call('/api/team', { token: beto.token, method: 'PATCH', body: { obd: false } })).obd, false);
+  assert.equal((await call('/api/team', { token: beto.token, method: 'PATCH', body: { obd: true } })).obd, true);
 
   // Tiempo real: Ana conduce, Beto en BOX. Otro equipo no ve nada.
   const intruso = await call('/api/register', { method: 'POST', body: { name: 'Otro', email: 'otro@x.es', password: 'pistapista' } });

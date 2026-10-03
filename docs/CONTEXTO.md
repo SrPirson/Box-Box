@@ -19,7 +19,7 @@ alto) y cada modo solo muestra sus vistas (`src/lib/mode.js`, `MODE_VIEWS` en `s
 |---|---|
 | Admin | **Cuentas** (usuarios, roles, contraseñas, bajas, equipos) y **Eventos** (todos: abrir, cambiar organizador, cerrar, borrar; no crea) |
 | Organizador | **Mis eventos**: crear (nombre, fecha, lugar), público/privado, abrir/cerrar inscripciones, código, pista común (trazado, meta, tramos), clasificación en vivo, mapa con todos los coches, **dirección de carrera** (bandera verde, amarilla, safety car, roja o aviso de texto), echar equipos, sacar pilotos, añadir pilotos registrados por email |
-| Piloto | **Piloto** (fila grande bajo la cabecera), **Box**, **Estadísticas**, **Eventos** (lista por fecha con buscador, próximos/pasados, inscripción; sin equipo: «Tengo un código» y «Equipo para entrenar»), **Equipo** (personas: evento, invitar, miembros, nombre, salir) y **Ajustes** (coche: dorsal, icono, teléfono del mecánico, alertas; móvil: OBD, intervalo, simulador, telemetría, APK) |
+| Piloto | **Piloto** (fila grande bajo la cabecera), **Box**, **Estadísticas**, **Eventos** (lista por fecha con buscador, próximos/pasados, inscripción; sin equipo: «Tengo un código» y «Equipo para entrenar»), **Equipo** (personas: evento, invitar, miembros, nombre, salir) y **Ajustes** (coche: dorsal, icono, con/sin OBD, teléfono del mecánico, alertas; móvil: adaptador BLE/clásico/simulador, intervalo, telemetría, permisos, APK) |
 | Todos | **Perfil** (botón con la inicial): nombre, email (con contraseña), contraseña, modo, tema, cerrar sesión, eliminar cuenta y estadísticas personales |
 
 Sin equipo, el piloto solo ve Eventos y Perfil.
@@ -32,6 +32,8 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 - **Dirección de carrera**: la bandera del evento llega a todos sus equipos. En Piloto sale a pantalla completa con
   voz hasta pulsar «Visto»; después queda una franja fija de su color (también en Box). La verde se anuncia
   3 s y la retira. El organizador ve en la clasificación qué equipos la han visto.
+- **Sin OBD** (`teams.obd = false`): el coche solo manda GPS y móvil; Piloto, Box, Estadísticas y Alertas
+  ocultan los datos de motor y el botón de la barra de Piloto dice «GPS».
 - **Box**: vueltas y parciales en vivo, alarmas por niveles, gauges, mapa (barra de pista: pistas guardadas,
   trazado, meta, tramos; en un evento, la del organizador sin editar), mensajería, «Viene a boxes / En boxes».
 - **Estadísticas**: vueltas, pilotos, telemetría y tramos (mejor, media, última, constancia, vuelta ideal).
@@ -89,7 +91,8 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 - **App Android (Capacitor 8)**: carga `server.url` remoto. Plugins propios en
   `android/app/src/main/java/com/cencerro/racing/`: `Thermal` (temperatura y nivel de batería), `Updater`
   (versión y descarga/instalación del APK), `Background` (servicio en primer plano con GPS nativo y pulso
-  de 250 ms para la pantalla apagada; permisos y ajustes de la app). Comunidad: `bluetooth-le` (OBD en la
+  de 250 ms para la pantalla apagada; pedir el permiso de ubicación y abrir los ajustes de la app), `ClassicBt`
+  (ELM327 de Bluetooth clásico por SPP: emparejados, conexión, lectura y escritura). Comunidad: `bluetooth-le` (OBD en la
   APK, el WebView no tiene Web Bluetooth) y `text-to-speech`. Pide ubicación, Bluetooth y notificaciones al
   abrir; pantalla siempre encendida.
 - **Mapa**: Esri + OpenStreetMap sin API key. Icono propio del coche (foto en círculo o silueta que gira con
@@ -123,8 +126,8 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
    tienen la APK v9+). El MCP de Render no permite borrar: desde el panel.
 2. Probar las banderas en pista con varios móviles.
 3. ~~Icono propio de cada coche en el mapa del evento~~ (hecho el 03/10).
-4. **ELM327 de Bluetooth clásico** (el KUULAA v2.2 puede serlo): plugin de puerto serie en la APK;
-   `createElm()` ya acepta otro transporte.
+4. **Probar el Bluetooth clásico con un adaptador real** (plugin `ClassicBt`, APK v12) y el permiso de
+   ubicación pedido desde Ajustes → Permisos. Más adelante, si hace falta: ELM327 WiFi.
 5. **Gestión de stints y combustible** (tiempo al volante por piloto, consumo, ventana de boxes) y tiempos
    en la vista Piloto (última vuelta y delta).
 6. **Media de vuelta representativa** (excluir vueltas > 107 % de la mejor o usar la mediana): pendiente de decidir.

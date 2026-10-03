@@ -1,7 +1,7 @@
 // Gateway móvil: lee OBD2 (real o simulado) + GPS + batería + red, empaqueta y envía a BOX.
 // Si no hay conexión, encola los paquetes y los retransmite en ráfaga al recuperar señal.
 import { useSyncExternalStore } from 'react';
-import { createElm, connectBle } from './elm327.js';
+import { createElm, connectBle, connectClassic } from './elm327.js';
 import { phoneHeading } from './heading.js';
 import { getConfig, getSocket } from './store.js';
 import { getSession } from './session.js';
@@ -104,6 +104,9 @@ async function startBackground() {
 // Permiso de ubicación en la app Android: null fuera de ella (el navegador pregunta por su cuenta).
 export const hasLocation = () => (native ? Background.permissions().then((p) => p.location, () => null) : Promise.resolve(null));
 export const openAppSettings = () => Background.openSettings();
+// Pide el permiso con el diálogo del sistema (o abre los ajustes si Android ya no deja preguntar). Las APK
+// anteriores a la v12 no tienen requestLocation: directamente a los ajustes.
+export const askLocation = () => Background.requestLocation().catch(() => Background.openSettings());
 
 function stopBackground() {
   bgSubs.forEach((s) => s.remove());
@@ -145,13 +148,19 @@ export async function start() {
   set({ obd: 'connecting', error: '', notice: '', obdLink: 'ok' });
   let read;
   try {
-    if (cfg.source === 'ble') {
+    // Sin OBD (lo dice el coche) o «solo GPS» en este móvil: los paquetes llevan GPS y móvil, sin datos de motor.
+    const obd = getSession().team?.obd !== false;
+    if (cfg.source === 'sim') {
+      read = async () => (obd ? simRead() : {});
+    } else if (!obd || cfg.source === 'gps') {
+      read = async () => ({});
+    } else {
       // Si el adaptador se cae (contacto quitado al repostar, cambio de piloto, cobertura BLE), la telemetría
       // sigue con GPS y sin OBD mientras se reconecta solo al mismo adaptador cada pocos segundos.
       let elm = null;
       let device = null;
       const link = async () => {
-        const t = await connectBle(lost, device);
+        const t = await (cfg.source === 'classic' ? connectClassic(lost, cfg.classicAddr) : connectBle(lost, device));
         device = t.device;
         const e = createElm(t);
         await e.init();
@@ -165,8 +174,6 @@ export async function start() {
       }
       await link();
       read = async () => (elm ? elm.read() : {});
-    } else {
-      read = async () => simRead();
     }
   } catch (e) {
     return set({ obd: 'error', error: e.message });

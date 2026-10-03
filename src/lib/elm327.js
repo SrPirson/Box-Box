@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { BleClient, numberToUUID } from '@capacitor-community/bluetooth-le';
 
 // Driver ELM327 (KUULAA v2.2 y clones).
@@ -104,7 +104,7 @@ export function createElm(transport, timeoutMs = 1500) {
   };
 }
 
-// Transporte BLE. Solo funciona con adaptadores BLE 4.0; ver README para Bluetooth clásico.
+// Transporte BLE: adaptadores BLE 4.0 (el clásico va por connectClassic, más abajo).
 // Los clones ELM327 BLE usan uno de estos servicios "UART"; las características se detectan por propiedades.
 const BLE_SERVICES = [0xfff0, 0xffe0, 0x18f0, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2'];
 
@@ -168,4 +168,21 @@ async function connectWeb(onDisconnect, device) {
     send: (s) => (tx.properties.writeWithoutResponse ? tx.writeValueWithoutResponse(enc.encode(s)) : tx.writeValue(enc.encode(s))),
     onData: (cb) => rx.addEventListener('characteristicvaluechanged', (e) => cb(dec.decode(e.target.value))),
   };
+}
+
+// Transporte Bluetooth clásico (SPP, los ELM327 que piden PIN 1234): solo en la app Android, con el plugin
+// ClassicBt (APK v12+). El adaptador se empareja antes en Android; aquí se elige de la lista de emparejados.
+const ClassicBt = registerPlugin('ClassicBt');
+const needsUpdate = (e) => (e?.code === 'UNIMPLEMENTED' ? new Error('Actualiza la app (Ajustes → App Android) para usar Bluetooth clásico.') : e);
+export const pairedClassic = () => ClassicBt.paired().then((r) => r.devices, (e) => { throw needsUpdate(e); });
+
+export async function connectClassic(onDisconnect, address) {
+  if (!Capacitor.isNativePlatform()) throw new Error('El Bluetooth clásico solo funciona en la app Android.');
+  if (!address) throw new Error('Elige el adaptador en Ajustes → Sensor OBD2.');
+  let listener = () => {};
+  await ClassicBt.removeAllListeners();
+  await ClassicBt.addListener('data', (d) => listener(d.value));
+  await ClassicBt.addListener('disconnected', () => onDisconnect());
+  await ClassicBt.connect({ address }).catch((e) => { throw needsUpdate(e); });
+  return { device: address, send: (s) => ClassicBt.write({ value: s }), onData: (cb) => { listener = cb; } };
 }

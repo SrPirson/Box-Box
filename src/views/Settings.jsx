@@ -1,9 +1,10 @@
 // Ajustes: el coche con el que corre el equipo (dorsal, icono, teléfono del mecánico, alertas) y este móvil
 // (sensor OBD, intervalo, simulador, telemetría, app Android). La cuenta y el tema están en el perfil.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { useConfig, setConfig, speak } from '../lib/store.js';
-import { sim, useGateway, start, stop } from '../lib/gateway.js';
+import { sim, useGateway, start, stop, hasLocation, askLocation } from '../lib/gateway.js';
+import { pairedClassic } from '../lib/elm327.js';
 import { useSession } from '../lib/session.js';
 import { Capacitor } from '@capacitor/core';
 import { APK_URL } from './Update.jsx';
@@ -32,17 +33,21 @@ export default function Settings() {
           <CarCard team={team} save={save} />
           <AlertsCard team={team} save={save} />
           <Card title="Sensor OBD2">
-            <Segmented label="Origen de los datos" value={cfg.source} disabled={running} onChange={(v) => setConfig({ source: v })}
-              options={[['sim', 'Simulador'], ['ble', 'ELM327 Bluetooth']]} />
+            {/* Con OBD: el tipo de adaptador de este móvil. Sin OBD (lo dice el coche): solo GPS o el simulador. */}
+            <Segmented label={team.obd ? 'Adaptador' : 'Origen de los datos'} value={team.obd || cfg.source === 'sim' ? cfg.source : 'gps'} disabled={running} onChange={(v) => setConfig({ source: v })}
+              options={team.obd ? [['ble', 'Bluetooth BLE'], ['classic', 'Bluetooth clásico'], ['sim', 'Simulador']] : [['gps', 'Solo GPS'], ['sim', 'Simulador']]} />
             <p className="flex gap-2 text-[13px] leading-snug text-muted">
               <Icon name="bluetooth" size={15} className="mt-px" />
               <span>
-                {cfg.source === 'ble'
-                  ? 'Necesita un adaptador BLE 4.0 y la app Android (o Chrome en Android). Los ELM327 de Bluetooth clásico (PIN 1234) no aparecen. Si se desconecta (contacto quitado al repostar), el GPS sigue enviándose y se reconecta solo.'
+                {!team.obd ? (cfg.source === 'sim' ? 'Simula una vuelta por GPS, sin datos de motor.' : 'El coche no lleva OBD (se cambia en la tarjeta Coche): se envían el GPS y los datos del móvil.')
+                  : cfg.source === 'ble' ? 'Adaptadores BLE 4.0, en la app Android o en Chrome para Android: se elige en la lista al tomar el volante.'
+                  : cfg.source === 'classic' ? 'Los ELM327 que piden PIN (normalmente 1234), solo en la app Android. Empareja antes el adaptador en los ajustes de Bluetooth del móvil y elígelo aquí.'
                   : 'Genera RPM, temperatura y voltaje realistas para probar BOX y Piloto sin coche.'}
+                {team.obd && cfg.source !== 'sim' && ' Si se desconecta (contacto quitado al repostar), el GPS sigue enviándose y se reconecta solo.'}
                 {running && ' Detén la telemetría para cambiar el origen.'}
               </span>
             </p>
+            {team.obd && cfg.source === 'classic' && <ClassicPicker disabled={running} />}
             <Field label="Intervalo de lectura y envío" help="Más bajo = datos más fluidos, a cambio de más batería y datos móviles. En carrera, 250-500 ms; los intervalos largos son para medir el consumo del móvil.">
               <div className="flex items-center gap-4">
                 <input type="range" min="0" max={POLL_STEPS.length - 1} step="1" className="flex-1 accent-[var(--accent)]" aria-valuetext={fmtPoll(cfg.pollMs)}
@@ -53,22 +58,71 @@ export default function Settings() {
             </Field>
           </Card>
 
-          <Card title="Simulador · fallos" badge={simulating && <Pill>Simulando fallos</Pill>}>
+          {team.obd && <Card title="Simulador · fallos" badge={simulating && <Pill>Simulando fallos</Pill>}>
             <div className="-mx-3 -my-1 flex flex-col">
               <Switch label="Sobrecalentamiento" help="El refrigerante sube hasta ~112 °C." on={faults.overheat} onToggle={() => toggle('overheat')} disabled={cfg.source !== 'sim'} />
               <Switch label="Fallo de alternador" help="La tensión cae a ~11,7 V." on={faults.lowVolt} onToggle={() => toggle('lowVolt')} disabled={cfg.source !== 'sim'} />
               <Switch label="Motor calado" help="RPM a 0 y tensión de batería en reposo." on={faults.stall} onToggle={() => toggle('stall')} disabled={cfg.source !== 'sim'} />
             </div>
             {cfg.source !== 'sim' && <p className="text-[13px] text-muted">Solo disponible con el simulador como origen.</p>}
-          </Card>
+          </Card>}
         </div>
 
         <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
           <TelemetryCard />
+          {Capacitor.isNativePlatform() && <PermissionsCard />}
           {!Capacitor.isNativePlatform() && <AppCard />}
         </div>
       </div>
     </Page>
+  );
+}
+
+// Adaptador de Bluetooth clásico: uno de los emparejados en Android (se recuerda en este móvil).
+function ClassicPicker({ disabled }) {
+  const cfg = useConfig();
+  const [list, setList] = useState(null);
+  const [error, setError] = useState('');
+  const load = () => { setError(''); pairedClassic().then(setList, (e) => setError(e.message)); };
+  return (
+    <div className="flex flex-col gap-2 rounded-[4px] bg-sunken px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-[14px]">{cfg.classicAddr ? <>Adaptador: <b>{cfg.classicName || cfg.classicAddr}</b></> : 'Ningún adaptador elegido'}</span>
+        <button type="button" onClick={load} disabled={disabled} className={btn.ghost}><Icon name="bluetooth" size={15} />{list ? 'Actualizar lista' : 'Elegir adaptador'}</button>
+      </div>
+      <ErrorText>{error}</ErrorText>
+      {list?.length === 0 && <p className="text-[13px] text-muted">No hay dispositivos emparejados. Empareja el adaptador en Ajustes de Android → Bluetooth (PIN 1234 o 0000) y actualiza la lista.</p>}
+      {list?.map((d) => (
+        <button key={d.address} type="button" disabled={disabled} onClick={() => { setConfig({ classicAddr: d.address, classicName: d.name }); setList(null); }}
+          className={`flex items-center justify-between rounded-[4px] border px-3 py-2 text-left text-[14px] ${d.address === cfg.classicAddr ? 'border-accent bg-accent-soft' : 'border-line hover:bg-raised'}`}>
+          <b>{d.name || 'Sin nombre'}</b><span className="num text-[12px] text-muted">{d.address}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Permisos de la app Android. La ubicación se puede perder (p. ej. al elegir «Solo esta vez» o tras una
+// actualización): sin ella, BOX no ve el coche en el mapa ni se cronometran vueltas.
+function PermissionsCard() {
+  const [location, setLocation] = useState(null);
+  const check = () => hasLocation().then(setLocation);
+  useEffect(() => {
+    check();
+    addEventListener('visibilitychange', check); // al volver de los ajustes de Android
+    return () => removeEventListener('visibilitychange', check);
+  }, []);
+  return (
+    <Card title="Permisos" badge={location === false ? <Pill tone="crit">Falta ubicación</Pill> : location && <Pill tone="ok">Ubicación concedida</Pill>}>
+      <p className="text-[13px] leading-snug text-muted">
+        {location === false
+          ? 'Sin permiso de ubicación BOX no ve el coche en el mapa y no se cronometran vueltas. Elige «Permitir mientras se usa la app» y ubicación precisa.'
+          : 'La app tiene permiso de ubicación. Si alguna vez lo pierde (por ejemplo, tras actualizar), vuelve a darlo aquí.'}
+      </p>
+      <button type="button" onClick={() => askLocation().then(check)} className={location === false ? btn.primary : btn.ghost}>
+        <Icon name="pin" size={15} />Dar permiso de ubicación
+      </button>
+    </Card>
   );
 }
 

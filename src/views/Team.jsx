@@ -5,7 +5,7 @@ import Icon from '../icons.jsx';
 import { api, inviteLink, setSession, setTeam, useSession } from '../lib/session.js';
 import { useLive } from '../lib/store.js';
 import { LIMITS, limitErrors } from '../lib/limits.js';
-import { Page, Card, Field, Pill, NumInput, ConfirmButton, ErrorText, input, btn } from './ui.jsx';
+import { Page, Card, Field, Segmented, Pill, NumInput, ConfirmButton, ErrorText, input, btn } from './ui.jsx';
 import CarIconEditor from './CarIconEditor.jsx';
 
 // Guardar cambios del equipo: devuelve true si se guardó y deja el error a la vista.
@@ -84,6 +84,11 @@ export function CarCard({ team, save }) {
         </Field>
       </div>
       <CarIconField team={team} save={save} />
+      {/* Sin <label> alrededor: un clic en el texto activaría el primer botón */}
+      <div className="flex flex-col gap-1.5">
+        <Segmented label="Lector OBD" value={team.obd ? 'yes' : 'no'} onChange={(v) => save({ obd: v === 'yes' })} options={[['yes', 'Con OBD'], ['no', 'Sin OBD']]} />
+        <span className="text-[13px] leading-snug text-muted">{team.obd ? 'Temperatura del motor, rpm y batería del coche en Piloto, BOX y Estadísticas.' : 'Solo GPS y móvil: la app no muestra datos del motor.'}</span>
+      </div>
       {team.event ? (
         // En un evento la pista es la del organizador: aquí solo se informa.
         <div className="flex flex-wrap items-center gap-3 rounded-[4px] border border-accent/40 bg-accent-soft px-3 py-2.5">
@@ -156,10 +161,10 @@ function CarIconField({ team, save }) {
 }
 
 const ALERT_ROWS = [
-  { id: 'temp', name: 'Temperatura motor', cond: 'Aviso desde · crítico por encima de', unit: '°C', warn: 'tempWarn', crit: 'tempCrit', step: 1 },
-  { id: 'volt', name: 'Batería baja', cond: 'Por debajo de', unit: 'V', warn: 'voltWarn', crit: 'voltCrit', step: 0.1 },
-  { id: 'voltHigh', name: 'Sobretensión', cond: 'Por encima de (fallo de regulador)', unit: 'V', warn: 'voltHighWarn', crit: 'voltHighCrit', step: 0.1 },
-  { id: 'rpm', name: 'Régimen motor', cond: 'Aviso visual desde · crítico en el limitador', unit: 'rpm', warn: 'rpmWarn', crit: 'rpmCrit', step: 100 },
+  { id: 'temp', motor: true, name: 'Temperatura motor', cond: 'Aviso desde · crítico por encima de', unit: '°C', warn: 'tempWarn', crit: 'tempCrit', step: 1 },
+  { id: 'volt', motor: true, name: 'Batería baja', cond: 'Por debajo de', unit: 'V', warn: 'voltWarn', crit: 'voltCrit', step: 0.1 },
+  { id: 'voltHigh', motor: true, name: 'Sobretensión', cond: 'Por encima de (fallo de regulador)', unit: 'V', warn: 'voltHighWarn', crit: 'voltHighCrit', step: 0.1 },
+  { id: 'rpm', motor: true, name: 'Régimen motor', cond: 'Aviso visual desde · crítico en el limitador', unit: 'rpm', warn: 'rpmWarn', crit: 'rpmCrit', step: 100 },
   { id: 'stale', name: 'Sin datos del coche', cond: 'Segundos sin recibir telemetría', unit: 's', warn: 'staleWarn', crit: 'staleCrit', step: 1 },
   { id: 'phone', name: 'Batería del móvil', cond: 'Por debajo de', unit: '%', warn: 'phoneWarn', crit: 'phoneCrit', step: 1 },
   { id: 'off', name: 'Fuera del trazado', cond: 'Metros desde el trazado dibujado (descontando el error del GPS)', unit: 'm', warn: 'offWarn', crit: 'offCrit', step: 5 },
@@ -184,7 +189,7 @@ export function AlertsCard({ team, save }) {
           <span className="label flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-warn-solid" />Aviso</span>
           <span className="label flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-crit-solid" />Crítico</span>
         </div>
-        {ALERT_ROWS.map((r) => (
+        {ALERT_ROWS.filter((r) => team.obd || !r.motor).map((r) => (
           <div key={r.id} className={`grid grid-cols-2 items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_150px_150px] ${errors[r.id] ? 'bg-crit-soft' : ''}`}>
             <div className="col-span-2 sm:col-span-1">
               <div className="text-[15px] font-semibold uppercase tracking-[0.04em]">{r.name}</div>

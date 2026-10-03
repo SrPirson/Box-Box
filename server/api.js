@@ -46,7 +46,7 @@ async function teamPayload(teamId) {
   ]);
   return {
     id: t.id, name: t.name, inviteCode: t.invite_code, ownerId: t.owner_id, dorsal: t.dorsal, phone: t.phone,
-    limits: { ...LIMITS, ...t.limits }, carIcon: t.car_icon, carIconStyle: t.car_icon_style, members,
+    limits: { ...LIMITS, ...t.limits }, carIcon: t.car_icon, carIconStyle: t.car_icon_style, obd: t.obd, members,
     // En un evento, la pista es la del organizador (igual para todos los equipos) y no hay pistas propias.
     event: ev ? eventSummary(ev) : null,
     track: ev ? ev.track : t.track,
@@ -260,6 +260,7 @@ const routes = [
       if (!['round', 'sprite'].includes(body.carIconStyle)) fail(400, 'Estilo de icono no válido.');
       set.car_icon_style = body.carIconStyle;
     }
+    if ('obd' in body) set.obd = body.obd === true;
     if ('phone' in body) set.phone =str(body.phone, 'Teléfono', { min: 0, max: 30 });
     if ('limits' in body) {
       const l = { ...LIMITS };

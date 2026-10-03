@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { useSocket, useLive, speak, hush } from '../lib/store.js';
 import { useSession } from '../lib/session.js';
-import { useGateway, usePhone, start, stop, lastGps, hasLocation, openAppSettings } from '../lib/gateway.js';
+import { useGateway, usePhone, start, stop, lastGps, hasLocation, askLocation } from '../lib/gateway.js';
 import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
@@ -80,7 +80,7 @@ export default function Pilot({ onNav }) {
         <button onClick={gw.obd === 'on' ? stop : start} className="flex h-10 items-center gap-2 rounded-md border-2 border-line px-3"
           aria-label={gw.obd === 'on' ? 'Detener telemetría' : 'Iniciar telemetría'}>
           <span className={`h-3.5 w-3.5 rounded-full ${gw.obd === 'on' ? (gw.obdLink === 'lost' ? 'pulse bg-warn-solid' : 'bg-ok') : gw.obd === 'connecting' ? 'pulse bg-warn-solid' : 'bg-crit'}`} />
-          {getConfig().source === 'sim' ? 'SIM' : 'OBD'}
+          {getConfig().source === 'sim' ? 'SIM' : team.obd && getConfig().source !== 'gps' ? 'OBD' : 'GPS'}
         </button>
         <span className="flex items-center gap-2" title="Conexión con BOX">
           <span className={`h-3.5 w-3.5 rounded-full ${connected ? 'bg-ok' : 'pulse bg-crit'}`} />BOX
@@ -95,13 +95,13 @@ export default function Pilot({ onNav }) {
       </div>
       {/* Coche a la izquierda (azul), móvil a la derecha (violeta): dos temperaturas que no se pueden confundir */}
       <div className="num flex shrink-0 justify-between whitespace-nowrap border-b border-line text-xl font-bold">
-        <div className="flex items-center gap-3 border-l-4 border-info px-3 py-2" title="Coche">
+        {team.obd ? <div className="flex items-center gap-3 border-l-4 border-info px-3 py-2" title="Coche">
           <span className="flex flex-col items-center text-info"><Icon name="car" size={22} /><span className="text-[11px] tracking-[0.08em]">COCHE</span></span>
           <span className={`flex items-center ${o.coolant > team.limits.tempCrit ? 'text-crit' : ''}`} title="Temperatura del motor">
             <Icon name="thermo" size={20} className="text-info" />{o.coolant ?? '—'}°
           </span>
           <span className="hidden min-[430px]:inline">{o.rpm ?? '—'}<span className="text-sm text-muted"> rpm</span></span>
-        </div>
+        </div> : <span />}
         <div className="flex items-center justify-end gap-2 border-r-4 border-accent px-3 py-2" title="Móvil">
           <span className={`flex items-center ${bat != null && bat < team.limits.phoneWarn ? 'text-crit' : ''}`} title="Batería del móvil">
             <Icon name="battery" size={20} className="mr-1 text-accent" />{bat ?? '—'}<span className="text-sm text-muted">%</span>
@@ -119,7 +119,7 @@ export default function Pilot({ onNav }) {
           <span className="min-w-0 flex-1 text-lg font-bold leading-tight">Sin permiso de ubicación: BOX no verá el coche en el mapa.
             <span className="block text-[14px] font-semibold">En Ajustes → Permisos → Ubicación, elige «Permitir mientras se usa la app».</span>
           </span>
-          <button onClick={openAppSettings} className="h-12 rounded-md bg-on-crit px-4 text-lg font-bold uppercase text-crit-solid">Dar permiso</button>
+          <button onClick={() => askLocation().then(() => hasLocation()).then((ok) => setNoLocation(ok === false))} className="h-12 rounded-md bg-on-crit px-4 text-lg font-bold uppercase text-crit-solid">Dar permiso</button>
         </div>
       )}
       {gw.error && <div role="alert" className="bg-crit-solid px-3 py-2 text-lg font-bold text-on-crit">{gw.error}</div>}

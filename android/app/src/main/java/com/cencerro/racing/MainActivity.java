@@ -17,6 +17,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ThermalPlugin.class);
         registerPlugin(UpdaterPlugin.class);
         registerPlugin(BackgroundPlugin.class);
+        registerPlugin(ClassicBtPlugin.class);
         super.onCreate(savedInstanceState);
         // El móvil va en el salpicadero: pantalla siempre encendida con la app abierta.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

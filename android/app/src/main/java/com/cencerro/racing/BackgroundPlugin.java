@@ -11,16 +11,21 @@ import android.os.Handler;
 import android.os.Looper;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 // Telemetría con la pantalla apagada: arranca el servicio en primer plano y, mientras dura,
 //  - "location": cada posición del GPS nativo (el GPS del WebView se para en segundo plano);
 //  - "tick": un pulso periódico que despierta las esperas del bucle de telemetría en JavaScript
 //    (con la página oculta, el WebView ralentiza los setTimeout hasta casi pararlos).
-@CapacitorPlugin(name = "Background")
+@CapacitorPlugin(name = "Background", permissions = {
+    @Permission(alias = "location", strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION })
+})
 public class BackgroundPlugin extends Plugin {
     private static final long TICK_MS = 250;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -82,6 +87,20 @@ public class BackgroundPlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("location", ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED);
         call.resolve(ret);
+    }
+
+    // Pide el permiso de ubicación con el diálogo del sistema. Si Android ya no deja preguntar (denegado dos
+    // veces) o se deniega, abre los ajustes de la app para darlo a mano. Devuelve { location }.
+    @PluginMethod
+    public void requestLocation(PluginCall call) {
+        if (getPermissionState("location") == PermissionState.GRANTED) { permissions(call); return; }
+        requestPermissionForAlias("location", call, "locationResult");
+    }
+
+    @PermissionCallback
+    private void locationResult(PluginCall call) {
+        if (getPermissionState("location") != PermissionState.GRANTED) openSettings(call);
+        else permissions(call);
     }
 
     // Ajustes de la app (Permisos → Ubicación): lo único que funciona cuando Android ya no deja volver a preguntar.

@@ -65,6 +65,8 @@ export function SCHEMA() {
   alter table teams add column if not exists car_icon text;
   -- 'round': foto en círculo; 'sprite': silueta sin fondo que gira con el rumbo del coche.
   alter table teams add column if not exists car_icon_style text not null default 'round';
+  -- false: el coche no lleva lector OBD (solo GPS); la app oculta los datos de motor.
+  alter table teams add column if not exists obd boolean not null default true;
   -- Telemetría muestreada a 1 Hz para estadísticas (la de 4 Hz solo va en directo).
   create table if not exists samples (
     team_id int not null references teams(id) on delete cascade,
