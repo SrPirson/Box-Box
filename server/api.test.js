@@ -188,6 +188,7 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   await call('/api/teams/join', { token: quique.token, method: 'POST', body: { code: reg.team.inviteCode } });
   const detail = await call(`/api/events/${ev.id}`, { token: olga.token });
   assert.deepEqual(detail.teams[0].members.map((m) => m.name), ['Pepe', 'Quique']);
+  assert.equal(detail.teams[0].carIconStyle, 'round'); // el mapa del organizador pinta el icono de cada equipo
   assert.equal((await call(`/api/events/${ev.id}`, { token: pepe.token })).status, 403);
 
   // En vivo: Olga (sin equipo) sigue el evento y ve el coche y las vueltas; luego la clasificación.

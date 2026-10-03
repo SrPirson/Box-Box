@@ -97,6 +97,7 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
     },
     'event:lap': () => loadStandings(),
     'event:flag': setFlag,
+    'event:teams': () => api(`/api/events/${id}`).then(setEv).catch(() => {}),
     connect: () => socket.emit('event:watch', id), // al reconectar, volver a la sala del evento
   });
   useEffect(() => {
@@ -116,7 +117,9 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
     : (a, b) => b.laps - a.laps || new Date(a.last_at ?? 8.64e15) - new Date(b.last_at ?? 8.64e15));
   const leader = rows[0];
   // Coches para el mapa: clave = equipo (dos equipos pueden llevar el mismo dorsal).
-  const mapCars = Object.fromEntries(Object.values(cars).map((p) => [p.teamId, { ...p, key: p.teamId }]));
+  // Con el icono que cada equipo tenga configurado (null: círculo con el dorsal).
+  const icons = Object.fromEntries(ev.teams.map((t) => [t.id, { carIcon: t.carIcon ?? null, carIconStyle: t.carIconStyle }]));
+  const mapCars = Object.fromEntries(Object.values(cars).map((p) => [p.teamId, { ...p, key: p.teamId, ...icons[p.teamId] }]));
   const states = Object.fromEntries(Object.values(cars).map((p) => [p.teamId, now - p.ts > STALE_MS ? 'crit' : p.pit ? 'warn' : 'ok']));
   const link = inviteLink(ev.inviteCode);
 

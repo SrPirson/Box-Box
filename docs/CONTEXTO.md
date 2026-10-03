@@ -122,7 +122,7 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 1. **Borrar el servicio antiguo `cencerro`** y el Postgres `cencerro-racing-db` en Render (ya se puede: todos
    tienen la APK v9+). El MCP de Render no permite borrar: desde el panel.
 2. Probar las banderas en pista con varios móviles.
-3. **Icono propio de cada coche en el mapa del evento** (ahora todos salen como círculo con dorsal).
+3. ~~Icono propio de cada coche en el mapa del evento~~ (hecho el 03/10).
 4. **ELM327 de Bluetooth clásico** (el KUULAA v2.2 puede serlo): plugin de puerto serie en la APK;
    `createElm()` ya acepta otro transporte.
 5. **Gestión de stints y combustible** (tiempo al volante por piloto, consumo, ventana de boxes) y tiempos

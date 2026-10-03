@@ -74,6 +74,7 @@ export async function teamChanged(teamId) {
   // Entra en un evento o sale de él: su bandera, o ninguna.
   const t = await one('select event_id from teams where id = $1', [teamId]);
   io.to(room(teamId)).emit('flag', t?.event_id ? flagOf(t.event_id) : null);
+  if (t?.event_id) io.to(eventRoom(t.event_id)).emit('event:teams'); // el organizador recarga equipos e iconos
 }
 
 // Expulsa las conexiones de un usuario (eliminado, sacado del equipo o cambiado de equipo); al reconectar

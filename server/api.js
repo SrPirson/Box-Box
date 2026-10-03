@@ -75,12 +75,12 @@ async function ownEvent(user, id) {
   return e;
 }
 async function eventPayload(e) {
-  const teams = await q(`select t.id, t.name, t.dorsal, t.invite_code,
+  const teams = await q(`select t.id, t.name, t.dorsal, t.invite_code, t.car_icon, t.car_icon_style,
       coalesce(json_agg(json_build_object('id', u.id, 'name', u.name) order by u.created_at) filter (where u.id is not null), '[]') as members
     from teams t left join users u on u.team_id = t.id where t.event_id = $1 group by t.id order by t.created_at`, [e.id]);
   const org = e.organizer_id && await one('select name from users where id = $1', [e.organizer_id]);
   return { ...eventSummary(e), inviteCode: e.invite_code, track: e.track, organizerId: e.organizer_id, organizer: org?.name ?? null,
-    teams: teams.map((t) => ({ id: t.id, name: t.name, dorsal: t.dorsal, inviteCode: t.invite_code, members: t.members })) };
+    teams: teams.map((t) => ({ id: t.id, name: t.name, dorsal: t.dorsal, inviteCode: t.invite_code, members: t.members, carIcon: t.car_icon, carIconStyle: t.car_icon_style })) };
 }
 const eventFields = (body) => {
   const set = {};

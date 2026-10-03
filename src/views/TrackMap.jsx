@@ -137,17 +137,20 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
       if (!p.gps) continue;
       const pos = [p.gps.lat, p.gps.lng];
       const k = p.key ?? p.car; // en un evento, el equipo (dos equipos pueden llevar el mismo dorsal)
+      // En un evento, cada coche trae el icono de su equipo; si no, el del equipo propio.
+      const ic = p.carIcon !== undefined ? p.carIcon : carIcon;
+      const is = p.carIconStyle ?? carIconStyle;
       let l = layers.current[k];
       if (!l) {
         if (!Object.keys(layers.current).length) map.current.setView(pos, 17);
         l = layers.current[k] = {
           trail: L.polyline([], { className: 'trail', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(map.current),
-          dot: L.marker(pos, { icon: carMarker(p.car, carIcon, carIconStyle), zIndexOffset: 1000 }).addTo(map.current),
-          icon: carIcon + carIconStyle,
+          dot: L.marker(pos, { icon: carMarker(p.car, ic, is), zIndexOffset: 1000 }).addTo(map.current),
+          icon: ic + is,
           from: pos, heading: 0,
         };
       }
-      if (l.icon !== carIcon + carIconStyle) { l.dot.setIcon(carMarker(p.car, carIcon, carIconStyle)); l.icon = carIcon + carIconStyle; } // el equipo cambió el icono
+      if (l.icon !== ic + is) { l.dot.setIcon(carMarker(p.car, ic, is)); l.icon = ic + is; } // el equipo cambió el icono
       l.trail.setLatLngs(trails[k] ?? []);
       l.dot.setLatLng(pos);
       // Rumbo. En marcha: el del GPS del móvil (como el puntero de Google Maps) o, si no lo da, el calculado entre
