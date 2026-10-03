@@ -101,12 +101,21 @@ async function startBackground() {
   ]);
   await Background.start();
 }
-// Permiso de ubicación en la app Android: null fuera de ella (el navegador pregunta por su cuenta).
-export const hasLocation = () => (native ? Background.permissions().then((p) => p.location, () => null) : Promise.resolve(null));
-export const openAppSettings = () => Background.openSettings();
-// Pide el permiso con el diálogo del sistema (o abre los ajustes si Android ya no deja preguntar). Las APK
-// anteriores a la v12 no tienen requestLocation: directamente a los ajustes.
-export const askLocation = () => Background.requestLocation().catch(() => Background.openSettings());
+// Ubicación en la app Android: { granted (permiso), enabled (ubicación del móvil encendida) }; null fuera de
+// ella (el navegador pregunta por su cuenta). Las APK anteriores a la v13 no dicen `enabled`.
+export const locationStatus = () => (native ? Background.permissions().then((p) => ({ granted: p.location, enabled: p.enabled ?? true }), () => null) : Promise.resolve(null));
+export const locationOk = (s) => !s || (s.granted && s.enabled);
+// Arregla lo que falte: sin permiso, el diálogo del sistema (o los ajustes de la app si Android ya no deja
+// preguntar); con la ubicación apagada, sus ajustes; si todo está bien, los ajustes de la app para revisarlo.
+// Los métodos que una APK antigua no tenga acaban en los ajustes de la app.
+export async function fixLocation() {
+  const s = await locationStatus();
+  if (!s) return;
+  const settings = () => Background.openSettings();
+  if (!s.granted) return Background.requestLocation().catch(settings);
+  if (!s.enabled) return Background.openLocationSettings().catch(settings);
+  return settings();
+}
 
 function stopBackground() {
   bgSubs.forEach((s) => s.remove());

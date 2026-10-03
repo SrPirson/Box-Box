@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { useSocket, useLive, speak, hush } from '../lib/store.js';
 import { useSession } from '../lib/session.js';
-import { useGateway, usePhone, start, stop, lastGps, hasLocation, askLocation } from '../lib/gateway.js';
+import { useGateway, usePhone, start, stop, lastGps, locationStatus, locationOk, fixLocation } from '../lib/gateway.js';
 import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
@@ -27,9 +27,10 @@ export default function Pilot({ onNav }) {
   const [inbox, setInbox] = useState([]); // mensajes pendientes de responder (el primero se muestra)
   const [sent, setSent] = useState(null);
   // Permiso de ubicación (app Android): se mira al entrar y cada vez que se vuelve a la app, p. ej. desde Ajustes.
-  const [noLocation, setNoLocation] = useState(false);
+  const [loc, setLoc] = useState(null);
+  const noLocation = !locationOk(loc);
   useEffect(() => {
-    const check = () => hasLocation().then((ok) => setNoLocation(ok === false));
+    const check = () => locationStatus().then(setLoc);
     check();
     addEventListener('visibilitychange', check);
     return () => removeEventListener('visibilitychange', check);
@@ -116,10 +117,10 @@ export default function Pilot({ onNav }) {
       {noLocation && (
         <div role="alert" className="flex flex-wrap items-center gap-3 bg-crit-solid px-3 py-2 text-on-crit">
           <Icon name="pin" size={24} stroke={2.5} />
-          <span className="min-w-0 flex-1 text-lg font-bold leading-tight">Sin permiso de ubicación: BOX no verá el coche en el mapa.
-            <span className="block text-[14px] font-semibold">En Ajustes → Permisos → Ubicación, elige «Permitir mientras se usa la app».</span>
+          <span className="min-w-0 flex-1 text-lg font-bold leading-tight">{loc?.granted ? 'Ubicación del móvil apagada' : 'Sin permiso de ubicación'}: BOX no verá el coche en el mapa.
+            <span className="block text-[14px] font-semibold">{loc?.granted ? 'Enciende la ubicación del móvil.' : 'Elige «Permitir mientras se usa la app» y ubicación precisa.'}</span>
           </span>
-          <button onClick={() => askLocation().then(() => hasLocation()).then((ok) => setNoLocation(ok === false))} className="h-12 rounded-md bg-on-crit px-4 text-lg font-bold uppercase text-crit-solid">Dar permiso</button>
+          <button onClick={fixLocation} className="h-12 rounded-md bg-on-crit px-4 text-lg font-bold uppercase text-crit-solid">{loc?.granted ? 'Encender' : 'Dar permiso'}</button>
         </div>
       )}
       {gw.error && <div role="alert" className="bg-crit-solid px-3 py-2 text-lg font-bold text-on-crit">{gw.error}</div>}

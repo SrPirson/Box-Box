@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { useConfig, setConfig, speak } from '../lib/store.js';
-import { sim, useGateway, start, stop, hasLocation, askLocation } from '../lib/gateway.js';
+import { sim, useGateway, start, stop, locationStatus, fixLocation } from '../lib/gateway.js';
 import { pairedClassic } from '../lib/elm327.js';
 import { useSession } from '../lib/session.js';
 import { Capacitor } from '@capacitor/core';
@@ -105,22 +105,28 @@ function ClassicPicker({ disabled }) {
 // Permisos de la app Android. La ubicación se puede perder (p. ej. al elegir «Solo esta vez» o tras una
 // actualización): sin ella, BOX no ve el coche en el mapa ni se cronometran vueltas.
 function PermissionsCard() {
-  const [location, setLocation] = useState(null);
-  const check = () => hasLocation().then(setLocation);
+  const gw = useGateway();
+  const [s, setS] = useState(null);
+  const check = () => locationStatus().then(setS);
   useEffect(() => {
     check();
     addEventListener('visibilitychange', check); // al volver de los ajustes de Android
     return () => removeEventListener('visibilitychange', check);
   }, []);
   return (
-    <Card title="Permisos" badge={location === false ? <Pill tone="crit">Falta ubicación</Pill> : location && <Pill tone="ok">Ubicación concedida</Pill>}>
+    <Card title="Ubicación" badge={s && (!s.granted ? <Pill tone="crit">Sin permiso</Pill> : !s.enabled ? <Pill tone="crit">Apagada</Pill> : <Pill tone="ok">Permiso concedido</Pill>)}>
       <p className="text-[13px] leading-snug text-muted">
-        {location === false
-          ? 'Sin permiso de ubicación BOX no ve el coche en el mapa y no se cronometran vueltas. Elige «Permitir mientras se usa la app» y ubicación precisa.'
-          : 'La app tiene permiso de ubicación. Si alguna vez lo pierde (por ejemplo, tras actualizar), vuelve a darlo aquí.'}
+        {!s ? 'Comprobando…'
+          : !s.granted ? 'Sin permiso de ubicación BOX no ve el coche en el mapa y no se cronometran vueltas. Elige «Permitir mientras se usa la app» y ubicación precisa.'
+          : !s.enabled ? 'La app tiene permiso, pero la ubicación del móvil está apagada: enciéndela.'
+          : 'Permiso concedido y ubicación encendida. Si BOX no ve el coche, revisa en los ajustes de la app que la ubicación sea «precisa».'}
       </p>
-      <button type="button" onClick={() => askLocation().then(check)} className={location === false ? btn.primary : btn.ghost}>
-        <Icon name="pin" size={15} />Dar permiso de ubicación
+      {/* Señal real mientras este móvil conduce: lo que de verdad le llega a BOX */}
+      {gw.obd === 'on' && (
+        <p className="num text-[13px]">{gw.data?.gps ? <span className="text-ok">Posición recibida · precisión {gw.data.gps.acc ?? '?'} m</span> : <span className="text-warn">Esperando la primera posición…</span>}</p>
+      )}
+      <button type="button" onClick={() => fixLocation().then(check)} className={s && !(s.granted && s.enabled) ? btn.primary : btn.ghost}>
+        <Icon name="pin" size={15} />{!s || !s.granted ? 'Dar permiso de ubicación' : !s.enabled ? 'Encender la ubicación' : 'Abrir ajustes de la app'}
       </button>
     </Card>
   );

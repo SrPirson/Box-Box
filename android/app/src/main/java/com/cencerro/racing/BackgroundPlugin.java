@@ -9,6 +9,8 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
+import androidx.core.location.LocationManagerCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -31,6 +33,8 @@ public class BackgroundPlugin extends Plugin {
     private final Handler main = new Handler(Looper.getMainLooper());
     private LocationManager lm;
     private boolean running;
+    private long lastGpsAt; // último fix del GPS (elapsedRealtime): mientras llegan, se ignoran los de red
+    private static final long GPS_FRESH_MS = 5000;
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -44,6 +48,10 @@ public class BackgroundPlugin extends Plugin {
     private final LocationListener onFix = new LocationListener() {
         @Override
         public void onLocationChanged(Location l) {
+            // El GPS manda; la red (WiFi/antenas) solo cubre cuando el GPS aún no tiene señal (al arrancar, bajo techo).
+            boolean gps = LocationManager.GPS_PROVIDER.equals(l.getProvider());
+            if (gps) lastGpsAt = SystemClock.elapsedRealtime();
+            else if (SystemClock.elapsedRealtime() - lastGpsAt < GPS_FRESH_MS) return;
             JSObject p = new JSObject();
             p.put("lat", l.getLatitude());
             p.put("lng", l.getLongitude());
@@ -71,6 +79,8 @@ public class BackgroundPlugin extends Plugin {
             lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
             try {
                 lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 500, 0, onFix, Looper.getMainLooper());
+                if (lm.getAllProviders().contains(LocationManager.NETWORK_PROVIDER))
+                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000, 0, onFix, Looper.getMainLooper());
             } catch (SecurityException e) {
                 running = false;
                 call.reject("Falta el permiso de ubicación");
@@ -86,6 +96,9 @@ public class BackgroundPlugin extends Plugin {
     public void permissions(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("location", ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED);
+        // Con permiso pero con la ubicación del móvil apagada (interruptor rápido), Android no da posiciones.
+        LocationManager m = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
+        ret.put("enabled", m != null && LocationManagerCompat.isLocationEnabled(m));
         call.resolve(ret);
     }
 
@@ -109,6 +122,13 @@ public class BackgroundPlugin extends Plugin {
         Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             android.net.Uri.fromParts("package", getContext().getPackageName(), null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(i);
+        call.resolve();
+    }
+
+    // Ajustes de ubicación del sistema, para encenderla.
+    @PluginMethod
+    public void openLocationSettings(PluginCall call) {
+        getContext().startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         call.resolve();
     }
 
