@@ -9,6 +9,7 @@ import { setMode as setTheme, useThemeMode } from '../lib/theme.js';
 import { MODES, modesOf, setMode, useMode } from '../lib/mode.js';
 import { Page, Card, Field, Segmented, Pill, ErrorText, input, btn, fmtLap, fmtSplit } from './ui.jsx';
 import { RANGES, lapAvg, Kpi, Delta, LapChart, Th } from './Stats.jsx';
+import { KIND_OPTIONS } from './Racing.jsx';
 
 const ROLE_LABEL = { admin: 'Administrador', organizer: 'Organizador', pilot: 'Piloto' };
 
@@ -146,12 +147,13 @@ function byTrack(laps) {
 export default function Profile() {
   const { user, team } = useSession();
   const [range, setRange] = useState('all');
+  const [kind, setKind] = useState('all');
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
     setData(null);
-    api(`/api/me/stats?since=${RANGES[range][1]().toISOString()}`).then(setData).catch((e) => setError(e.message));
-  }, [range]);
+    api(`/api/me/stats?since=${RANGES[range][1]().toISOString()}${kind === 'all' ? '' : `&kind=${kind}`}`).then(setData).catch((e) => setError(e.message));
+  }, [range, kind]);
 
   const laps = data?.laps ?? [];
   const m = data?.metrics ?? {};
@@ -167,7 +169,10 @@ export default function Profile() {
           <h2 className="text-xl font-bold uppercase tracking-[0.06em]">Mis estadísticas</h2>
           <p className="text-[13px] text-muted">Tus vueltas y tu telemetría al volante, en todos tus equipos y eventos.</p>
         </div>
-        <Segmented value={range} onChange={setRange} options={Object.entries(RANGES).map(([k, [l]]) => [k, l])} />
+        <div className="flex flex-wrap gap-2">
+          <Segmented value={kind} onChange={setKind} options={KIND_OPTIONS} />
+          <Segmented value={range} onChange={setRange} options={Object.entries(RANGES).map(([k, [l]]) => [k, l])} />
+        </div>
       </div>
       {error && <p role="alert" className="mb-4 rounded-[4px] bg-crit-soft px-3 py-2 text-crit">{error}</p>}
       {!data ? <p className="text-muted">Cargando…</p> : (

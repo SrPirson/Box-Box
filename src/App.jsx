@@ -10,6 +10,7 @@ import Profile from './views/Profile.jsx';
 import Events from './views/Events.jsx';
 import EventsBrowse from './views/EventsBrowse.jsx';
 import { RaceFlagBanner } from './views/RaceFlag.jsx';
+import { EventTodayBanner } from './views/Racing.jsx';
 import { Login, ForcedPassword, Wordmark } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
@@ -86,6 +87,7 @@ function Frame({ view, setView, mode, muted, setMuted, children }) {
     <div className="flex h-full flex-col">
       <Header view={view} setView={setView} mode={mode} muted={muted} setMuted={setMuted} />
       {mode === 'pilot' && team && <RaceFlagBanner />}
+      {mode === 'pilot' && team && <EventTodayBanner />}
       {/* Fila propia para volver a Piloto: se tiene que poder acertar conduciendo, con guantes y en movimiento */}
       {mode === 'pilot' && team && (
         <button onClick={() => setView('piloto')}

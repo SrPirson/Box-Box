@@ -10,7 +10,9 @@ const room = (teamId) => `team:${teamId}`;
 
 // En un evento, la pista que se cronometra es la del organizador, igual para todos los equipos.
 async function loadTeam(id) {
-  const t = await one(`select t.id, t.name, t.dorsal, t.limits, t.event_id, case when t.event_id is null then t.track else e.track end as track
+  // event_id: el evento que el equipo está corriendo (inscrito y participando); si no participa, entrena con su pista.
+  const t = await one(`select t.id, t.name, t.dorsal, t.limits, case when t.racing then t.event_id end as event_id, e.session,
+      case when t.event_id is null or not t.racing then t.track else e.track end as track
     from teams t left join events e on e.id = t.event_id where t.id = $1`, [id]);
   return t && { ...t, limits: { ...LIMITS, ...t.limits }, route: t.track?.path ? createRoute(t.track.path) : null };
 }
@@ -27,7 +29,7 @@ const flagStatus = (eventId) => { const f = flags.get(eventId); return f && { ..
 const canRun = (u, e) => e && (u.role === 'admin' || (u.role === 'organizer' && e.organizer_id === u.id));
 async function setFlag(eventId, type, text) {
   flags.set(eventId, { type, text, ts: Date.now(), seen: new Set() });
-  for (const t of await q('select id from teams where event_id = $1', [eventId])) io.to(room(t.id)).emit('flag', flagOf(eventId));
+  for (const t of await q('select id from teams where event_id = $1 and racing', [eventId])) io.to(room(t.id)).emit('flag', flagOf(eventId));
   io.to(eventRoom(eventId)).emit('event:flag', flagStatus(eventId));
 }
 function state(teamId) {
@@ -71,11 +73,14 @@ export async function teamChanged(teamId) {
     else if (JSON.stringify(st.team.track) !== before) st.lap.restart();
   }
   io.to(room(teamId)).emit('team');
-  // Entra en un evento o sale de él: su bandera, o ninguna.
-  const t = await one('select event_id from teams where id = $1', [teamId]);
-  io.to(room(teamId)).emit('flag', t?.event_id ? flagOf(t.event_id) : null);
+  // Entra en un evento (o empieza a participar) o sale de él: su bandera, o ninguna.
+  const t = await one('select event_id, racing from teams where id = $1', [teamId]);
+  io.to(room(teamId)).emit('flag', t?.event_id && t.racing ? flagOf(t.event_id) : null);
   if (t?.event_id) io.to(eventRoom(t.event_id)).emit('event:teams'); // el organizador recarga equipos e iconos
 }
+
+// Aviso para el registro de BOX del equipo (p. ej., empieza o deja de participar en el evento).
+export const teamNotice = (teamId, text) => io.to(room(teamId)).emit('notice', { text, ts: Date.now() });
 
 // Expulsa las conexiones de un usuario (eliminado, sacado del equipo o cambiado de equipo); al reconectar
 // se vuelve a validar quién es y a qué equipo pertenece.
@@ -86,6 +91,9 @@ export async function kick(userId) {
     if (st.driver?.id === userId) setDriver(st, null);
   }
 }
+
+// Tipo de vuelta: libre fuera de un evento; dentro, la sesión que marca el organizador.
+const kindOf = (team) => (team.event_id ? team.session : 'free');
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -164,17 +172,17 @@ export function attachLive(server, userFromToken) {
         const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
         if (lap) {
           // JSON.stringify: pg mandaría un array JS como array de Postgres, no como jsonb.
-          q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id, event_id) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+          q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id, event_id, kind) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
             [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors),
-              st.team.event_id ? null : st.team.track?.id ?? null, st.team.event_id])
+              st.team.event_id ? null : st.team.track?.id ?? null, st.team.event_id, kindOf(st.team)])
             .then(() => st.team.event_id && io.to(eventRoom(st.team.event_id)).emit('event:lap', { teamId: st.team.id, team: st.team.name, ms: lap.ms, driver: u.name }))
             .catch((e) => console.error('lap', e.message));
           io.to(r).emit('lap', { ...lap, driver: u.name, driverId: u.id });
         }
         if (ts - st.lastStored >= 1000) {
           st.lastStored = ts;
-          q('insert into samples (team_id, driver_id, ts, rpm, coolant, throttle, voltage, speed, lat, lng) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10)',
-            [st.team.id, u.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng]).catch((e) => console.error('sample', e.message));
+          q('insert into samples (team_id, driver_id, ts, rpm, coolant, throttle, voltage, speed, lat, lng, kind) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11)',
+            [st.team.id, u.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng, kindOf(st.team)]).catch((e) => console.error('sample', e.message));
         }
         // Fuera de pista: metros al trazado descontando el error del GPS, para no avisar por un fix impreciso.
         const offTrack = loc ? Math.round(Math.max(0, loc.dist - (num(g.acc) ?? 0))) : null;

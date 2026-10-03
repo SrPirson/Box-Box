@@ -67,6 +67,9 @@ export function SCHEMA() {
   alter table teams add column if not exists car_icon_style text not null default 'round';
   -- false: el coche no lleva lector OBD (solo GPS); la app oculta los datos de motor.
   alter table teams add column if not exists obd boolean not null default true;
+  -- Inscrito en un evento no es lo mismo que correrlo: con racing = false el equipo entrena con sus pistas.
+  -- Los ya inscritos al crear la columna quedan participando (true); los que se inscriben después, no.
+  alter table teams add column if not exists racing boolean not null default true;
   -- Telemetría muestreada a 1 Hz para estadísticas (la de 4 Hz solo va en directo).
   create table if not exists samples (
     team_id int not null references teams(id) on delete cascade,
@@ -105,5 +108,12 @@ export function SCHEMA() {
   alter table laps add column if not exists event_id int;
   create index if not exists laps_event on laps (event_id, started_at);
   -- Privado: no sale en la lista de eventos de los pilotos; solo se entra con su código.
-  alter table events add column if not exists private boolean not null default false;`;
+  alter table events add column if not exists private boolean not null default false;
+  -- Sesión en curso del evento, que marca el organizador: 'practice' (entrenamiento) o 'race' (carrera).
+  alter table events add column if not exists session text not null default 'race';
+  -- Tipo de cada vuelta y muestra: 'free' (libre, fuera de un evento), 'practice' o 'race' (sesión del evento).
+  -- Las vueltas de antes con evento eran de carrera (idempotente: las nuevas de evento nunca son 'free').
+  alter table laps add column if not exists kind text not null default 'free';
+  update laps set kind = 'race' where event_id is not null and kind = 'free';
+  alter table samples add column if not exists kind text not null default 'free';`;
 }

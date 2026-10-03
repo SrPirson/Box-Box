@@ -32,6 +32,12 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 - **Dirección de carrera**: la bandera del evento llega a todos sus equipos. En Piloto sale a pantalla completa con
   voz hasta pulsar «Visto»; después queda una franja fija de su color (también en Box). La verde se anuncia
   3 s y la retira. El organizador ve en la clasificación qué equipos la han visto.
+- **Participar en el evento**: inscrito no es participar. Con «Participando» el equipo usa la pista del
+  organizador, sus vueltas cuentan en la sesión en curso, sale en su mapa y recibe banderas; sin participar,
+  entrena con sus pistas (vueltas libres). Lo cambia cualquier miembro (Box, Equipo, Eventos). Al inscribirse
+  empieza sin participar; el día del evento sale una franja «Hoy es … · Participar».
+- **Tipos de vuelta** (`laps.kind`, `samples.kind`): **Libre** (fuera del evento), **Entrenamiento** y **Carrera**
+  (la sesión que marca el organizador en `events.session`). Estadísticas, perfil y clasificación filtran por tipo.
 - **Sin OBD** (`teams.obd = false`): el coche solo manda GPS y móvil; Piloto, Box, Estadísticas y Alertas
   ocultan los datos de motor y el botón de la barra de Piloto dice «GPS».
 - **Box**: vueltas y parciales en vivo, alarmas por niveles, gauges, mapa (barra de pista: pistas guardadas,
@@ -77,8 +83,8 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 
 - **Autenticación**: scrypt + tokens HMAC de 30 días (stdlib). Cambiar contraseña invalida los tokens.
 - **Un coche por equipo**, un único piloto «al volante». Un **relevo** reinicia la vuelta y abre la parada.
-- **Pista** (`track = { line?, path?, sectors?, id?, name? }`): en equipos de entrenamiento, la del equipo
-  (pistas guardadas en `tracks`); en un evento, la del organizador (`events.track`), igual para todos.
+- **Pista** (`track = { line?, path?, sectors?, id?, name? }`): la del equipo (pistas guardadas en `tracks`);
+  participando en un evento (`teams.racing`), la del organizador (`events.track`), igual para todos.
 - **Vueltas y tramos**: el servidor detecta el cruce de meta interpolando el instante; cortes de tramo →
   parciales en el orden en que se cruzan. Cada vuelta guarda `sectors`, `track_id` y `event_id`.
 - **Boxes**: «Salgo a box»/«Repostar» → viene de camino (alarmas normales); BOX confirma «Coche en boxes» →

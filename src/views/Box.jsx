@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
+import { RacingButton } from './Racing.jsx';
 import { useSocket, useLive } from '../lib/store.js';
 import { api, setTeam, useSession } from '../lib/session.js';
 import { carAlarms, worst, limitsOf, lateMs, fmt, fmtAge, PHONE_HOT } from '../lib/limits.js';
@@ -52,6 +53,7 @@ export default function Box({ muted }) {
       if (e.critical) setBreakdowns((b) => [...b, { ...e, id: uid() }]);
     },
     // Vuelta anulada (desde Piloto o desde BOX): fuera el cronómetro y los parciales hasta el próximo cruce de meta.
+    notice: ({ text, ts }) => setLog((l) => [{ id: uid(), dir: 'in', car: team.dorsal, text: text.toUpperCase(), ts }, ...l]),
     'lap:reset': ({ by, ts }) => {
       setCars((c) => Object.fromEntries(Object.entries(c).map(([k, p]) => [k, { ...p, lapStartedAt: null, lapSplits: [] }])));
       setLog((l) => [{ id: uid(), dir: 'in', car: team.dorsal, text: `VUELTA ANULADA · ${by}`, ts }, ...l]);
@@ -113,11 +115,11 @@ export default function Box({ muted }) {
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
             <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus} track={team.track}
-              // En un evento la pista la pone el organizador: se ve, pero no se edita.
-              onTrack={team.event ? undefined : (track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
-              toolbar={team.event
-                ? <span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Icon name="finish" size={15} className="text-accent" />Pista del evento · {team.event.name}</span>
-                : <TrackPicker team={team} />} carIcon={team.carIcon} carIconStyle={team.carIconStyle} />
+              // Participando en un evento la pista la pone el organizador: se ve, pero no se edita.
+              onTrack={team.racing ? undefined : (track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
+              toolbar={team.racing
+                ? <div className="flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Icon name="finish" size={15} className="text-accent" />Pista del evento · {team.event.name}</span><RacingButton /></div>
+                : <div className="flex flex-wrap items-center gap-2"><TrackPicker team={team} /><RacingButton /></div>} carIcon={team.carIcon} carIconStyle={team.carIconStyle} />
           </div>
         </section>
 

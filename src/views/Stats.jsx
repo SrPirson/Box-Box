@@ -5,6 +5,7 @@ import { api, useSession } from '../lib/session.js';
 import { useSocket } from '../lib/store.js';
 import { fmt } from '../lib/limits.js';
 import { Page, Card, Segmented, fmtLap, fmtDelta, fmtSplit } from './ui.jsx';
+import { KINDS, KIND_OPTIONS } from './Racing.jsx';
 
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 export const RANGES = {
@@ -15,11 +16,12 @@ export const RANGES = {
 };
 
 // Carga las estadísticas desde una fecha y añade en vivo las vueltas que se completan.
-export function useStats(range) {
+// kind: 'all' o un tipo de vuelta (libre, entrenamiento o carrera).
+export function useStats(range, kind = 'all') {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const load = () => api(`/api/stats?since=${RANGES[range][1]().toISOString()}`).then((d) => { setData(d); setError(''); }).catch((e) => setError(e.message));
-  useEffect(() => { setData(null); load(); const t = setInterval(load, 60_000); return () => clearInterval(t); }, [range]); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = () => api(`/api/stats?since=${RANGES[range][1]().toISOString()}${kind === 'all' ? '' : `&kind=${kind}`}`).then((d) => { setData(d); setError(''); }).catch((e) => setError(e.message));
+  useEffect(() => { setData(null); load(); const t = setInterval(load, 60_000); return () => clearInterval(t); }, [range, kind]); // eslint-disable-line react-hooks/exhaustive-deps
   useSocket({ lap: () => load() });
   return { data, error };
 }
@@ -45,7 +47,8 @@ export function sectorStats(laps, track) {
 
 export default function Stats() {
   const [range, setRange] = useState('today');
-  const { data, error } = useStats(range);
+  const [kind, setKind] = useState('all');
+  const { data, error } = useStats(range, kind);
   const laps = data?.laps ?? [];
   const avg = lapAvg(laps);
   const best = laps.reduce((b, l) => (!b || l.ms < b.ms ? l : b), null);
@@ -55,7 +58,10 @@ export default function Stats() {
 
   return (
     <Page title="Estadísticas" subtitle="Vueltas cronometradas al cruzar la línea de meta y telemetría guardada cada segundo."
-      actions={<Segmented value={range} onChange={setRange} options={Object.entries(RANGES).map(([k, [l]]) => [k, l])} />}>
+      actions={<div className="flex flex-wrap gap-2">
+        <Segmented value={kind} onChange={setKind} options={KIND_OPTIONS} />
+        <Segmented value={range} onChange={setRange} options={Object.entries(RANGES).map(([k, [l]]) => [k, l])} />
+      </div>}>
       {error && <p role="alert" className="mb-4 rounded-[4px] bg-crit-soft px-3 py-2 text-crit">{error}</p>}
       {!data ? <p className="text-muted">Cargando…</p> : (
         <div className="flex flex-col gap-4">
@@ -283,7 +289,7 @@ function LapsTable({ laps, avg, bestId, sec, obd }) {
       <div className="max-h-[480px] overflow-auto">
         <table className="w-full min-w-[720px] text-[14px]">
           <thead className="sticky top-0 bg-raised text-left"><tr className="label">
-            <Th>#</Th><Th>Hora</Th><Th>Piloto</Th><Th right>Tiempo</Th><Th right>vs media</Th>
+            <Th>#</Th><Th>Hora</Th><Th>Tipo</Th><Th>Piloto</Th><Th right>Tiempo</Th><Th right>vs media</Th>
             {sec.per.map((_, i) => <Th key={i} right>T{i + 1}</Th>)}
             {obd && <Th right>Temp. media</Th>}<Th right>Vel. máx</Th>{obd && <Th right>Bat. mín</Th>}
           </tr></thead>
@@ -292,6 +298,7 @@ function LapsTable({ laps, avg, bestId, sec, obd }) {
               <tr key={l.id} className={`border-t border-line ${l.id === bestId ? 'bg-ok-soft' : ''}`}>
                 <td className="num px-4 py-2 text-muted">{i + 1}</td>
                 <td className="num px-4 py-2 text-fg-2">{new Date(l.started_at).toLocaleTimeString('es-ES')}</td>
+                <td className="px-4 py-2 text-fg-2">{KINDS[l.kind] ?? '—'}</td>
                 <td className="px-4 py-2 font-semibold">{l.driver ?? '—'}</td>
                 <td className="num px-4 py-2 text-right font-bold">{fmtLap(l.ms)}{l.id === bestId && <span className="ml-1.5 text-[11px] text-ok">MEJOR</span>}</td>
                 <td className="px-4 py-2 text-right"><Delta ms={l.ms - avg} /></td>

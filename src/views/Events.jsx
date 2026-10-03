@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
+import { SESSIONS } from './Racing.jsx';
 import { api, inviteLink } from '../lib/session.js';
 import { useSocket, FLAG_INFO } from '../lib/store.js';
 import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, btn, fmtLap, fmtDelta } from './ui.jsx';
@@ -79,12 +80,13 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
   const trails = useRef({});
   const [focus, setFocus] = useState(null); // equipo seleccionado en el mapa
   const [order, setOrder] = useState('best');
+  const [session, setSession] = useState(null); // sesión de la clasificación (null: la actual del evento)
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [flag, setFlag] = useState(null); // bandera actual del evento y equipos que la han visto
   const run = (p) => p.then((e) => { setEv(e); onChanged(); }).catch((e) => setError(e.message));
   const patch = (body) => run(api(`/api/events/${id}`, { method: 'PATCH', body }));
-  const loadStandings = () => api(`/api/events/${id}/standings`).then((s) => setStandings(Object.values(s))).catch(() => {});
+  const loadStandings = (s = session) => api(`/api/events/${id}/standings${s ? `?session=${s}` : ''}`).then((r) => setStandings(Object.values(r))).catch(() => {});
 
   const { socket } = useSocket({
     'event:car': (p) => {
@@ -149,6 +151,8 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
           {navigator.share && <button onClick={() => navigator.share({ title: ev.name, text: `Inscribe tu equipo en ${ev.name} con Box Box (código ${ev.inviteCode})`, url: link }).catch(() => {})} className={btn.ghost}><Icon name="share" size={15} />Compartir</button>}
           <button onClick={() => run(api(`/api/events/${id}/invite`, { method: 'POST' }))} className={btn.ghost}><Icon name="refresh" size={15} />Renovar</button>
         </div>
+        <Segmented label="Sesión en curso" value={ev.session} onChange={(s) => { patch({ session: s }); setSession(null); loadStandings(s); }} options={SESSIONS} />
+        <p className="-mt-1 text-[13px] text-muted">Las vueltas de los equipos que participan se guardan en la sesión en curso. Los que no participan entrenan por su cuenta: ni cuentan ni salen en el mapa.</p>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => patch({ closed: !ev.closed })} className={btn.ghost}>{ev.closed ? 'Abrir inscripciones' : 'Cerrar inscripciones'}</button>
           <button onClick={() => patch({ private: !ev.private })} className={btn.ghost}
@@ -162,7 +166,10 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
 
       <RaceControl flag={flag} teams={ev.teams.length} send={(type, text) => socket.emit('event:flag', { eventId: id, type, text })} />
 
-      <Card title="Clasificación" flush badge={<Segmented value={order} onChange={setOrder} options={[['best', 'Mejor vuelta'], ['laps', 'Más vueltas']]} />}>
+      <Card title="Clasificación" flush badge={<span className="flex flex-wrap gap-2">
+        <Segmented value={session ?? ev.session} onChange={(s) => { setSession(s); loadStandings(s); }} options={SESSIONS} />
+        <Segmented value={order} onChange={setOrder} options={[['best', 'Mejor vuelta'], ['laps', 'Más vueltas']]} />
+      </span>}>
         {rows.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">Aún no hay equipos inscritos. Comparte el código de inscripción.</p> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-[14px]">
@@ -186,7 +193,7 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
                       <td className="num px-3 py-2 text-right">{fmtLap(r.last)}</td>
                       <td className="num px-3 py-2">{c?.lapStartedAt ? fmtLap(Math.max(0, now - c.lapStartedAt)).slice(0, -2) : '—'}</td>
                       <td className="px-3 py-2"><span className="flex items-center gap-1.5">
-                        {!c ? <Pill tone="muted">Sin señal</Pill> : c.pit ? <Pill tone="warn">Boxes</Pill> : <Pill tone="ok">En pista · {c.driver}</Pill>}
+                        {!r.racing ? <Pill tone="muted">No participa</Pill> : !c ? <Pill tone="muted">Sin señal</Pill> : c.pit ? <Pill tone="warn">Boxes</Pill> : <Pill tone="ok">En pista · {c.driver}</Pill>}
                         {flag && flag.type !== 'green' && (flag.seen.includes(r.id)
                           ? <span title="Ha visto la bandera" className="text-ok"><Icon name="check" size={16} /></span>
                           : <span title="Aún no ha visto la bandera" className="text-warn"><Icon name="flag" size={16} /></span>)}
@@ -272,6 +279,7 @@ function TeamRow({ team: t, eventId, onChange, onError }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="num text-muted">#{t.dorsal}</span>
         <b className="text-[15px]">{t.name}</b>
+        {t.racing ? <Pill tone="ok">Participando</Pill> : <Pill tone="muted">No participa</Pill>}
         <span className="num text-[12px] text-muted" title="Código del equipo: lo usan sus pilotos para unirse">código {t.inviteCode}</span>
         <span className="ml-auto flex flex-wrap gap-2">
           <button onClick={() => setAdding(!adding)} className={btn.ghost}><Icon name="plus" size={14} />Añadir piloto</button>

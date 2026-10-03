@@ -9,6 +9,7 @@ import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
 import { RaceFlagScreen, RaceFlagBanner } from './RaceFlag.jsx';
+import { EventTodayBanner } from './Racing.jsx';
 
 // Cada acción tiene un color fijo para memoria muscular. Solo AVERÍA va rellena: es la única que llama.
 const ACTIONS = [
@@ -114,6 +115,7 @@ export default function Pilot({ onNav }) {
         </div>
       </div>
       <RaceFlagBanner big />
+      <EventTodayBanner big />
       {noLocation && (
         <div role="alert" className="flex flex-wrap items-center gap-3 bg-crit-solid px-3 py-2 text-on-crit">
           <Icon name="pin" size={24} stroke={2.5} />

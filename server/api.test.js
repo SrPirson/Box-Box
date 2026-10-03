@@ -183,8 +183,16 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   const reg = await call('/api/teams', { token: pepe.token, method: 'POST', body: { name: 'Los Rápidos', eventCode: ev.inviteCode } });
   assert.equal(reg.team.event.name, '24h Jarama');
   assert.equal(reg.team.dorsal, '1'); // el primero del evento; el siguiente sería el 2
-  assert.deepEqual(reg.team.track.line, line);
+  // Inscrito pero sin participar: entrena con su propia pista, que puede editar.
+  assert.equal(reg.team.racing, false);
+  assert.equal(reg.team.track, null);
+  const own = [[41, -3], [41, -2.9]];
+  assert.deepEqual((await call('/api/team', { token: pepe.token, method: 'PATCH', body: { track: { line: own } } })).track.line, own);
+  // Participando: la pista del organizador, que no puede cambiar. Al dejar de participar recupera la suya.
+  assert.deepEqual((await call('/api/team', { token: pepe.token, method: 'PATCH', body: { racing: true } })).track.line, line);
   assert.equal((await call('/api/team', { token: pepe.token, method: 'PATCH', body: { track: { line: [[1, 1], [2, 2]] } } })).status, 403);
+  assert.deepEqual((await call('/api/team', { token: pepe.token, method: 'PATCH', body: { racing: false } })).track.line, own);
+  await call('/api/team', { token: pepe.token, method: 'PATCH', body: { racing: true } });
 
   // Otro piloto se une al equipo con el código del equipo.
   const quique = await call('/api/register', { method: 'POST', body: { name: 'Quique', email: 'quique@x.es', password: 'pistapista' } });
@@ -212,6 +220,13 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   assert.equal(standing.laps, 2);
   assert.ok(Math.abs(standing.best - 30_000) < 300, `${standing.best} ms`);
   assert.equal(standing.best_driver, 'Pepe');
+  assert.equal(standing.racing, true);
+  // Las vueltas son de la sesión actual (carrera por defecto): en la de entrenamiento no hay ninguna.
+  assert.equal((await call(`/api/events/${ev.id}/standings?session=practice`, { token: olga.token }))[0].laps, 0);
+  const stats = await call('/api/stats?kind=race', { token: pepe.token });
+  assert.equal(stats.laps.length, 2);
+  assert.equal(stats.laps[0].kind, 'race');
+  assert.equal((await call('/api/stats?kind=free', { token: pepe.token })).laps.length, 0);
   // El perfil de Pepe sabe en qué evento dio cada vuelta.
   assert.equal((await call('/api/me/stats', { token: pepe.token })).laps[0].event, '24h Jarama');
 

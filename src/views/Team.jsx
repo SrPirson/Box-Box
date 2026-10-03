@@ -5,6 +5,7 @@ import Icon from '../icons.jsx';
 import { api, inviteLink, setSession, setTeam, useSession } from '../lib/session.js';
 import { useLive } from '../lib/store.js';
 import { LIMITS, limitErrors } from '../lib/limits.js';
+import { RacingToggle } from './Racing.jsx';
 import { Page, Card, Field, Segmented, Pill, NumInput, ConfirmButton, ErrorText, input, btn } from './ui.jsx';
 import CarIconEditor from './CarIconEditor.jsx';
 
@@ -89,19 +90,20 @@ export function CarCard({ team, save }) {
         <Segmented label="Lector OBD" value={team.obd ? 'yes' : 'no'} onChange={(v) => save({ obd: v === 'yes' })} options={[['yes', 'Con OBD'], ['no', 'Sin OBD']]} />
         <span className="text-[13px] leading-snug text-muted">{team.obd ? 'Temperatura del motor, rpm y batería del coche en Piloto, BOX y Estadísticas.' : 'Solo GPS y móvil: la app no muestra datos del motor.'}</span>
       </div>
-      {team.event ? (
-        // En un evento la pista es la del organizador: aquí solo se informa.
+      {team.event && (
         <div className="flex flex-wrap items-center gap-3 rounded-[4px] border border-accent/40 bg-accent-soft px-3 py-2.5">
           <Icon name="finish" size={20} className="text-accent" />
           <div className="min-w-0 flex-1">
             <div className="text-[15px] font-bold uppercase tracking-[0.04em]">{team.event.name}</div>
             <div className="text-[13px] text-fg-2">
               {[team.event.startsOn && new Date(`${team.event.startsOn}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }), team.event.place].filter(Boolean).join(' · ')}
-              {team.event.startsOn || team.event.place ? ' · ' : ''}La pista (meta, trazado y tramos) la define el organizador.
+              {team.event.startsOn || team.event.place ? ' · ' : ''}Participando, la pista (meta, trazado y tramos) la define el organizador.
             </div>
           </div>
+          <div className="basis-full"><RacingToggle /></div>
         </div>
-      ) : <>
+      )}
+      {!team.racing && <>
       {team.track?.name && <p className="flex items-center gap-2 text-[14px]"><Icon name="flag" size={16} className="text-muted" />Pista activa: <b>{team.track.name}</b></p>}
       {[
         ['line', 'finish', 'Línea de meta', 'Definida: cada cruce cierra una vuelta.', team.track?.path ? 'Sin definir: hace de meta el primer punto del trazado.' : 'Sin definir. Dibújala en el mapa de BOX con «Meta».'],

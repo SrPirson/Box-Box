@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import { api, setSession, setTeam, pendingInvite, clearInvite, useSession } from '../lib/session.js';
 import { Page, Card, Field, Segmented, Pill, ErrorText, input, btn } from './ui.jsx';
+import { RacingToggle } from './Racing.jsx';
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : 'Sin fecha');
 
@@ -41,6 +42,7 @@ export default function EventsBrowse() {
   return (
     <Page title="Eventos" subtitle={team ? `Tu equipo: ${team.name}${team.event ? ` · inscrito en ${team.event.name}` : ' · de entrenamiento'}` : 'Inscríbete en un evento o únete a un equipo para correr.'}>
       {!team && <NoTeam />}
+      {team?.event && <Card title={team.event.name}><RacingToggle /></Card>}
       {team && owner && <EventCode />}
       <div className="mb-3 mt-6 flex flex-wrap items-center gap-3">
         <label className="flex min-w-0 flex-1 items-center gap-2 rounded-[4px] border border-line-strong bg-sunken px-3">

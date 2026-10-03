@@ -1,7 +1,7 @@
 // API REST: cuentas, equipos con invitación, administración y estadísticas.
 import { q, one } from './db.js';
 import { hashPassword, checkPassword, sign, verify, randomCode, tempPassword } from './auth.js';
-import { teamChanged, kick } from './live.js';
+import { teamChanged, kick, teamNotice } from './live.js';
 import { LIMITS, limitErrors } from '../src/lib/limits.js';
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
@@ -33,8 +33,11 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 // ── Respuestas ──
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id });
 // Columnas de un evento (la fecha como texto: un date de Postgres llega como Date a medianoche local y se desplaza).
-const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private";
-const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private });
+const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session";
+const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session });
+const KINDS = ['free', 'practice', 'race'];
+// Filtro opcional por tipo de vuelta (?kind=free|practice|race); null = todas.
+const kindParam = (url) => { const k = url.searchParams.get('kind'); return KINDS.includes(k) ? k : null; };
 
 async function teamPayload(teamId) {
   const t = await one('select * from teams where id = $1', [teamId]);
@@ -47,10 +50,12 @@ async function teamPayload(teamId) {
   return {
     id: t.id, name: t.name, inviteCode: t.invite_code, ownerId: t.owner_id, dorsal: t.dorsal, phone: t.phone,
     limits: { ...LIMITS, ...t.limits }, carIcon: t.car_icon, carIconStyle: t.car_icon_style, obd: t.obd, members,
-    // En un evento, la pista es la del organizador (igual para todos los equipos) y no hay pistas propias.
+    // Participando en un evento, la pista es la del organizador (igual para todos) y no hay pistas propias;
+    // inscrito sin participar, el equipo entrena con las suyas.
     event: ev ? eventSummary(ev) : null,
-    track: ev ? ev.track : t.track,
-    tracks: ev ? [] : tracks,
+    racing: !!ev && t.racing,
+    track: ev && t.racing ? ev.track : t.track,
+    tracks: ev && t.racing ? [] : tracks,
   };
 }
 const session = async (u, withToken) => ({
@@ -75,12 +80,12 @@ async function ownEvent(user, id) {
   return e;
 }
 async function eventPayload(e) {
-  const teams = await q(`select t.id, t.name, t.dorsal, t.invite_code, t.car_icon, t.car_icon_style,
+  const teams = await q(`select t.id, t.name, t.dorsal, t.invite_code, t.car_icon, t.car_icon_style, t.racing,
       coalesce(json_agg(json_build_object('id', u.id, 'name', u.name) order by u.created_at) filter (where u.id is not null), '[]') as members
     from teams t left join users u on u.team_id = t.id where t.event_id = $1 group by t.id order by t.created_at`, [e.id]);
   const org = e.organizer_id && await one('select name from users where id = $1', [e.organizer_id]);
   return { ...eventSummary(e), inviteCode: e.invite_code, track: e.track, organizerId: e.organizer_id, organizer: org?.name ?? null,
-    teams: teams.map((t) => ({ id: t.id, name: t.name, dorsal: t.dorsal, inviteCode: t.invite_code, members: t.members, carIcon: t.car_icon, carIconStyle: t.car_icon_style })) };
+    teams: teams.map((t) => ({ id: t.id, name: t.name, dorsal: t.dorsal, inviteCode: t.invite_code, members: t.members, carIcon: t.car_icon, carIconStyle: t.car_icon_style, racing: t.racing })) };
 }
 const eventFields = (body) => {
   const set = {};
@@ -92,6 +97,10 @@ const eventFields = (body) => {
   }
   if ('closed' in body) set.closed = !!body.closed;
   if ('private' in body) set.private = !!body.private;
+  if ('session' in body) {
+    if (!['practice', 'race'].includes(body.session)) fail(400, 'Sesión no válida.');
+    set.session = body.session;
+  }
   if ('track' in body) { const geo = trackGeometry(body.track); set.track = Object.keys(geo).length ? geo : null; }
   return set;
 };
@@ -206,7 +215,7 @@ const routes = [
     const dorsal = eventId
       ? String((await one(`select coalesce(max(nullif(regexp_replace(dorsal, '[^0-9]', '', 'g'), '')::int), 0) + 1 as n from teams where event_id = $1`, [eventId])).n)
       : '1';
-    const t = await one('insert into teams (name, invite_code, owner_id, limits, event_id, dorsal) values ($1, $2, $3, $4, $5, $6) returning id',
+    const t = await one('insert into teams (name, invite_code, owner_id, limits, event_id, dorsal, racing) values ($1, $2, $3, $4, $5, $6, false) returning id',
       [str(body.name, 'Nombre del equipo', { max: 60 }), await uniqueCode(), user.id, LIMITS, eventId, dorsal]);
     await joinTeam(user, t.id);
     return session(await reload(user.id));
@@ -240,7 +249,8 @@ const routes = [
     if (e && (await one('select 1 from teams where event_id = $1 and dorsal = $2 and id <> $3', [e.id, dorsal, team.id]))) {
       dorsal = String((await one(`select coalesce(max(nullif(regexp_replace(dorsal, '[^0-9]', '', 'g'), '')::int), 0) + 1 as n from teams where event_id = $1`, [e.id])).n);
     }
-    await q('update teams set event_id = $1, dorsal = $2 where id = $3', [e?.id ?? null, dorsal, team.id]);
+    // Inscrito, pero sin participar todavía: sigue entrenando con sus pistas hasta que lo active.
+    await q('update teams set event_id = $1, dorsal = $2, racing = false where id = $3', [e?.id ?? null, dorsal, team.id]);
     await teamChanged(team.id);
     return teamPayload(team.id);
   }],
@@ -261,6 +271,11 @@ const routes = [
       set.car_icon_style = body.carIconStyle;
     }
     if ('obd' in body) set.obd = body.obd === true;
+    // Participar o no en el evento en el que está inscrito: cualquier miembro.
+    if ('racing' in body) {
+      if (!team.event_id) fail(400, 'El equipo no está inscrito en ningún evento.');
+      set.racing = body.racing === true;
+    }
     if ('phone' in body) set.phone =str(body.phone, 'Teléfono', { min: 0, max: 30 });
     if ('limits' in body) {
       const l = { ...LIMITS };
@@ -270,7 +285,7 @@ const routes = [
       set.limits = l;
     }
     if ('track' in body) {
-      if (team.event_id) fail(403, 'En un evento, la pista la define el organizador.');
+      if (team.event_id && team.racing) fail(403, 'En un evento, la pista la define el organizador.');
       const geo = trackGeometry(body.track);
       // Editar una pista guardada la guarda también: la próxima vez que se elija sale con los cambios.
       const saved = isNum(body.track?.id) && await one('update tracks set track = $1 where id = $2 and team_id = $3 returning id, name', [geo, body.track.id, team.id]);
@@ -280,13 +295,14 @@ const routes = [
     if (keys.length) {
       await q(`update teams set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`, [team.id, ...keys.map((k) => set[k])]);
       await teamChanged(team.id);
+      if ('racing' in set) teamNotice(team.id, `${set.racing ? 'Participando en el evento' : 'Fuera del evento: entrenamiento libre'} · ${user.name}`);
     }
     return teamPayload(team.id);
   }],
 
   // Pistas guardadas: la elegida se copia como pista activa del equipo (la que se cronometra).
   ['POST', '/api/tracks', 'team', async ({ team, body }) => {
-    if (team.event_id) fail(403, 'En un evento, la pista la define el organizador.');
+    if (team.event_id && team.racing) fail(403, 'En un evento, la pista la define el organizador.');
     const geo = trackGeometry(team.track);
     if (!Object.keys(geo).length) fail(400, 'Dibuja antes el trazado, la meta o los tramos de la pista.');
     const t = await one('insert into tracks (team_id, name, track) values ($1, $2, $3) returning id, name', [team.id, str(body.name, 'Nombre de la pista', { max: 60 }), geo]);
@@ -323,18 +339,18 @@ const routes = [
   ['GET', '/api/stats', 'team', async ({ team, url }) => {
     const since = new Date(url.searchParams.get('since') || 0);
     if (Number.isNaN(since.getTime())) fail(400, 'Fecha no válida.');
-    const args = [team.id, since];
+    const args = [team.id, since, kindParam(url)];
     const [laps, metrics, drivers] = await Promise.all([
-      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.avg_rpm, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id, l.driver_id, u.name as driver
-         from laps l left join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 order by l.started_at`, args),
+      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.avg_rpm, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id, l.driver_id, l.kind, u.name as driver
+         from laps l left join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 and ($3::text is null or l.kind = $3) order by l.started_at`, args),
       one(`select count(*)::int as samples,
              avg(coolant)::float8 as avg_temp, max(coolant)::float8 as max_temp,
              avg(voltage)::float8 as avg_volt, min(voltage)::float8 as min_volt,
              avg(rpm)::float8 as avg_rpm, max(rpm)::float8 as max_rpm,
              avg(speed)::float8 as avg_speed, max(speed)::float8 as max_speed, avg(throttle)::float8 as avg_throttle
-           from samples where team_id = $1 and ts >= $2`, args),
+           from samples where team_id = $1 and ts >= $2 and ($3::text is null or kind = $3)`, args),
       q(`select u.id, u.name, count(*)::int as laps, min(l.ms)::int as best, avg(l.ms)::float8 as avg, avg(l.avg_temp)::float8 as avg_temp
-         from laps l join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 group by u.id, u.name order by best`, args),
+         from laps l join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 and ($3::text is null or l.kind = $3) group by u.id, u.name order by best`, args),
     ]);
     return { laps, metrics, drivers };
   }],
@@ -343,17 +359,17 @@ const routes = [
   ['GET', '/api/me/stats', 'user', async ({ user, url }) => {
     const since = new Date(url.searchParams.get('since') || 0);
     if (Number.isNaN(since.getTime())) fail(400, 'Fecha no válida.');
-    const args = [user.id, since];
+    const args = [user.id, since, kindParam(url)];
     const [laps, metrics] = await Promise.all([
-      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id,
+      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id, l.kind,
            l.event_id, e.name as event, t.name as team, tr.name as track
          from laps l left join teams t on t.id = l.team_id left join tracks tr on tr.id = l.track_id left join events e on e.id = l.event_id
-         where l.driver_id = $1 and l.started_at >= $2 order by l.started_at`, args),
+         where l.driver_id = $1 and l.started_at >= $2 and ($3::text is null or l.kind = $3) order by l.started_at`, args),
       // Muestras a 1 Hz: su número son los segundos al volante, y la velocidad integrada, los km.
       one(`select count(*)::int as seconds, coalesce(sum(speed), 0)::float8 / 3600 as km,
              avg(coolant)::float8 as avg_temp, max(coolant)::float8 as max_temp, max(rpm)::float8 as max_rpm,
              avg(speed)::float8 as avg_speed, max(speed)::float8 as max_speed, avg(throttle)::float8 as avg_throttle
-           from samples where driver_id = $1 and ts >= $2`, args),
+           from samples where driver_id = $1 and ts >= $2 and ($3::text is null or kind = $3)`, args),
     ]);
     return { laps, metrics };
   }],
@@ -437,15 +453,17 @@ const routes = [
     for (const t of teams) await teamChanged(t.id);
     return { ok: true };
   }],
-  // Clasificación: por equipo, vueltas, mejor, última y cuándo cruzó la meta por última vez (desempate en resistencia).
-  ['GET', /^\/api\/events\/(\d+)\/standings$/, 'organizer', async ({ user, params }) => {
+  // Clasificación de una sesión (?session=practice|race; por defecto, la actual): por equipo, vueltas, mejor,
+  // última y cuándo cruzó la meta por última vez (desempate en resistencia).
+  ['GET', /^\/api\/events\/(\d+)\/standings$/, 'organizer', async ({ user, params, url }) => {
     const e = await ownEvent(user, Number(params[0]));
-    return q(`select t.id, t.name, t.dorsal, count(l.id)::int as laps, min(l.ms)::int as best,
+    const s = ['practice', 'race'].includes(url.searchParams.get('session')) ? url.searchParams.get('session') : e.session;
+    return q(`select t.id, t.name, t.dorsal, t.racing, count(l.id)::int as laps, min(l.ms)::int as best,
         (array_agg(l.ms order by l.started_at desc))[1] as last,
         max(l.started_at + l.ms * interval '1 millisecond') as last_at,
-        (select u.name from laps b join users u on u.id = b.driver_id where b.team_id = t.id and b.event_id = $1 order by b.ms limit 1) as best_driver
-      from teams t left join laps l on l.team_id = t.id and l.event_id = $1
-      where t.event_id = $1 group by t.id order by t.created_at`, [e.id]);
+        (select u.name from laps b join users u on u.id = b.driver_id where b.team_id = t.id and b.event_id = $1 and b.kind = $2 order by b.ms limit 1) as best_driver
+      from teams t left join laps l on l.team_id = t.id and l.event_id = $1 and l.kind = $2
+      where t.event_id = $1 group by t.id order by t.created_at`, [e.id, s]);
   }],
 
   // Administración de la plataforma
