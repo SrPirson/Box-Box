@@ -319,6 +319,18 @@ test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
   assert.deepEqual(applied.track.line, line);
   assert.equal(applied.track.sectors.length, 2);
 
+  // Vueltas libres en Jarama: las estadísticas dicen la pista y se filtran por ella.
+  const se = await connect(token);
+  se.emit('drive');
+  const t0 = Date.now() - 100_000;
+  se.emit('telemetry:batch', { packets: Array.from({ length: 361 }, (_, i) => ({ ts: t0 + i * 250, obd: {}, gps: { lat: 40 - 0.001 + 0.002 * (((i * 250) % 30_000) / 30_000), lng: -3, speed: 120 } })) });
+  await new Promise((r) => setTimeout(r, 500));
+  const free = await call(`/api/stats?kind=free&track=${jarama.track.id}`, { token });
+  assert.equal(free.laps.length, 2);
+  assert.equal(free.laps[0].track, 'Jarama');
+  assert.equal((await call(`/api/stats?kind=free&track=${jarama.track.id + 999}`, { token })).laps.length, 0);
+  se.close();
+
   // Eliminarla deja el dibujo como pista sin guardar.
   const gone = await call(`/api/tracks/${jarama.track.id}`, { token, method: 'DELETE' });
   assert.deepEqual(gone.tracks, []);

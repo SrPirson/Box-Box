@@ -55,7 +55,7 @@ async function teamPayload(teamId) {
     event: ev ? eventSummary(ev) : null,
     racing: !!ev && t.racing,
     track: ev && t.racing ? ev.track : t.track,
-    tracks: ev && t.racing ? [] : tracks,
+    tracks,
   };
 }
 const session = async (u, withToken) => ({
@@ -339,18 +339,23 @@ const routes = [
   ['GET', '/api/stats', 'team', async ({ team, url }) => {
     const since = new Date(url.searchParams.get('since') || 0);
     if (Number.isNaN(since.getTime())) fail(400, 'Fecha no válida.');
-    const args = [team.id, since, kindParam(url)];
+    // ?track=<id>: solo las de una pista guardada del equipo (las libres; las de evento no tienen track_id).
+    const track = Number(url.searchParams.get('track')) || null;
+    const args = [team.id, since, kindParam(url), track];
     const [laps, metrics, drivers] = await Promise.all([
-      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.avg_rpm, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id, l.driver_id, l.kind, u.name as driver
-         from laps l left join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 and ($3::text is null or l.kind = $3) order by l.started_at`, args),
+      q(`select l.id, l.started_at, l.ms, l.avg_temp, l.max_temp, l.avg_rpm, l.max_rpm, l.max_speed, l.min_volt, l.sectors, l.track_id, l.driver_id, l.kind,
+           u.name as driver, tr.name as track, e.name as event
+         from laps l left join users u on u.id = l.driver_id left join tracks tr on tr.id = l.track_id left join events e on e.id = l.event_id
+         where l.team_id = $1 and l.started_at >= $2 and ($3::text is null or l.kind = $3) and ($4::int is null or l.track_id = $4) order by l.started_at`, args),
       one(`select count(*)::int as samples,
              avg(coolant)::float8 as avg_temp, max(coolant)::float8 as max_temp,
              avg(voltage)::float8 as avg_volt, min(voltage)::float8 as min_volt,
              avg(rpm)::float8 as avg_rpm, max(rpm)::float8 as max_rpm,
              avg(speed)::float8 as avg_speed, max(speed)::float8 as max_speed, avg(throttle)::float8 as avg_throttle
-           from samples where team_id = $1 and ts >= $2 and ($3::text is null or kind = $3)`, args),
+           from samples where team_id = $1 and ts >= $2 and ($3::text is null or kind = $3) and ($4::int is null or track_id = $4)`, args),
       q(`select u.id, u.name, count(*)::int as laps, min(l.ms)::int as best, avg(l.ms)::float8 as avg, avg(l.avg_temp)::float8 as avg_temp
-         from laps l join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 and ($3::text is null or l.kind = $3) group by u.id, u.name order by best`, args),
+         from laps l join users u on u.id = l.driver_id where l.team_id = $1 and l.started_at >= $2 and ($3::text is null or l.kind = $3) and ($4::int is null or l.track_id = $4)
+         group by u.id, u.name order by best`, args),
     ]);
     return { laps, metrics, drivers };
   }],

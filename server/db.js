@@ -115,5 +115,7 @@ export function SCHEMA() {
   -- Las vueltas de antes con evento eran de carrera (idempotente: las nuevas de evento nunca son 'free').
   alter table laps add column if not exists kind text not null default 'free';
   update laps set kind = 'race' where event_id is not null and kind = 'free';
-  alter table samples add column if not exists kind text not null default 'free';`;
+  alter table samples add column if not exists kind text not null default 'free';
+  -- Pista guardada en la que se rodó (solo en libre), para filtrar la telemetría por circuito como las vueltas.
+  alter table samples add column if not exists track_id int;`;
 }

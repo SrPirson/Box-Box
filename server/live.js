@@ -181,8 +181,8 @@ export function attachLive(server, userFromToken) {
         }
         if (ts - st.lastStored >= 1000) {
           st.lastStored = ts;
-          q('insert into samples (team_id, driver_id, ts, rpm, coolant, throttle, voltage, speed, lat, lng, kind) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11)',
-            [st.team.id, u.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng, kindOf(st.team)]).catch((e) => console.error('sample', e.message));
+          q('insert into samples (team_id, driver_id, ts, rpm, coolant, throttle, voltage, speed, lat, lng, kind, track_id) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12)',
+            [st.team.id, u.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng, kindOf(st.team), st.team.event_id ? null : st.team.track?.id ?? null]).catch((e) => console.error('sample', e.message));
         }
         // Fuera de pista: metros al trazado descontando el error del GPS, para no avisar por un fix impreciso.
         const offTrack = loc ? Math.round(Math.max(0, loc.dist - (num(g.acc) ?? 0))) : null;
