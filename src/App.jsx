@@ -8,6 +8,7 @@ import Admin from './views/Admin.jsx';
 import UpdateBanner from './views/Update.jsx';
 import Profile from './views/Profile.jsx';
 import Events from './views/Events.jsx';
+import RaceControl from './views/RaceControl.jsx';
 import EventsBrowse from './views/EventsBrowse.jsx';
 import { RaceFlagBanner } from './views/RaceFlag.jsx';
 import { EventTodayBanner } from './views/Racing.jsx';
@@ -19,8 +20,9 @@ import { useGateway } from './lib/gateway.js';
 import { toggleTheme, useTheme } from './lib/theme.js';
 import { MODES, modesOf, setMode, useMode } from './lib/mode.js';
 
-// Vistas de cada modo (team: solo con equipo). «piloto» (la vista del coche) y «perfil» (el botón con la inicial)
-// van aparte: la primera solo en modo Piloto con equipo; el perfil, en todos.
+// Vistas de cada modo (team: solo con equipo; hidden: sin pestaña, se abre desde otra vista; bare: a pantalla
+// completa, sin la cabecera). «piloto» (la vista del coche) y «perfil» (el botón con la inicial) van aparte: la
+// primera solo en modo Piloto con equipo; el perfil, en todos.
 const AdminEvents = (p) => <Events admin {...p} />;
 const MODE_VIEWS = {
   pilot: {
@@ -30,10 +32,14 @@ const MODE_VIEWS = {
     equipo: { label: 'Equipo', icon: 'users', team: true, Page: Team },
     ajustes: { label: 'Ajustes', icon: 'sliders', team: true, Page: Settings },
   },
-  organizer: { eventos: { label: 'Mis eventos', icon: 'finish', Page: Events } },
+  organizer: {
+    eventos: { label: 'Mis eventos', icon: 'finish', Page: Events },
+    control: { label: 'Race Control', Page: RaceControl, hidden: true, bare: true },
+  },
   admin: {
     cuentas: { label: 'Cuentas', icon: 'users', Page: Admin },
     eventos: { label: 'Eventos', icon: 'finish', Page: AdminEvents },
+    control: { label: 'Race Control', Page: RaceControl, hidden: true, bare: true },
   },
 };
 // #vista/resto: la vista y su ruta interna, que usa la propia vista (p. ej. #eventos/12/pista).
@@ -77,6 +83,7 @@ function Views() {
   if (current === 'piloto') return <Pilot onNav={nav} />;
 
   const Page = current === 'perfil' ? Profile : MODE_VIEWS[mode][current].Page;
+  if (MODE_VIEWS[mode][current]?.bare) return <Page onNav={nav} path={current === view ? path : []} />;
   return (
     <Frame view={current} setView={nav} mode={mode} muted={muted} setMuted={setMuted}>
       <Page muted={muted} onNav={nav} path={current === view ? path : []} />
@@ -109,7 +116,7 @@ function Header({ view, setView, mode, muted, setMuted }) {
   const theme = useTheme();
   const [clock, setClock] = useState(() => new Date());
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
-  const items = Object.entries(MODE_VIEWS[mode]).filter(([, v]) => !v.team || team);
+  const items = Object.entries(MODE_VIEWS[mode]).filter(([, v]) => !v.hidden && (!v.team || team));
   // Sin equipo, un piloto no tiene tiempo real (el servidor no lo admitiría): sin indicador de conexión.
   const live = team || mode !== 'pilot';
 

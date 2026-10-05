@@ -114,6 +114,19 @@ export function SCHEMA() {
   -- Borrador: el evento recién creado no sale en la lista pública ni admite inscripciones hasta que el
   -- organizador lo publica (con fecha y línea de meta). Los que ya existían quedan publicados.
   alter table events add column if not exists draft boolean not null default false;
+  -- Cupo de equipos (null: sin límite) y cuándo empezó la sesión en curso (reloj de Race Control).
+  alter table events add column if not exists max_teams int;
+  alter table events add column if not exists session_started_at timestamptz;
+  -- Registro de dirección de carrera: banderas, cambios de sesión y quién ha visto cada bandera. Sirve para
+  -- Race Control (en vivo y exportable) y para recuperar la bandera activa si el servidor se reinicia.
+  create table if not exists event_log (
+    id serial primary key,
+    event_id int not null references events(id) on delete cascade,
+    ts timestamptz not null default now(),
+    kind text not null,
+    data jsonb not null default '{}'
+  );
+  create index if not exists event_log_event on event_log (event_id, id);
   -- Tipo de cada vuelta y muestra: 'free' (libre, fuera de un evento), 'practice' o 'race' (sesión del evento).
   -- Las vueltas de antes con evento eran de carrera (idempotente: las nuevas de evento nunca son 'free').
   alter table laps add column if not exists kind text not null default 'free';

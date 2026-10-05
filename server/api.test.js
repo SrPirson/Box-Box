@@ -13,7 +13,10 @@ before(async () => {
     env: { ...process.env, PORT, PGLITE_DIR: 'memory://', ADMIN_EMAIL: 'jefe@cencerro.es', DATABASE_URL: '' },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-  await new Promise((r) => server.stdout.on('data', (d) => d.includes('escuchando') && r()));
+  await new Promise((r, j) => {
+    server.stdout.on('data', (d) => d.includes('escuchando') && r());
+    server.on('exit', (c) => j(new Error(`El servidor no ha arrancado (salida ${c})`))); // sin esto, el test se cuelga
+  });
 });
 after(() => server.kill());
 
@@ -255,6 +258,17 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   // Acuse: el panel sabe si el servidor la ha dado; a un piloto se le dice que no.
   assert.deepEqual(await so.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'yellow' }), { ok: true });
   assert.deepEqual(await sp.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'yellow' }), { ok: false });
+  assert.deepEqual(await so.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'chequered' }), { ok: true });
+  // Todo queda en el registro de Race Control (lo último primero), con quién lo hizo.
+  const log = Object.values(await call(`/api/events/${ev.id}/log`, { token: olga.token })).filter((x) => typeof x === 'object');
+  assert.deepEqual(log.slice(0, 2).map((l) => l.data.type), ['chequered', 'yellow']);
+  assert.equal(log[0].data.by, 'Olga');
+  assert.ok(log.some((l) => l.kind === 'seen' && l.data.teamId === reg.team.id && l.data.flagTs === red.ts));
+  assert.equal((await call(`/api/events/${ev.id}/log`, { token: pepe.token })).status, 403);
+  // Cambiar de sesión pone en marcha su reloj y se registra.
+  const practice = await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { session: 'practice' } });
+  assert.ok(Date.now() - practice.sessionStartedAt < 5000);
+  assert.equal((await call(`/api/events/${ev.id}/log`, { token: olga.token }))[0].data.session, 'practice');
 
   for (const s of [so, sp, sq]) s.close();
 });
@@ -276,10 +290,19 @@ test('lista pública de eventos, gestión de inscritos por el organizador y perf
   const list = Object.values(await call('/api/events/public?q=chest', { token: rita.token })).filter((x) => typeof x === 'object');
   assert.deepEqual(list.map((e) => e.name), ['Resistencia Cheste']); // ni el privado ni el borrador
   assert.equal((await call('/api/teams', { token: (await reg('Bea', 'bea@x.es')).token, method: 'POST', body: { name: 'X', eventCode: draft.inviteCode } })).status, 409);
+  // Cupo: con un equipo inscrito y cupo 1, el siguiente no entra; el cupo no admite valores raros.
+  assert.equal((await call(`/api/events/${pub.id}`, { token: org.token, method: 'PATCH', body: { maxTeams: 0 } })).status, 400);
   assert.equal(Object.values(await call('/api/events/public?q=Privado', { token: rita.token })).filter((x) => typeof x === 'object').length, 0);
   assert.equal((await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'X', eventId: priv.id } })).status, 404);
   const team = (await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'Rita Racing', eventId: pub.id } })).team;
   assert.equal(team.event.name, 'Resistencia Cheste');
+  await call(`/api/events/${pub.id}`, { token: org.token, method: 'PATCH', body: { maxTeams: 1 } });
+  const full = await call('/api/teams', { token: (await reg('Cris', 'cris@x.es')).token, method: 'POST', body: { name: 'Lleno', eventId: pub.id } });
+  assert.deepEqual([full.status, full.error], [409, 'El evento está completo: no quedan plazas.']);
+  // El borrador puede copiar la pista de otro evento del organizador; y se puede recordar a un equipo que participe.
+  const sources = Object.values(await call(`/api/events/${draft.id}/track-sources`, { token: org.token })).filter((x) => typeof x === 'object');
+  assert.deepEqual(sources.map((x) => x.label).sort(), ['Evento · Privado Club', 'Evento · Resistencia Cheste']);
+  assert.equal((await call(`/api/events/${pub.id}/teams/${team.id}/remind`, { token: org.token, method: 'POST' })).ok, true);
 
   // El organizador mete a un piloto registrado por su email, lo saca y echa al equipo del evento.
   const sam = await reg('Sam', 'sam@x.es');

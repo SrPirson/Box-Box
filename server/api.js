@@ -1,7 +1,7 @@
 // API REST: cuentas, equipos con invitación, administración y estadísticas.
 import { q, one } from './db.js';
 import { hashPassword, checkPassword, sign, verify, randomCode, tempPassword } from './auth.js';
-import { teamChanged, kick, teamNotice } from './live.js';
+import { teamChanged, kick, teamNotice, logEvent } from './live.js';
 import { LIMITS, limitErrors } from '../src/lib/limits.js';
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
@@ -33,13 +33,17 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 // ── Respuestas ──
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id });
 // Columnas de un evento (la fecha como texto: un date de Postgres llega como Date a medianoche local y se desplaza).
-const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft";
-const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session, draft: e.draft });
-// ¿Se puede inscribir un equipo en este evento? (e: con closed y draft)
-const checkEnroll = (e) => {
+const EVENT_COLS = `id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft, max_teams,
+  (extract(epoch from session_started_at) * 1000)::float8 as session_started_at`;
+const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session,
+  draft: e.draft, maxTeams: e.max_teams, sessionStartedAt: e.session_started_at });
+// ¿Se puede inscribir un equipo en este evento? (e: con id, closed, draft y max_teams)
+const ENROLL_COLS = 'id, closed, draft, max_teams';
+async function checkEnroll(e) {
   if (e?.draft) fail(409, 'Este evento aún no está publicado.');
   if (e?.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
-};
+  if (e?.max_teams && (await one('select count(*)::int as n from teams where event_id = $1', [e.id])).n >= e.max_teams) fail(409, 'El evento está completo: no quedan plazas.');
+}
 const KINDS = ['free', 'practice', 'race'];
 // Filtro opcional por tipo de vuelta (?kind=free|practice|race); null = todas.
 const kindParam = (url) => { const k = url.searchParams.get('kind'); return KINDS.includes(k) ? k : null; };
@@ -107,6 +111,11 @@ const eventFields = (body) => {
     set.session = body.session;
   }
   if ('track' in body) { const geo = trackGeometry(body.track); set.track = Object.keys(geo).length ? geo : null; }
+  if ('maxTeams' in body) {
+    const n = body.maxTeams === '' || body.maxTeams == null ? null : Number(body.maxTeams);
+    if (n != null && !(Number.isInteger(n) && n >= 1 && n <= 500)) fail(400, 'El cupo tiene que ser un número de equipos entre 1 y 500, o vacío para no tener límite.');
+    set.max_teams = n;
+  }
   return set;
 };
 // Cambios en la pista del evento (o el evento borrado): cada equipo recarga la suya y reinicia el cronometraje.
@@ -210,10 +219,10 @@ const routes = [
     let eventId = null;
     if (body.eventCode || body.eventId) {
       const e = body.eventCode
-        ? await one('select id, closed, draft from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()])
-        : await one('select id, closed, draft from events where id = $1 and not private', [Number(body.eventId)]);
+        ? await one(`select ${ENROLL_COLS} from events where invite_code = $1`, [String(body.eventCode).trim().toUpperCase()])
+        : await one(`select ${ENROLL_COLS} from events where id = $1 and not private`, [Number(body.eventId)]);
       if (!e) fail(404, body.eventCode ? 'Ese código de evento no existe.' : 'Ese evento no existe o es privado.');
-      checkEnroll(e);
+      await checkEnroll(e);
       eventId = e.id;
     }
     // En un evento, el siguiente dorsal libre (para no tener varios «#1»); el equipo puede cambiarlo después.
@@ -247,10 +256,10 @@ const routes = [
   ['POST', '/api/team/enroll', 'team', async ({ user, team, body }) => {
     if (!isOwner(user, team)) fail(403, 'Solo el capitán puede inscribir al equipo en un evento.');
     let e = null;
-    if (body.eventCode) e = await one('select id, closed, draft from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()]);
-    else if (body.eventId != null) e = await one('select id, closed, draft from events where id = $1 and not private', [Number(body.eventId)]);
+    if (body.eventCode) e = await one(`select ${ENROLL_COLS} from events where invite_code = $1`, [String(body.eventCode).trim().toUpperCase()]);
+    else if (body.eventId != null) e = await one(`select ${ENROLL_COLS} from events where id = $1 and not private`, [Number(body.eventId)]);
     if ((body.eventCode || body.eventId != null) && !e) fail(404, 'Ese evento no existe o es privado.');
-    checkEnroll(e);
+    if (e && e.id !== team.event_id) await checkEnroll(e);
     let dorsal = team.dorsal;
     if (e && (await one('select 1 from teams where event_id = $1 and dorsal = $2 and id <> $3', [e.id, dorsal, team.id]))) {
       dorsal = String((await one(`select coalesce(max(nullif(regexp_replace(dorsal, '[^0-9]', '', 'g'), '')::int), 0) + 1 as n from teams where event_id = $1`, [e.id])).n);
@@ -387,7 +396,7 @@ const routes = [
 
   // Eventos (organizadores; el admin ve y gestiona todos).
   // Lista del organizador (sus eventos) o del admin (todos, con su organizador).
-  ['GET', '/api/events', 'organizer', ({ user, url }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, e.private, e.draft,
+  ['GET', '/api/events', 'organizer', ({ user, url }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, e.private, e.draft, e.max_teams as "maxTeams",
       (e.track->'line') is not null as "hasFinish", e.invite_code as "inviteCode",
       o.name as organizer, (select count(*)::int from teams t where t.event_id = e.id) as teams,
       (select count(*)::int from teams t where t.event_id = e.id and t.racing) as racing
@@ -427,10 +436,37 @@ const routes = [
       if (!('track' in set ? set.track : e.track)?.line) fail(400, 'Marca la línea de meta antes de publicar: sin ella no se cronometra ninguna vuelta.');
       set.draft = false;
     }
+    // Cambiar de sesión (o empezarla de nuevo) pone en marcha su reloj y queda en el registro.
+    const newSession = 'session' in set && set.session !== e.session;
+    if (newSession || body.sessionStart === true) set.session_started_at = new Date();
     const keys = Object.keys(set);
     if (keys.length) await q(`update events set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`, [e.id, ...keys.map((k) => set[k])]);
     if (keys.length) await eventTeamsChanged(e.id); // los equipos ven nombre, fecha, estado y pista del evento
+    if (set.session_started_at) await logEvent(e.id, 'session', { session: set.session ?? e.session, restart: !newSession, by: user.name });
     return eventPayload(await ownEvent(user, e.id));
+  }],
+  // Registro de dirección de carrera (lo más reciente primero).
+  ['GET', /^\/api\/events\/(\d+)\/log$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    return q('select id, ts, kind, data from event_log where event_id = $1 order by id desc limit 500', [e.id]);
+  }],
+  // Pistas que se pueden copiar a este evento: las guardadas del equipo del organizador y las de sus otros eventos.
+  ['GET', /^\/api\/events\/(\d+)\/track-sources$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const [tracks, events] = await Promise.all([
+      user.team_id ? q('select id, name, track from tracks where team_id = $1 order by name', [user.team_id]) : [],
+      q(`select id, name, track from events where organizer_id = $1 and id <> $2 and track->'line' is not null order by created_at desc limit 50`, [e.organizer_id, e.id]),
+    ]);
+    return [...tracks.map((t) => ({ key: `t${t.id}`, label: `Pista guardada · ${t.name}`, track: t.track })),
+      ...events.map((x) => ({ key: `e${x.id}`, label: `Evento · ${x.name}`, track: x.track }))];
+  }],
+  // Recordar a un equipo inscrito que active «Participar» (le llega al registro de su BOX).
+  ['POST', /^\/api\/events\/(\d+)\/teams\/(\d+)\/remind$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const t = await one('select id from teams where id = $1 and event_id = $2', [Number(params[1]), e.id]);
+    if (!t) fail(404, 'Ese equipo no está en el evento.');
+    teamNotice(t.id, `La organización de «${e.name}» os recuerda que activéis «Participar» para correr el evento.`);
+    return { ok: true };
   }],
   ['POST', /^\/api\/events\/(\d+)\/invite$/, 'organizer', async ({ user, params }) => {
     const e = await ownEvent(user, Number(params[0]));

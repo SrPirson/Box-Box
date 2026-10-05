@@ -1,29 +1,30 @@
-// Eventos (organizadores): la lista con el estado de cada evento y, al abrir uno, su espacio por pestañas.
-// Preparar (pista, inscritos, ajustes) va aparte de correr (Resumen: dirección de carrera, clasificación y mapa
-// en vivo). La ruta está en la URL: #eventos, #eventos/12, #eventos/12/pista. El organizador no ve los mensajes
-// de los equipos.
-import { useEffect, useRef, useState } from 'react';
+// Eventos (organizadores): la lista con el estado de cada evento, el asistente para crearlos y, al abrir uno,
+// su espacio por pestañas. Preparar (pista, inscritos, ajustes) va aparte de correr (Resumen y, a pantalla
+// completa, Race Control). La ruta está en la URL: #eventos, #eventos/nuevo, #eventos/12/asistente/2,
+// #eventos/12/pista. El organizador no ve los mensajes de los equipos.
+import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { SESSIONS } from './Racing.jsx';
+import { useEventLive, FlagPanel, STALE_MS } from './RaceControl.jsx';
 import { api, inviteLink } from '../lib/session.js';
-import { useSocket, FLAG_INFO } from '../lib/store.js';
-import { EVENT_STATES, eventState, missingToPublish } from '../lib/events.js';
+import { EVENT_STATES, eventState, missingToPublish, readiness } from '../lib/events.js';
 import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, btn, fmtLap, fmtDelta } from './ui.jsx';
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
-const STALE_MS = 15000; // sin datos de un coche desde hace más: «sin señal»
-const TRAIL_MAX = 300;
 const TABS = [['resumen', 'Resumen'], ['pista', 'Pista'], ['inscritos', 'Inscritos'], ['ajustes', 'Ajustes']];
+const STEPS = ['Datos', 'Pista', 'Inscripción', 'Revisar y publicar'];
 const StatePill = ({ state }) => <Pill tone={EVENT_STATES[state].tone}>{state === 'today' && <span className="pulse h-1.5 w-1.5 rounded-full bg-ok" />}{EVENT_STATES[state].label}</Pill>;
+const Check = ({ ok, optional }) => <span className={ok ? 'text-ok' : optional ? 'text-muted' : 'text-warn'}><Icon name={ok ? 'check' : 'flag'} size={16} /></span>;
 
 // admin: todos los eventos (no los crea; puede cambiarles el organizador). Si no, los del organizador.
-// path: [] la lista; [id, pestaña?] el evento.
+// path: [] la lista; ['nuevo'] o [id, 'asistente', paso] el asistente; [id, pestaña?] el evento.
 export default function Events({ admin = false, path = [], onNav }) {
-  const id = Number(path[0]) || null;
-  const tab = TABS.some(([t]) => t === path[1]) ? path[1] : 'resumen';
   const go = (p) => onNav(['eventos', ...p].join('/'));
-  if (id) return <Workspace key={id} id={id} tab={tab} admin={admin} go={go} />;
+  if (path[0] === 'nuevo' && !admin) return <Wizard step={1} go={go} />;
+  const id = Number(path[0]) || null;
+  if (id && path[1] === 'asistente') return <Wizard key={id} id={id} step={Math.min(4, Math.max(1, Number(path[2]) || 2))} go={go} />;
+  if (id) return <Workspace key={id} id={id} tab={TABS.some(([t]) => t === path[1]) ? path[1] : 'resumen'} admin={admin} go={go} onNav={onNav} />;
   return <EventList admin={admin} go={go} />;
 }
 
@@ -32,17 +33,7 @@ function EventList({ admin, go }) {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
-  const [creating, setCreating] = useState(false);
   useEffect(() => { api(admin ? '/api/events?all=1' : '/api/events').then(setList).catch((e) => setError(e.message)); }, [admin]);
-  const create = async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    setError('');
-    try {
-      const ev = await api('/api/events', { method: 'POST', body: { name: f.get('name'), startsOn: f.get('startsOn'), place: f.get('place') } });
-      go([ev.id, 'pista']); // lo siguiente que falta casi siempre: la meta
-    } catch (err) { setError(err.message); }
-  };
   const rows = (list ?? []).map((e) => ({ ...e, state: eventState(e) }));
   const count = (s) => rows.filter((e) => e.state === s).length;
   const q = query.trim().toLowerCase();
@@ -50,28 +41,14 @@ function EventList({ admin, go }) {
   // Primero lo de hoy, luego lo próximo (más cercano antes), los borradores y lo terminado (más reciente antes).
   const rank = { today: 0, open: 1, draft: 2, done: 3 };
   shown.sort((a, b) => rank[a.state] - rank[b.state] || (a.state === 'done' ? -1 : 1) * String(a.startsOn ?? '9').localeCompare(String(b.startsOn ?? '9')));
+  const create = <button onClick={() => go(['nuevo'])} className={btn.primary}><Icon name="plus" size={15} />Nuevo evento</button>;
 
   return (
-    <Page title={admin ? 'Eventos' : 'Mis eventos'} max="max-w-[1180px]"
+    <Page title={admin ? 'Eventos' : 'Mis eventos'} max="max-w-[1180px]" actions={!admin && create}
       subtitle={admin ? 'Todos los eventos de la plataforma: ábrelos, cámbiales el organizador, ciérralos o bórralos.'
-        : 'Crea el evento, marca la pista y publícalo; los equipos se inscriben desde la lista de eventos o con su código.'}
-      actions={!admin && !creating && <button onClick={() => setCreating(true)} className={btn.primary}><Icon name="plus" size={15} />Nuevo evento</button>}>
+        : 'Crea el evento, marca la pista y publícalo; los equipos se inscriben desde la lista de eventos o con su código.'}>
       <div className="flex flex-col gap-4">
         <ErrorText>{error}</ErrorText>
-        {creating && (
-          <Card title="Nuevo evento">
-            <form onSubmit={create} className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_170px_minmax(0,1fr)_auto] sm:items-end">
-              <Field label="Nombre"><input className={input} name="name" required maxLength={80} placeholder="24 Horas de Jarama" autoFocus /></Field>
-              <Field label="Fecha"><input className={input} name="startsOn" type="date" /></Field>
-              <Field label="Lugar"><input className={input} name="place" maxLength={80} placeholder="Circuito del Jarama" /></Field>
-              <span className="flex gap-2">
-                <button className={btn.primary}>Crear</button>
-                <button type="button" onClick={() => setCreating(false)} className={btn.ghost}>Cancelar</button>
-              </span>
-            </form>
-            <p className="text-[13px] text-muted">Se crea como borrador: nadie lo ve ni se puede inscribir hasta que lo publiques con su fecha y su línea de meta.</p>
-          </Card>
-        )}
         <div className="flex flex-wrap items-center gap-2">
           <div className="max-w-full overflow-x-auto"><Segmented value={filter} onChange={setFilter} options={[['all', `Todos · ${rows.length}`],
             ...Object.entries(EVENT_STATES).map(([s, v]) => [s, `${v.label} · ${count(s)}`])]} /></div>
@@ -82,8 +59,7 @@ function EventList({ admin, go }) {
           {!list ? <p className="px-4 py-3 text-[14px] text-muted">Cargando…</p>
             : rows.length === 0 ? (
               <div className="flex flex-wrap items-center gap-3 px-4 py-4 text-[14px] text-muted">
-                {admin ? 'Aún no hay eventos en la plataforma.' : <>Todavía no tienes eventos. Tardas tres minutos: nombre, pista y publicar.
-                  <button onClick={() => setCreating(true)} className={btn.ghost}><Icon name="plus" size={14} />Crear el primero</button></>}
+                {admin ? 'Aún no hay eventos en la plataforma.' : <>Todavía no tienes eventos. Tardas tres minutos: datos, pista y publicar. {create}</>}
               </div>
             ) : shown.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">Ningún evento con ese filtro.</p> : (
               <ul>
@@ -95,7 +71,8 @@ function EventList({ admin, go }) {
                       <span className="hidden w-28 shrink-0 sm:block"><StatePill state={e.state} /></span>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="flex flex-wrap items-center gap-2 text-[15px] font-semibold"><span className="sm:hidden"><StatePill state={e.state} /></span>{e.name}{e.private && <Pill tone="info">Privado</Pill>}{e.closed && e.state === 'open' && <Pill tone="muted">Cerrado</Pill>}</span>
-                        <span className="text-[12px] text-muted">{[fmtDate(e.startsOn) || 'Sin fecha', e.place, `${e.teams} equipo${e.teams === 1 ? '' : 's'}${e.teams ? ` · ${e.racing} participa${e.racing === 1 ? '' : 'n'}` : ''}`, admin && e.organizer].filter(Boolean).join(' · ')}</span>
+                        <span className="text-[12px] text-muted">{[fmtDate(e.startsOn) || 'Sin fecha', e.place,
+                          `${e.teams}${e.maxTeams ? `/${e.maxTeams}` : ''} equipo${e.teams === 1 ? '' : 's'}${e.teams ? ` · ${e.racing} participa${e.racing === 1 ? '' : 'n'}` : ''}`, admin && e.organizer].filter(Boolean).join(' · ')}</span>
                       </span>
                       <span className="text-[13px] font-semibold uppercase tracking-[0.06em] text-fg-2">{nextStep(e)}</span>
                       <Icon name="chevron" size={16} className="text-muted" />
@@ -117,90 +94,167 @@ function nextStep(e) {
   return e.state === 'today' ? 'Dirigir la carrera' : 'Ver clasificación';
 }
 
-function Workspace({ id, tab, admin, go }) {
+// Asistente de 4 pasos. El paso 1 crea el borrador; los demás lo van completando (todo se guarda al momento,
+// así que se puede salir y seguir otro día). A la derecha, la checklist de lo que falta para publicar.
+function Wizard({ id, step, go }) {
   const [ev, setEv] = useState(null);
-  const [standings, setStandings] = useState([]);
-  const [cars, setCars] = useState({}); // equipo → último resumen en vivo
-  const trails = useRef({});
-  const [focus, setFocus] = useState(null); // equipo seleccionado en el mapa
-  const [session, setSession] = useState(null); // sesión de la clasificación (null: la actual del evento)
   const [error, setError] = useState('');
-  const [now, setNow] = useState(Date.now());
-  const [flag, setFlag] = useState(null); // bandera actual del evento y equipos que la han visto
-  // run/patch dicen si ha ido bien (BlurInput deshace el cambio si no).
-  const run = (p) => p.then((e) => { setEv(e); setError(''); return true; }).catch((e) => { setError(e.message); return false; });
-  const patch = (body) => run(api(`/api/events/${id}`, { method: 'PATCH', body }));
-  const loadStandings = (s = session) => api(`/api/events/${id}/standings${s ? `?session=${s}` : ''}`).then((r) => setStandings(Object.values(r))).catch(() => {});
-
-  const { socket, connected } = useSocket({
-    'event:car': (p) => {
-      if (p.gps) {
-        const t = (trails.current[p.teamId] ??= []);
-        t.push([p.gps.lat, p.gps.lng]);
-        if (t.length > TRAIL_MAX) t.shift();
-      }
-      setCars((c) => ({ ...c, [p.teamId]: p }));
-    },
-    'event:lap': () => loadStandings(),
-    'event:flag': setFlag,
-    'event:teams': () => api(`/api/events/${id}`).then(setEv).catch(() => {}),
-    connect: () => socket.emit('event:watch', id), // al reconectar, volver a la sala del evento
-  });
+  const [sources, setSources] = useState([]); // pistas que se pueden copiar
+  const [copies, setCopies] = useState(0); // al copiar una pista, el mapa se monta de nuevo y la encuadra
   useEffect(() => {
+    if (!id) return;
     api(`/api/events/${id}`).then(setEv).catch((e) => setError(e.message));
-    loadStandings();
-    socket.emit('event:watch', id);
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    const s = setInterval(loadStandings, 30_000);
-    return () => { clearInterval(t); clearInterval(s); socket.emit('event:unwatch', id); };
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+    api(`/api/events/${id}/track-sources`).then((r) => setSources(Object.values(r).filter((x) => typeof x === 'object'))).catch(() => {});
+  }, [id]);
+  const patch = (body) => api(`/api/events/${id}`, { method: 'PATCH', body }).then((e) => { setEv(e); setError(''); return true; }).catch((e) => { setError(e.message); return false; });
+  const to = (n) => go([id, 'asistente', n]);
+  const saveData = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const body = { name: f.get('name'), startsOn: f.get('startsOn'), place: f.get('place') };
+    setError('');
+    if (!id) {
+      try { const created = await api('/api/events', { method: 'POST', body }); go([created.id, 'asistente', 2]); } catch (err) { setError(err.message); }
+    } else if (await patch(body)) to(2);
+  };
+  useEffect(() => { if (ev && !ev.draft) go([id]); }, [ev?.draft]); // eslint-disable-line react-hooks/exhaustive-deps -- ya publicado: al evento
+  if (id && (!ev || !ev.draft)) return <Page title="Nuevo evento">{error ? <ErrorText>{error}</ErrorText> : <p className="text-muted">Cargando…</p>}</Page>;
+  const checks = ev ? readiness(ev).publish : [];
+  const missing = ev ? missingToPublish(ev) : ['fecha', 'línea de meta'];
+  const footer = (back, next) => (
+    <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+      {back && <button type="button" onClick={() => to(step - 1)} className={btn.ghost}><Icon name="back" size={14} />Atrás</button>}
+      {id && <button type="button" onClick={() => go([])} className={btn.ghost}>Guardar borrador y salir</button>}
+      <span className="ml-auto">{next}</span>
+    </div>
+  );
 
+  return (
+    <Page title={ev?.name ?? 'Nuevo evento'} max="max-w-[1400px]" subtitle="Se guarda como borrador mientras lo preparas: nadie lo ve hasta que lo publiques."
+      actions={<button onClick={() => go([])} className={btn.ghost}><Icon name="back" size={15} />Eventos</button>}>
+      <ol className="mb-4 flex flex-wrap gap-x-1 gap-y-2" aria-label="Pasos">
+        {STEPS.map((label, i) => {
+          const n = i + 1;
+          return (
+            <li key={label} className="flex items-center gap-1">
+              <button disabled={!id || n === step} onClick={() => to(n)} aria-current={n === step ? 'step' : undefined}
+                className={`flex items-center gap-2 rounded-[4px] px-2 py-1 text-[13px] font-semibold uppercase tracking-[0.06em] disabled:cursor-default ${n === step ? 'bg-accent-soft text-accent' : n < step ? 'text-fg hover:bg-raised' : 'text-muted hover:bg-raised'}`}>
+                <span className={`grid h-6 w-6 place-items-center rounded-full text-[12px] ${n === step ? 'bg-accent text-panel' : 'bg-sunken'}`}>{n}</span>{label}
+              </button>
+              {n < STEPS.length && <span className="h-px w-6 bg-line-strong" aria-hidden="true" />}
+            </li>
+          );
+        })}
+      </ol>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <Card title={`${step} · ${STEPS[step - 1]}`}>
+          <ErrorText>{error}</ErrorText>
+          {step === 1 && (
+            <form onSubmit={saveData} className="flex flex-col gap-3">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_170px_minmax(0,1fr)]">
+                <Field label="Nombre"><input className={input} name="name" required maxLength={80} defaultValue={ev?.name} placeholder="24 Horas de Jarama" autoFocus /></Field>
+                <Field label="Fecha"><input className={input} name="startsOn" type="date" defaultValue={ev?.startsOn ?? ''} /></Field>
+                <Field label="Lugar"><input className={input} name="place" maxLength={80} defaultValue={ev?.place} placeholder="Circuito del Jarama" /></Field>
+              </div>
+              {footer(false, <button className={btn.primary}>Siguiente<Icon name="chevron" size={15} /></button>)}
+            </form>
+          )}
+          {step === 2 && <>
+            {sources.length > 0 && (
+              <Field label="Copiar una pista que ya tienes" help="Trae el trazado, la meta y los tramos; después puedes retocarla en el mapa.">
+                <select className={input} value="" onChange={(e) => { const s = sources.find((x) => x.key === e.target.value); if (s) patch({ track: s.track }).then((ok) => ok && setCopies((n) => n + 1)); }}>
+                  <option value="">— Elige una pista guardada o de otro evento —</option>
+                  {sources.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </Field>
+            )}
+            {!ev.track?.line && <p className="rounded-[4px] bg-warn-soft px-3 py-2 text-[14px] font-semibold text-warn">Sin meta no se cronometra ninguna vuelta: pulsa «Meta» y marca sus dos extremos en el mapa.</p>}
+            <div className="h-[460px] overflow-hidden rounded-[4px] border border-line">
+              <TrackMap key={copies} cars={{}} trails={{}} sel={null} states={{}} track={ev.track} onTrack={(track) => patch({ track })}
+                toolbar={<span className="px-1 text-[13px] text-muted">Trazado, meta y tramos: la misma pista para todos los equipos.</span>} />
+            </div>
+            {footer(true, <button onClick={() => to(3)} className={btn.primary}>Siguiente<Icon name="chevron" size={15} /></button>)}
+          </>}
+          {step === 3 && <>
+            <Segmented label="Visibilidad" value={ev.private ? 'private' : 'public'} onChange={(v) => patch({ private: v === 'private' })}
+              options={[['public', 'Público · sale en la lista'], ['private', 'Privado · solo con código']]} />
+            <Field label="Cupo de equipos" help="Vacío: sin límite. Al llenarse, nadie más se puede inscribir.">
+              <BlurInput type="number" min={1} max={500} inputMode="numeric" placeholder="Sin límite" value={ev.maxTeams ?? ''}
+                onSave={(v) => patch({ maxTeams: v === '' ? null : Number(v) })} />
+            </Field>
+            {footer(true, <button onClick={() => to(4)} className={btn.primary}>Siguiente<Icon name="chevron" size={15} /></button>)}
+          </>}
+          {step === 4 && <>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14px]">
+              <dt className="text-muted">Evento</dt><dd className="font-semibold">{ev.name}</dd>
+              <dt className="text-muted">Fecha y lugar</dt><dd>{[fmtDate(ev.startsOn) || 'Sin fecha', ev.place].filter(Boolean).join(' · ')}</dd>
+              <dt className="text-muted">Pista</dt><dd>{ev.track?.line ? `Meta marcada${ev.track.path?.length >= 3 ? ' · con trazado' : ''}${ev.track.sectors?.length ? ` · ${ev.track.sectors.length + 1} tramos` : ''}` : 'Sin meta'}</dd>
+              <dt className="text-muted">Inscripción</dt><dd>{ev.private ? 'Privada, con código' : 'Pública'} · {ev.maxTeams ? `cupo de ${ev.maxTeams} equipos` : 'sin cupo'}</dd>
+            </dl>
+            {footer(true, <button disabled={missing.length > 0} onClick={() => patch({ draft: false }).then((ok) => ok && go([id]))} className={btn.primary}>Publicar evento</button>)}
+            <p className="text-[13px] text-muted">{missing.length ? `Para publicarlo falta: ${missing.join(' y ')}.` : `Al publicarlo ${ev.private ? 'podrán inscribirse con el código' : 'saldrá en la lista de eventos'} y tendrás el código para compartir.`}</p>
+          </>}
+        </Card>
+        <Card title="Evento listo">
+          <ul className="flex flex-col gap-2">
+            {(ev ? checks : readiness({}).publish).map((c) => (
+              <li key={c.key} className="flex items-start gap-2 text-[14px]">
+                <Check ok={c.ok && !!ev} optional={!c.required} />
+                <button disabled={!id} onClick={() => to(c.step)} className={`text-left disabled:cursor-default ${c.ok ? '' : 'font-semibold'} ${id ? 'hover:underline' : ''}`}>{c.label}{!c.required && !c.ok && <span className="font-normal text-muted"> · opcional</span>}</button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+    </Page>
+  );
+}
+
+function Workspace({ id, tab, admin, go, onNav }) {
+  const L = useEventLive(id);
+  const [focus, setFocus] = useState(null); // coche seleccionado en el mapa
+  const { ev, now } = L;
   const back = <button onClick={() => go([])} className={btn.ghost}><Icon name="back" size={15} />Eventos</button>;
-  if (!ev) return <Page title="Evento" actions={back}>{error ? <ErrorText>{error}</ErrorText> : <p className="text-muted">Cargando…</p>}</Page>;
+  if (!ev) return <Page title="Evento" actions={back}>{L.error ? <ErrorText>{L.error}</ErrorText> : <p className="text-muted">Cargando…</p>}</Page>;
 
   const state = eventState(ev);
   const racing = ev.teams.filter((t) => t.racing);
   // Coches para el mapa: clave = equipo (dos equipos pueden llevar el mismo dorsal).
   // Con el icono que cada equipo tenga configurado (null: círculo con el dorsal).
   const icons = Object.fromEntries(ev.teams.map((t) => [t.id, { carIcon: t.carIcon ?? null, carIconStyle: t.carIconStyle }]));
-  const mapCars = Object.fromEntries(Object.values(cars).map((p) => [p.teamId, { ...p, key: p.teamId, ...icons[p.teamId] }]));
-  const states = Object.fromEntries(Object.values(cars).map((p) => [p.teamId, now - p.ts > STALE_MS ? 'crit' : p.pit ? 'warn' : 'ok']));
-  const map = (edit) => <TrackMap cars={mapCars} trails={trails.current} sel={null} states={states} focus={focus} track={ev.track}
-    onTrack={edit ? (track) => patch({ track }) : undefined}
+  const mapCars = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, { ...p, key: p.teamId, ...icons[p.teamId] }]));
+  const states = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, now - p.ts > STALE_MS ? 'crit' : p.pit ? 'warn' : 'ok']));
+  const map = (edit) => <TrackMap cars={mapCars} trails={L.trails.current} sel={null} states={states} focus={focus} track={ev.track}
+    onTrack={edit ? (track) => L.patch({ track }) : undefined}
     toolbar={<span className="px-1 text-[13px] text-muted">{edit ? 'La misma pista para todos los equipos: dibuja el trazado, la meta y los tramos.' : 'Coches en vivo de los equipos que participan.'}</span>} />;
+  const control = state !== 'draft' && (
+    <button onClick={() => onNav(`control/${id}`)} className={state === 'today' ? btn.primary : btn.ghost}><Icon name="flag" size={15} />Race Control</button>
+  );
 
   return (
-    <Page title={ev.name} max="max-w-[1400px]" actions={back}
+    <Page title={ev.name} max="max-w-[1400px]" actions={<span className="flex flex-wrap gap-2">{control}{back}</span>}
       subtitle={<span className="flex flex-wrap items-center gap-2"><StatePill state={state} />{[fmtDate(ev.startsOn) || 'Sin fecha', ev.place, admin && ev.organizer && `organiza ${ev.organizer}`].filter(Boolean).join(' · ')}
         {ev.private && <Pill tone="info">Privado</Pill>}</span>}>
       <nav aria-label="Secciones del evento" className="-mt-1 mb-4 flex overflow-x-auto overflow-y-hidden border-b border-line">
         {TABS.map(([t, label]) => (
           <button key={t} onClick={() => go([id, t])} aria-current={t === tab ? 'page' : undefined}
             className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-[13px] font-semibold uppercase tracking-[0.08em] ${t === tab ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
-            {label}{t === 'inscritos' && ` · ${ev.teams.length}`}
+            {label}{t === 'inscritos' && ` · ${ev.teams.length}${ev.maxTeams ? `/${ev.maxTeams}` : ''}`}
           </button>
         ))}
       </nav>
       <div className="flex min-w-0 flex-col gap-4">
-        <ErrorText>{error}</ErrorText>
+        <ErrorText>{L.error}</ErrorText>
         {tab === 'resumen' && <>
-          {state === 'draft' && <Publish ev={ev} patch={patch} go={go} />}
+          {state === 'draft' && <Publish ev={ev} patch={L.patch} go={go} />}
           {state !== 'draft' && <ShareCode ev={ev} />}
+          {(state === 'open' || state === 'today') && <RaceDay ev={ev} cars={L.cars} log={L.log} now={now} />}
           {state !== 'draft' && <>
-            {/* Fija arriba en pantallas grandes: la bandera se tiene que poder dar sin buscarla (por encima del mapa: Leaflet usa z-index hasta 1000) */}
-            <div className="z-[1001] lg:sticky lg:top-0">
-              <RaceControl flag={flag} racing={racing} send={async (type, text) => {
-                // Sin conexión no se emite: Socket.io la guardaría y la daría al reconectar, quizá minutos tarde.
-                if (!connected) throw new Error('Sin conexión: la bandera NO se ha dado.');
-                const r = await socket.timeout(3000).emitWithAck('event:flag', { eventId: id, type, text })
-                  .catch(() => { throw new Error('El servidor no ha confirmado la bandera: puede que no haya llegado.'); });
-                if (!r?.ok) throw new Error('El servidor no ha aceptado la bandera.');
-              }} />
-            </div>
-            <SessionSwitch ev={ev} onChange={(s) => { patch({ session: s }); setSession(null); loadStandings(s); }} />
-            <Standings rows={standings} ev={ev} session={session} setSession={(s) => { setSession(s); loadStandings(s); }}
-              live={(teamId) => { const c = cars[teamId]; return c && now - c.ts < STALE_MS ? c : null; }} now={now} flag={flag}
-              onPick={(teamId) => setFocus(cars[teamId]?.gps ? { ...cars[teamId].gps, t: Date.now() } : null)} />
+            {/* Para dirigir la carrera, mejor Race Control (pantalla completa y atajos); aquí, a mano para probar */}
+            <Card title="Dirección de carrera"><FlagPanel flag={L.flag} racing={racing} send={L.sendFlag} connected={L.connected} /></Card>
+            <SessionSwitch ev={ev} onChange={L.changeSession} />
+            <Standings rows={L.standings} ev={ev} session={L.session} setSession={L.setSession} live={L.live} now={now} flag={L.flag}
+              onPick={(teamId) => setFocus(L.cars[teamId]?.gps ? { ...L.cars[teamId].gps, t: Date.now() } : null)} />
             <Card title="Coches en vivo" flush><div className="h-[520px]">{map(false)}</div></Card>
           </>}
         </>}
@@ -210,8 +264,8 @@ function Workspace({ id, tab, admin, go }) {
             <div className="h-[calc(100vh-260px)] min-h-[420px]">{map(true)}</div>
           </Card>
         )}
-        {tab === 'inscritos' && <Teams ev={ev} setEv={setEv} state={state} />}
-        {tab === 'ajustes' && <Settings ev={ev} admin={admin} patch={patch} run={run} setError={setError} onDeleted={() => go([])} />}
+        {tab === 'inscritos' && <Teams ev={ev} setEv={L.setEv} state={state} />}
+        {tab === 'ajustes' && <Settings ev={ev} admin={admin} patch={L.patch} run={L.run} setError={L.setError} onDeleted={() => go([])} />}
       </div>
     </Page>
   );
@@ -220,25 +274,50 @@ function Workspace({ id, tab, admin, go }) {
 // Borrador: lo que falta para publicarlo y el botón de publicar (no tiene vuelta atrás).
 function Publish({ ev, patch, go }) {
   const missing = missingToPublish(ev);
-  const items = [
-    ['Nombre', true, 'ajustes'], ['Fecha', !!ev.startsOn, 'ajustes'], ['Línea de meta', !!ev.track?.line, 'pista'],
-    ['Trazado del circuito (recomendado: avisa si un coche se sale)', (ev.track?.path?.length ?? 0) >= 3, 'pista', true],
-  ];
+  const checks = readiness(ev).publish;
+  const step = checks.find((c) => c.required && !c.ok)?.step ?? 4;
   return (
     <Card title="Borrador · Publica el evento" tone="border-accent">
       <ul className="flex flex-col gap-1.5">
-        {items.map(([label, ok, to, optional]) => (
-          <li key={label} className="flex items-center gap-2 text-[14px]">
-            <span className={ok ? 'text-ok' : optional ? 'text-muted' : 'text-warn'}><Icon name={ok ? 'check' : 'flag'} size={16} /></span>
-            <span className={ok ? '' : 'font-semibold'}>{label}</span>
-            {!ok && <button onClick={() => go([ev.id, to])} className="text-[13px] font-semibold text-accent underline">{to === 'pista' ? 'Ir a Pista' : 'Ir a Ajustes'}</button>}
+        {checks.map((c) => (
+          <li key={c.key} className="flex items-center gap-2 text-[14px]">
+            <Check ok={c.ok} optional={!c.required} /><span className={c.ok ? '' : 'font-semibold'}>{c.label}</span>
+            {!c.ok && <button onClick={() => go([ev.id, c.tab])} className="text-[13px] font-semibold text-accent underline">{c.tab === 'pista' ? 'Ir a Pista' : 'Ir a Ajustes'}</button>}
           </li>
         ))}
       </ul>
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={missing.length > 0} onClick={() => patch({ draft: false })} className={btn.primary}>Publicar evento</button>
+        <button onClick={() => go([ev.id, 'asistente', step])} className={btn.ghost}>Seguir con el asistente</button>
         <span className="text-[13px] text-muted">{missing.length ? `Falta: ${missing.join(' y ')}.` : `Saldrá en la lista de eventos${ev.private ? ' (es privado: solo con su código)' : ''} y los equipos podrán inscribirse.`}</span>
       </div>
+    </Card>
+  );
+}
+
+// Antes de la salida: quién participa, quién tiene señal y si la bandera de prueba ha llegado a todos.
+function RaceDay({ ev, cars, log, now }) {
+  const [reminded, setReminded] = useState({}); // equipo → ya avisado
+  const [error, setError] = useState('');
+  const items = readiness(ev, { cars, log, now }).raceDay;
+  const remind = (t) => api(`/api/events/${ev.id}/teams/${t.id}/remind`, { method: 'POST' })
+    .then(() => setReminded((r) => ({ ...r, [t.id]: true }))).catch((e) => setError(e.message));
+  return (
+    <Card title="Día de carrera · Comprobaciones">
+      <ErrorText>{error}</ErrorText>
+      <ul className="flex flex-col gap-2">
+        {items.map((c) => (
+          <li key={c.key} className="flex flex-wrap items-center gap-2 text-[14px]">
+            <Check ok={c.ok} /><span className={c.ok ? '' : 'font-semibold'}>{c.label}</span>
+            {c.teams?.map((t) => (
+              <button key={t.id} onClick={() => remind(t)} disabled={reminded[t.id]} className={`${btn.ghost} h-7 px-2 text-[12px]`}>
+                {reminded[t.id] ? <><Icon name="check" size={12} />Avisado #{t.dorsal}</> : <>Recordar a #{t.dorsal}</>}
+              </button>
+            ))}
+          </li>
+        ))}
+      </ul>
+      <p className="text-[13px] text-muted">Para la bandera de prueba: da una amarilla y espera a que todos la vean; después, la verde. Ese día, no despliegues cambios en el servidor.</p>
     </Card>
   );
 }
@@ -249,7 +328,7 @@ function ShareCode({ ev }) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-[4px] border border-line bg-panel px-4 py-3">
       <div className="min-w-0 flex-1">
-        <div className="label">Código de inscripción {ev.closed && <Pill tone="muted">Inscripciones cerradas</Pill>}</div>
+        <div className="label">Código de inscripción {ev.closed && <Pill tone="muted">Inscripciones cerradas</Pill>}{ev.maxTeams && ev.teams.length >= ev.maxTeams && <Pill tone="warn">Completo</Pill>}</div>
         <div className="num text-[26px] font-bold tracking-[0.2em]">{ev.inviteCode}</div>
       </div>
       <button onClick={() => navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })} className={btn.ghost}>
@@ -331,7 +410,7 @@ function Teams({ ev, setEv, state }) {
   const racing = ev.teams.filter((t) => t.racing).length;
   const shown = ev.teams.filter((t) => filter === 'all' || (filter === 'racing') === t.racing);
   return (
-    <Card title={`Equipos inscritos · ${ev.teams.length}`} flush badge={ev.teams.length > 0 &&
+    <Card title={`Equipos inscritos · ${ev.teams.length}${ev.maxTeams ? ` de ${ev.maxTeams}` : ''}`} flush badge={ev.teams.length > 0 &&
       <Segmented value={filter} onChange={setFilter} options={[['all', 'Todos'], ['racing', `Participan · ${racing}`], ['idle', `No participan · ${ev.teams.length - racing}`]]} />}>
       {ev.teams.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">{state === 'draft' ? 'Publica el evento para que los equipos puedan inscribirse.' : 'Ninguno todavía. Comparte el código de inscripción (en Resumen).'}</p> : (
         <>
@@ -371,6 +450,10 @@ function Settings({ ev, admin, patch, run, setError, onDeleted }) {
           options={[['public', 'Público · sale en la lista'], ['private', 'Privado · solo con código']]} />
         <Segmented label="Inscripciones" value={ev.closed ? 'closed' : 'open'} onChange={(v) => patch({ closed: v === 'closed' })}
           options={[['open', 'Abiertas'], ['closed', 'Cerradas']]} />
+        <Field label="Cupo de equipos" help="Vacío: sin límite. Al llenarse, nadie más se puede inscribir (los ya inscritos siguen).">
+          <span className="max-w-40"><BlurInput type="number" min={1} max={500} inputMode="numeric" placeholder="Sin límite" value={ev.maxTeams ?? ''}
+            onSave={(v) => patch({ maxTeams: v === '' ? null : Number(v) })} /></span>
+        </Field>
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-[14px]">Código <b className="num tracking-[0.15em]">{ev.inviteCode}</b></span>
           <ConfirmButton label="Renovar código" confirm="Sí, renovar" icon={<Icon name="refresh" size={14} />} onConfirm={() => run(api(`/api/events/${ev.id}/invite`, { method: 'POST' }))} />
@@ -385,59 +468,6 @@ function Settings({ ev, admin, patch, run, setError, onDeleted }) {
         </div>
       </Card>
     </>
-  );
-}
-
-// Dirección de carrera: la bandera llega a los equipos que participan y sigue activa hasta que se cambia;
-// la verde la retira. Cada botón pide un segundo toque para no dar una bandera roja por error, y el servidor
-// confirma que la ha dado: si no, se dice bien claro y se puede reintentar.
-function RaceControl({ flag, racing, send }) {
-  const [armed, setArmed] = useState(null);
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(null); // { type, error? }
-  const give = (type) => {
-    setSending({ type });
-    send(type, text)
-      .then(() => { setSending(null); if (type === 'text') setText(''); })
-      .catch((e) => setSending({ type, error: e.message }));
-  };
-  const fire = (type) => {
-    if (armed !== type) { setArmed(type); setTimeout(() => setArmed((a) => (a === type ? null : a)), 3000); return; }
-    setArmed(null);
-    give(type);
-  };
-  const active = flag && flag.type !== 'green';
-  const missing = active ? racing.filter((t) => !flag.seen.includes(t.id)) : [];
-  const nameOf = (type) => (type === 'text' ? 'El aviso' : FLAG_INFO[type].label);
-  const button = (type, label = FLAG_INFO[type].label) => (
-    <button type="button" onClick={() => fire(type)}
-      className={`flex h-12 items-center justify-center gap-2 rounded-[4px] px-3 text-[15px] font-bold uppercase ${FLAG_INFO[type].cls} ${armed === type ? 'ring-4 ring-fg ring-offset-2 ring-offset-panel' : ''}`}>
-      <Icon name="flag" size={16} />{armed === type ? 'Toca otra vez' : label}
-    </button>
-  );
-  return (
-    <Card title="Dirección de carrera" badge={active
-      ? <Pill tone="warn">{flag.type === 'text' ? 'Aviso' : FLAG_INFO[flag.type].label} · visto por {racing.length - missing.length}/{racing.length}</Pill>
-      : <Pill tone="ok">Pista libre</Pill>}>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {button('green', active ? 'Verde · retirar' : 'Bandera verde')}{button('yellow')}{button('sc')}{button('red')}
-      </div>
-      <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) fire('text'); }} className="flex flex-wrap gap-2">
-        <input className={`${input} min-w-0 flex-1`} value={text} onChange={(e) => setText(e.target.value)} maxLength={120}
-          placeholder="Aviso a todos los pilotos: «Aceite en la curva 3»" />
-        <button disabled={!text.trim()} className={armed === 'text' ? btn.dangerSolid : btn.primary}>{armed === 'text' ? 'Toca otra vez' : 'Enviar aviso'}</button>
-      </form>
-      {sending?.error && (
-        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-[4px] bg-crit-soft px-3 py-2">
-          <span className="min-w-0 flex-1 text-[14px] font-bold text-crit">{nameOf(sending.type)}: {sending.error}</span>
-          <button onClick={() => give(sending.type)} className={btn.dangerSolid}><Icon name="refresh" size={14} />Reintentar</button>
-          <button onClick={() => setSending(null)} className={btn.ghost}>Cerrar</button>
-        </div>
-      )}
-      {sending && !sending.error && <p role="status" className="text-[13px] font-semibold text-fg-2">Dando {nameOf(sending.type).toLowerCase()}…</p>}
-      {active && <p className="text-[13px] text-muted">Activa desde las {new Date(flag.ts).toLocaleTimeString('es-ES')}{flag.type === 'text' && <> · «{flag.text}»</>}.
-        {missing.length > 0 && <> <b className="text-warn">Faltan por verla:</b> {missing.map((t) => `#${t.dorsal} ${t.name}`).join(', ')}.</>}</p>}
-    </Card>
   );
 }
 
