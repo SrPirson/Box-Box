@@ -105,6 +105,15 @@ export function ConfirmButton({ label, confirm, onConfirm, icon, solid }) {
   );
 }
 
+// Descarga una tabla como CSV (separador «;» y BOM, para que Excel en español lo abra bien).
+export function downloadCsv(name, rows) {
+  const esc = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+  const blob = new Blob([`\uFEFF${rows.map((r) => r.map(esc).join(';')).join('\n')}`], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${name.replace(/[^\w-]+/g, '-')}.csv` });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // Formato de tiempos de vuelta: 1:42.358
 export const fmtLap = (ms) => {
   if (ms == null) return '—';

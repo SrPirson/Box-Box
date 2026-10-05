@@ -8,7 +8,7 @@ import TrackMap from './TrackMap.jsx';
 import { SESSIONS } from './Racing.jsx';
 import { api } from '../lib/session.js';
 import { useSocket, FLAG_INFO } from '../lib/store.js';
-import { Segmented, Pill, ErrorText, input, btn, fmtLap, fmtDelta } from './ui.jsx';
+import { Segmented, Pill, ErrorText, input, btn, fmtLap, fmtDelta, downloadCsv } from './ui.jsx';
 
 export const STALE_MS = 15000; // sin datos de un coche desde hace más: «sin señal»
 const TRAIL_MAX = 300;
@@ -180,18 +180,13 @@ export function logText(l) {
   const d = l.data;
   if (l.kind === 'flag') return `${d.type === 'text' ? `Aviso «${d.text}»` : FLAG_INFO[d.type]?.label ?? d.type}${d.by ? ` · ${d.by}` : ''}`;
   if (l.kind === 'seen') return `${d.team} ha visto la bandera${d.by ? ` (${d.by})` : ''}`;
+  if (l.kind === 'results') return `Resultado publicado: ${sessionName(d.session)}${d.by ? ` · ${d.by}` : ''}`;
   if (l.kind === 'session') return `${d.restart ? 'Reloj de sesión puesto a cero' : `Sesión → ${sessionName(d.session)}`}${d.by ? ` · ${d.by}` : ''}`;
   return l.kind;
 }
-// CSV del registro (separador «;», el que abre bien Excel en español), del más antiguo al más reciente.
-export function downloadLog(ev, log) {
-  const esc = (v) => `"${String(v).replaceAll('"', '""')}"`;
-  const rows = [['Hora', 'Tipo', 'Detalle'], ...[...log].reverse().map((l) => [new Date(l.ts).toLocaleString('es-ES'), l.kind, logText(l)])];
-  const blob = new Blob([`﻿${rows.map((r) => r.map(esc).join(';')).join('\n')}`], { type: 'text/csv' });
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `registro-${ev.name.replace(/[^\w-]+/g, '-')}.csv` });
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
+// CSV del registro, del más antiguo al más reciente.
+const downloadLog = (ev, log) => downloadCsv(`registro-${ev.name}`,
+  [['Hora', 'Tipo', 'Detalle'], ...[...log].reverse().map((l) => [new Date(l.ts).toLocaleString('es-ES'), l.kind, logText(l)])]);
 
 // Pantalla completa del navegador y pantalla siempre encendida mientras Race Control está abierto.
 function useWakeLock() {

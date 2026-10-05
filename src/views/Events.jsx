@@ -7,12 +7,13 @@ import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { SESSIONS } from './Racing.jsx';
 import { useEventLive, FlagPanel, STALE_MS } from './RaceControl.jsx';
+import { ResultsTab } from './Results.jsx';
 import { api, inviteLink } from '../lib/session.js';
 import { EVENT_STATES, eventState, missingToPublish, readiness } from '../lib/events.js';
 import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, btn, fmtLap, fmtDelta } from './ui.jsx';
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
-const TABS = [['resumen', 'Resumen'], ['pista', 'Pista'], ['inscritos', 'Inscritos'], ['ajustes', 'Ajustes']];
+const TABS = [['resumen', 'Resumen'], ['pista', 'Pista'], ['inscritos', 'Inscritos'], ['resultados', 'Resultados'], ['ajustes', 'Ajustes']];
 const STEPS = ['Datos', 'Pista', 'Inscripción', 'Revisar y publicar'];
 const StatePill = ({ state }) => <Pill tone={EVENT_STATES[state].tone}>{state === 'today' && <span className="pulse h-1.5 w-1.5 rounded-full bg-ok" />}{EVENT_STATES[state].label}</Pill>;
 const Check = ({ ok, optional }) => <span className={ok ? 'text-ok' : optional ? 'text-muted' : 'text-warn'}><Icon name={ok ? 'check' : 'flag'} size={16} /></span>;
@@ -236,7 +237,7 @@ function Workspace({ id, tab, admin, go, onNav }) {
       subtitle={<span className="flex flex-wrap items-center gap-2"><StatePill state={state} />{[fmtDate(ev.startsOn) || 'Sin fecha', ev.place, admin && ev.organizer && `organiza ${ev.organizer}`].filter(Boolean).join(' · ')}
         {ev.private && <Pill tone="info">Privado</Pill>}</span>}>
       <nav aria-label="Secciones del evento" className="-mt-1 mb-4 flex overflow-x-auto overflow-y-hidden border-b border-line">
-        {TABS.map(([t, label]) => (
+        {TABS.filter(([t]) => t !== 'resultados' || state !== 'draft').map(([t, label]) => (
           <button key={t} onClick={() => go([id, t])} aria-current={t === tab ? 'page' : undefined}
             className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-[13px] font-semibold uppercase tracking-[0.08em] ${t === tab ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
             {label}{t === 'inscritos' && ` · ${ev.teams.length}${ev.maxTeams ? `/${ev.maxTeams}` : ''}`}
@@ -265,6 +266,7 @@ function Workspace({ id, tab, admin, go, onNav }) {
           </Card>
         )}
         {tab === 'inscritos' && <Teams ev={ev} setEv={L.setEv} state={state} />}
+        {tab === 'resultados' && <ResultsTab ev={ev} />}
         {tab === 'ajustes' && <Settings ev={ev} admin={admin} patch={L.patch} run={L.run} setError={L.setError} onDeleted={() => go([])} />}
       </div>
     </Page>
@@ -426,7 +428,7 @@ function Teams({ ev, setEv, state }) {
 function Settings({ ev, admin, patch, run, setError, onDeleted }) {
   const [organizers, setOrganizers] = useState([]); // admin: a quién se puede pasar el evento
   useEffect(() => {
-    if (admin) api('/api/admin/users').then((u) => setOrganizers(Object.values(u).filter((x) => ['organizer', 'admin'].includes(x.role)))).catch(() => {});
+    if (admin) api('/api/admin/users?role=staff&per=500').then((r) => setOrganizers(r.rows)).catch(() => {});
   }, [admin]);
   return (
     <>

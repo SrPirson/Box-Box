@@ -82,6 +82,15 @@ const setDriver = (st, u) => {
 };
 const presence = (st) => io.to(room(st.team.id)).emit('presence', [...st.online.keys()]);
 
+// Para el resumen del admin: equipos con alguien conectado ahora y banderas activas (no verdes) por evento.
+export async function liveStats() {
+  const all = await Promise.all(states.values());
+  return {
+    teamsOnline: all.filter((st) => st.team && st.online.size > 0).length,
+    flags: [...flags.entries()].filter(([, f]) => f.type !== 'green').map(([eventId, f]) => ({ eventId, type: f.type, ts: f.ts })),
+  };
+}
+
 // Llamado por la API cuando cambian dorsal, límites, meta o trazado.
 export async function teamChanged(teamId) {
   if (states.has(teamId)) {
@@ -142,7 +151,7 @@ export function attachLive(server, userFromToken) {
     socket.on('event:flag', async (d, ack) => {
       const e = await one('select id, organizer_id from events where id = $1', [Number(d?.eventId)]).catch(() => null);
       const text = String(d?.text ?? '').trim().slice(0, 120);
-      const ok = canRun(u, e) && FLAGS.includes(d?.type) && (d.type !== 'text' || !!text);
+      const ok = !u.imp && canRun(u, e) && FLAGS.includes(d?.type) && (d.type !== 'text' || !!text);
       if (ok) await setFlag(e.id, d.type, d.type === 'text' ? text : null, u.name);
       if (typeof ack === 'function') ack({ ok });
     });
@@ -153,6 +162,14 @@ export function attachLive(server, userFromToken) {
     if (!st.team) return socket.disconnect(true);
     const r = room(u.team_id);
     socket.join(r);
+    // Un admin viendo la app como esta persona: recibe lo del equipo, pero no cuenta como conectado ni puede
+    // enviar nada (ni telemetría, ni mensajes, ni «Visto»).
+    if (u.imp) {
+      socket.emit('driver', st.driver);
+      socket.emit('pit', st.pit);
+      socket.emit('flag', st.team.event_id ? flagOf(st.team.event_id) : null);
+      return;
+    }
     st.online.set(u.id, (st.online.get(u.id) ?? 0) + 1);
     presence(st);
     socket.emit('driver', st.driver);

@@ -4,7 +4,8 @@ import Box from './views/Box.jsx';
 import Settings from './views/Settings.jsx';
 import Team from './views/Team.jsx';
 import Stats from './views/Stats.jsx';
-import Admin from './views/Admin.jsx';
+import { AdminOverview, AdminUsers, AdminTeams, AdminAudit } from './views/Admin.jsx';
+import { PublicResults } from './views/Results.jsx';
 import UpdateBanner from './views/Update.jsx';
 import Profile from './views/Profile.jsx';
 import Events from './views/Events.jsx';
@@ -15,7 +16,7 @@ import { EventTodayBanner } from './views/Racing.jsx';
 import { Login, ForcedPassword, Wordmark } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
-import { refresh, useSession } from './lib/session.js';
+import { refresh, stopImpersonating, useSession } from './lib/session.js';
 import { useGateway } from './lib/gateway.js';
 import { toggleTheme, useTheme } from './lib/theme.js';
 import { MODES, modesOf, setMode, useMode } from './lib/mode.js';
@@ -37,14 +38,17 @@ const MODE_VIEWS = {
     control: { label: 'Race Control', Page: RaceControl, hidden: true, bare: true },
   },
   admin: {
-    cuentas: { label: 'Cuentas', icon: 'users', Page: Admin },
+    resumen: { label: 'Resumen', icon: 'chart', Page: AdminOverview },
+    cuentas: { label: 'Cuentas', icon: 'users', Page: AdminUsers },
+    equipos: { label: 'Equipos', icon: 'car', Page: AdminTeams },
     eventos: { label: 'Eventos', icon: 'finish', Page: AdminEvents },
+    auditoria: { label: 'Auditoría', icon: 'shield', Page: AdminAudit },
     control: { label: 'Race Control', Page: RaceControl, hidden: true, bare: true },
   },
 };
 // #vista/resto: la vista y su ruta interna, que usa la propia vista (p. ej. #eventos/12/pista).
 const fromHash = () => location.hash.slice(1);
-const home = (mode, hasTeam) => (mode === 'admin' ? 'cuentas' : mode === 'organizer' || !hasTeam ? 'eventos' : innerWidth < 900 ? 'piloto' : 'box');
+const home = (mode, hasTeam) => (mode === 'admin' ? 'resumen' : mode === 'organizer' || !hasTeam ? 'eventos' : innerWidth < 900 ? 'piloto' : 'box');
 // ¿Se puede abrir esta vista en este modo? (si no, se abre la principal del modo)
 const valid = (view, mode, hasTeam) => view === 'perfil'
   || (view === 'piloto' && mode === 'pilot' && hasTeam)
@@ -54,6 +58,7 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <UpdateBanner />
+      <ImpersonationBanner />
       <div className="min-h-0 flex-1"><Views /></div>
     </div>
   );
@@ -74,9 +79,11 @@ function Views() {
     return () => removeEventListener('hashchange', onHash);
   }, []);
   const hasTeam = !!session.team;
-  const current = session.user && (valid(view, mode, hasTeam) ? view : home(mode, hasTeam));
+  // #tiempos/<código> (resultados públicos) no depende de la sesión ni del modo.
+  const current = session.user && view !== 'tiempos' && (valid(view, mode, hasTeam) ? view : home(mode, hasTeam));
   useEffect(() => { if (current && current !== view) nav(current); }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (view === 'tiempos') return <PublicResults code={path[0]} />; // resultados públicos: sin cuenta
   if (!session.ready) return null;
   if (!session.user) return <Login />;
   if (session.user.mustReset) return <ForcedPassword />;
@@ -88,6 +95,22 @@ function Views() {
     <Frame view={current} setView={nav} mode={mode} muted={muted} setMuted={setMuted}>
       <Page muted={muted} onNav={nav} path={current === view ? path : []} />
     </Frame>
+  );
+}
+
+// Un admin viendo la app como otra persona (solo lectura, 30 min): siempre a la vista, con el tiempo que queda.
+function ImpersonationBanner() {
+  const { user } = useSession();
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 15_000); return () => clearInterval(t); }, []);
+  if (!user?.impersonatedUntil) return null;
+  const left = Math.max(0, Math.ceil((user.impersonatedUntil - Date.now()) / 60_000));
+  return (
+    <div role="status" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 bg-warn-solid px-3 py-1.5 text-[14px] font-bold text-on-warn print:hidden">
+      <Icon name="eye" size={16} />
+      <span className="min-w-0 flex-1">Estás viendo la app como {user.name} · solo lectura · quedan {left} min</span>
+      <button onClick={stopImpersonating} className="rounded-[3px] border-2 border-current px-2 py-0.5 uppercase">Salir</button>
+    </div>
   );
 }
 
@@ -121,7 +144,7 @@ function Header({ view, setView, mode, muted, setMuted }) {
   const live = team || mode !== 'pilot';
 
   return (
-    <header className="flex h-11 shrink-0 items-stretch gap-2 border-b border-line bg-panel px-2 sm:gap-4 sm:px-3">
+    <header className="flex h-11 shrink-0 items-stretch gap-2 border-b border-line bg-panel px-2 sm:gap-4 sm:px-3 print:hidden">
       <div className="flex items-center gap-2 sm:pr-2">
         {/* Pantallas estrechas: solo el símbolo; anchas: el logotipo completo */}
         <img src="/icon-192.png" alt="Box Box" className="h-7 w-7 xl:hidden" />
