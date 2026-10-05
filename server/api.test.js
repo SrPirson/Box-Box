@@ -174,7 +174,10 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   const ev = await call('/api/events', { token: olga.token, method: 'POST', body: { name: '24h Jarama', startsOn: '2026-11-07', place: 'Jarama' } });
   assert.equal(ev.startsOn, '2026-11-07');
   const line = [[40, -3.0001], [40, -2.9999]];
-  await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { track: { line } } });
+  // Nace en borrador: nadie se inscribe ni lo ve en la lista hasta publicarlo, y sin meta no se puede publicar.
+  assert.equal(ev.draft, true);
+  assert.equal((await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { draft: false } })).status, 400);
+  assert.equal((await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { track: { line }, draft: false } })).draft, false);
 
   // Un piloto inscribe su equipo con el código del evento: hereda la pista y no puede cambiarla.
   const pepe = await call('/api/register', { method: 'POST', body: { name: 'Pepe', email: 'pepe@x.es', password: 'pistapista' } });
@@ -263,12 +266,16 @@ test('lista pública de eventos, gestión de inscritos por el organizador y perf
   await call(`/api/admin/users/${org.user.id}`, { token: admin.token, method: 'PATCH', body: { role: 'organizer' } });
   const pub = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Resistencia Cheste', startsOn: '2099-05-01', place: 'Cheste' } });
   const priv = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Privado Club', startsOn: '2099-05-02' } });
+  const draft = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Borrador Cheste', startsOn: '2099-05-03' } });
+  const finish = { line: [[40, -3.0001], [40, -2.9999]] };
+  for (const e of [pub, priv]) await call(`/api/events/${e.id}`, { token: org.token, method: 'PATCH', body: { track: finish, draft: false } });
   await call(`/api/events/${priv.id}`, { token: org.token, method: 'PATCH', body: { private: true } });
 
   // El piloto ve solo el público, lo encuentra buscando y se inscribe sin código; el privado no se puede así.
   const rita = await reg('Rita', 'rita@x.es');
   const list = Object.values(await call('/api/events/public?q=chest', { token: rita.token })).filter((x) => typeof x === 'object');
-  assert.deepEqual(list.map((e) => e.name), ['Resistencia Cheste']);
+  assert.deepEqual(list.map((e) => e.name), ['Resistencia Cheste']); // ni el privado ni el borrador
+  assert.equal((await call('/api/teams', { token: (await reg('Bea', 'bea@x.es')).token, method: 'POST', body: { name: 'X', eventCode: draft.inviteCode } })).status, 409);
   assert.equal(Object.values(await call('/api/events/public?q=Privado', { token: rita.token })).filter((x) => typeof x === 'object').length, 0);
   assert.equal((await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'X', eventId: priv.id } })).status, 404);
   const team = (await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'Rita Racing', eventId: pub.id } })).team;

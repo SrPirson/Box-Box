@@ -111,6 +111,9 @@ export function SCHEMA() {
   alter table events add column if not exists private boolean not null default false;
   -- Sesión en curso del evento, que marca el organizador: 'practice' (entrenamiento) o 'race' (carrera).
   alter table events add column if not exists session text not null default 'race';
+  -- Borrador: el evento recién creado no sale en la lista pública ni admite inscripciones hasta que el
+  -- organizador lo publica (con fecha y línea de meta). Los que ya existían quedan publicados.
+  alter table events add column if not exists draft boolean not null default false;
   -- Tipo de cada vuelta y muestra: 'free' (libre, fuera de un evento), 'practice' o 'race' (sesión del evento).
   -- Las vueltas de antes con evento eran de carrera (idempotente: las nuevas de evento nunca son 'free').
   alter table laps add column if not exists kind text not null default 'free';

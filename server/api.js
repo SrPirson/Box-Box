@@ -33,8 +33,13 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 // ── Respuestas ──
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id });
 // Columnas de un evento (la fecha como texto: un date de Postgres llega como Date a medianoche local y se desplaza).
-const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session";
-const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session });
+const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft";
+const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session, draft: e.draft });
+// ¿Se puede inscribir un equipo en este evento? (e: con closed y draft)
+const checkEnroll = (e) => {
+  if (e?.draft) fail(409, 'Este evento aún no está publicado.');
+  if (e?.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
+};
 const KINDS = ['free', 'practice', 'race'];
 // Filtro opcional por tipo de vuelta (?kind=free|practice|race); null = todas.
 const kindParam = (url) => { const k = url.searchParams.get('kind'); return KINDS.includes(k) ? k : null; };
@@ -205,10 +210,10 @@ const routes = [
     let eventId = null;
     if (body.eventCode || body.eventId) {
       const e = body.eventCode
-        ? await one('select id, closed from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()])
-        : await one('select id, closed from events where id = $1 and not private', [Number(body.eventId)]);
+        ? await one('select id, closed, draft from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()])
+        : await one('select id, closed, draft from events where id = $1 and not private', [Number(body.eventId)]);
       if (!e) fail(404, body.eventCode ? 'Ese código de evento no existe.' : 'Ese evento no existe o es privado.');
-      if (e.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
+      checkEnroll(e);
       eventId = e.id;
     }
     // En un evento, el siguiente dorsal libre (para no tener varios «#1»); el equipo puede cambiarlo después.
@@ -227,6 +232,7 @@ const routes = [
     if (t) return { kind: 'team', team: { name: t.name, event: t.event } };
     const e = await one(`select ${EVENT_COLS} from events where invite_code = $1`, [code]);
     if (!e) fail(404, 'Ese código no existe. Pide uno nuevo al equipo o al organizador.');
+    if (e.draft) fail(409, 'Este evento aún no está publicado.');
     const teams = await q('select t.name, t.dorsal, (select count(*)::int from users u where u.team_id = t.id) as members from teams t where t.event_id = $1 order by t.created_at', [e.id]);
     return { kind: 'event', event: { ...eventSummary(e), teams } };
   }],
@@ -241,10 +247,10 @@ const routes = [
   ['POST', '/api/team/enroll', 'team', async ({ user, team, body }) => {
     if (!isOwner(user, team)) fail(403, 'Solo el capitán puede inscribir al equipo en un evento.');
     let e = null;
-    if (body.eventCode) e = await one('select id, closed from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()]);
-    else if (body.eventId != null) e = await one('select id, closed from events where id = $1 and not private', [Number(body.eventId)]);
+    if (body.eventCode) e = await one('select id, closed, draft from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()]);
+    else if (body.eventId != null) e = await one('select id, closed, draft from events where id = $1 and not private', [Number(body.eventId)]);
     if ((body.eventCode || body.eventId != null) && !e) fail(404, 'Ese evento no existe o es privado.');
-    if (e?.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
+    checkEnroll(e);
     let dorsal = team.dorsal;
     if (e && (await one('select 1 from teams where event_id = $1 and dorsal = $2 and id <> $3', [e.id, dorsal, team.id]))) {
       dorsal = String((await one(`select coalesce(max(nullif(regexp_replace(dorsal, '[^0-9]', '', 'g'), '')::int), 0) + 1 as n from teams where event_id = $1`, [e.id])).n);
@@ -381,8 +387,10 @@ const routes = [
 
   // Eventos (organizadores; el admin ve y gestiona todos).
   // Lista del organizador (sus eventos) o del admin (todos, con su organizador).
-  ['GET', '/api/events', 'organizer', ({ user, url }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, e.private,
-      o.name as organizer, (select count(*)::int from teams t where t.event_id = e.id) as teams
+  ['GET', '/api/events', 'organizer', ({ user, url }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, e.private, e.draft,
+      (e.track->'line') is not null as "hasFinish", e.invite_code as "inviteCode",
+      o.name as organizer, (select count(*)::int from teams t where t.event_id = e.id) as teams,
+      (select count(*)::int from teams t where t.event_id = e.id and t.racing) as racing
     from events e left join users o on o.id = e.organizer_id
     where ($1 and $3) or e.organizer_id = $2 order by e.starts_on desc nulls last, e.created_at desc`,
   [user.role === 'admin', user.id, url.searchParams.get('all') === '1'])],
@@ -392,13 +400,13 @@ const routes = [
     return q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, o.name as organizer,
         (select count(*)::int from teams t where t.event_id = e.id) as teams
       from events e left join users o on o.id = e.organizer_id
-      where not e.private and ($1 = '' or e.name ilike '%' || $1 || '%' or e.place ilike '%' || $1 || '%')
+      where not e.private and not e.draft and ($1 = '' or e.name ilike '%' || $1 || '%' or e.place ilike '%' || $1 || '%')
         and ${past ? 'e.starts_on < current_date' : '(e.starts_on is null or e.starts_on >= current_date) and not e.closed'}
       order by e.starts_on ${past ? 'desc' : 'asc'} nulls last, e.created_at desc limit 100`, [String(url.searchParams.get('q') ?? '').trim().slice(0, 60)]);
   }],
   ['POST', '/api/events', 'organizer', async ({ user, body }) => {
     const f = eventFields({ name: body.name, place: body.place ?? '', startsOn: body.startsOn });
-    const e = await one('insert into events (name, place, starts_on, organizer_id, invite_code) values ($1, $2, $3, $4, $5) returning id',
+    const e = await one('insert into events (name, place, starts_on, organizer_id, invite_code, draft) values ($1, $2, $3, $4, $5, true) returning id',
       [f.name, f.place, f.starts_on, user.id, await uniqueCode()]);
     return eventPayload(await ownEvent(user, e.id));
   }],
@@ -412,6 +420,12 @@ const routes = [
       const o = await one("select id from users where id = $1 and role in ('organizer', 'admin')", [Number(body.organizerId)]);
       if (!o) fail(400, 'Esa persona no es organizadora.');
       set.organizer_id = o.id;
+    }
+    // Publicar (no tiene vuelta atrás): hace falta la fecha y la meta, o no se cronometraría ninguna vuelta.
+    if (body.draft === false && e.draft) {
+      if (!('starts_on' in set ? set.starts_on : e.starts_on)) fail(400, 'Pon la fecha del evento antes de publicarlo.');
+      if (!('track' in set ? set.track : e.track)?.line) fail(400, 'Marca la línea de meta antes de publicar: sin ella no se cronometra ninguna vuelta.');
+      set.draft = false;
     }
     const keys = Object.keys(set);
     if (keys.length) await q(`update events set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`, [e.id, ...keys.map((k) => set[k])]);

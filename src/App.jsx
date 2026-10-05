@@ -17,7 +17,7 @@ import { useSocket } from './lib/store.js';
 import { refresh, useSession } from './lib/session.js';
 import { useGateway } from './lib/gateway.js';
 import { toggleTheme, useTheme } from './lib/theme.js';
-import { MODES, modesOf, useMode } from './lib/mode.js';
+import { MODES, modesOf, setMode, useMode } from './lib/mode.js';
 
 // Vistas de cada modo (team: solo con equipo). «piloto» (la vista del coche) y «perfil» (el botón con la inicial)
 // van aparte: la primera solo en modo Piloto con equipo; el perfil, en todos.
@@ -36,8 +36,8 @@ const MODE_VIEWS = {
     eventos: { label: 'Eventos', icon: 'finish', Page: AdminEvents },
   },
 };
-// #vista/resto: el resto lo usa la propia vista (p. ej. #eventos/12, el evento abierto).
-const fromHash = () => location.hash.slice(1).split('/')[0];
+// #vista/resto: la vista y su ruta interna, que usa la propia vista (p. ej. #eventos/12/pista).
+const fromHash = () => location.hash.slice(1);
 const home = (mode, hasTeam) => (mode === 'admin' ? 'cuentas' : mode === 'organizer' || !hasTeam ? 'eventos' : innerWidth < 900 ? 'piloto' : 'box');
 // ¿Se puede abrir esta vista en este modo? (si no, se abre la principal del modo)
 const valid = (view, mode, hasTeam) => view === 'perfil'
@@ -56,27 +56,30 @@ export default function App() {
 function Views() {
   const session = useSession();
   const mode = useMode(session.user?.role);
-  const [view, setView] = useState(fromHash);
+  const [hash, setHash] = useState(fromHash);
+  const [view, ...path] = hash.split('/');
+  // Sin historial (replaceState): el botón Atrás de Android no debe saltar entre vistas mientras se conduce.
+  const nav = (h) => { if (fromHash() !== h) history.replaceState(null, '', `#${h}`); setHash(h); };
   const [muted, setMuted] = useState(false);
   useEffect(() => { refresh(); }, []);
   useEffect(() => {
-    const onHash = () => setView(fromHash());
+    const onHash = () => setHash(fromHash());
     addEventListener('hashchange', onHash);
     return () => removeEventListener('hashchange', onHash);
   }, []);
   const hasTeam = !!session.team;
   const current = session.user && (valid(view, mode, hasTeam) ? view : home(mode, hasTeam));
-  useEffect(() => { if (current && fromHash() !== current) history.replaceState(null, '', `#${current}`); }, [current]);
+  useEffect(() => { if (current && current !== view) nav(current); }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!session.ready) return null;
   if (!session.user) return <Login />;
   if (session.user.mustReset) return <ForcedPassword />;
-  if (current === 'piloto') return <Pilot onNav={setView} />;
+  if (current === 'piloto') return <Pilot onNav={nav} />;
 
   const Page = current === 'perfil' ? Profile : MODE_VIEWS[mode][current].Page;
   return (
-    <Frame view={current} setView={setView} mode={mode} muted={muted} setMuted={setMuted}>
-      <Page muted={muted} onNav={setView} />
+    <Frame view={current} setView={nav} mode={mode} muted={muted} setMuted={setMuted}>
+      <Page muted={muted} onNav={nav} path={current === view ? path : []} />
     </Frame>
   );
 }
@@ -116,10 +119,12 @@ function Header({ view, setView, mode, muted, setMuted }) {
         {/* Pantallas estrechas: solo el símbolo; anchas: el logotipo completo */}
         <img src="/icon-192.png" alt="Box Box" className="h-7 w-7 xl:hidden" />
         <span className="hidden xl:contents"><Wordmark className="h-6" /></span>
-        {/* Con varios modos, cuál está activo (se cambia en el perfil) */}
+        {/* Con varios modos, cuál está activo y cambiarlo aquí mismo (se recuerda en este dispositivo) */}
         {modesOf(user.role).length > 1 && (
-          <button onClick={() => setView('perfil')} title="Cambiar de modo en tu perfil"
-            className="rounded-[3px] bg-accent-soft px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-accent">{MODES[mode]}</button>
+          <select value={mode} onChange={(e) => setMode(e.target.value)} aria-label="Modo"
+            className="h-7 rounded-[3px] border-0 bg-accent-soft px-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-accent">
+            {modesOf(user.role).map((m) => <option key={m} value={m}>{MODES[m]}</option>)}
+          </select>
         )}
         {mode === 'pilot' && team && <span className="hidden max-w-40 truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-muted 2xl:inline">· {team.name}</span>}
       </div>
