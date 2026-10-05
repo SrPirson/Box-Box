@@ -11,14 +11,16 @@ import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, bt
 const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 const STALE_MS = 15000; // sin datos de un coche desde hace más: «sin señal»
 const TRAIL_MAX = 300;
+const hashId = () => Number(location.hash.split('/')[1]) || null; // #eventos/12: el evento abierto
 
 // admin: todos los eventos (no los crea; puede cambiarles el organizador). Si no, los del organizador.
 export default function Events({ admin = false }) {
   const [list, setList] = useState(null);
-  const [sel, setSel] = useState(null);
+  const [sel, setSel] = useState(hashId);
   const [error, setError] = useState('');
-  const load = () => api(admin ? '/api/events?all=1' : '/api/events').then((l) => { setList(l); setSel((s) => s ?? l[0]?.id ?? null); }).catch((e) => setError(e.message));
+  const load = () => api(admin ? '/api/events?all=1' : '/api/events').then((l) => { setList(l); setSel((s) => (l.some((e) => e.id === s) ? s : l[0]?.id ?? null)); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
+  useEffect(() => { history.replaceState(null, '', sel ? `#eventos/${sel}` : '#eventos'); }, [sel]);
   const create = async (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -84,11 +86,13 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [flag, setFlag] = useState(null); // bandera actual del evento y equipos que la han visto
-  const run = (p) => p.then((e) => { setEv(e); onChanged(); }).catch((e) => setError(e.message));
+  const run = (p) => p.then((e) => { setEv(e); onChanged(); setError(''); return true; }).catch((e) => { setError(e.message); return false; });
+  const [nextSession, setNextSession] = useState(null); // cambio de sesión a confirmar
+  const [copied, setCopied] = useState(false);
   const patch = (body) => run(api(`/api/events/${id}`, { method: 'PATCH', body }));
   const loadStandings = (s = session) => api(`/api/events/${id}/standings${s ? `?session=${s}` : ''}`).then((r) => setStandings(Object.values(r))).catch(() => {});
 
-  const { socket } = useSocket({
+  const { socket, connected } = useSocket({
     'event:car': (p) => {
       if (p.gps) {
         const t = (trails.current[p.teamId] ??= []);
@@ -147,11 +151,20 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
             <div className="label">Código de inscripción</div>
             <div className="num text-[26px] font-bold tracking-[0.2em]">{ev.inviteCode}</div>
           </div>
-          <button onClick={() => navigator.clipboard?.writeText(link)} className={btn.ghost}><Icon name="copy" size={15} />Copiar enlace</button>
+          <button onClick={() => navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })} className={btn.ghost}>
+            <Icon name={copied ? 'check' : 'copy'} size={15} />{copied ? 'Copiado' : 'Copiar enlace'}</button>
           {navigator.share && <button onClick={() => navigator.share({ title: ev.name, text: `Inscribe tu equipo en ${ev.name} con Box Box (código ${ev.inviteCode})`, url: link }).catch(() => {})} className={btn.ghost}><Icon name="share" size={15} />Compartir</button>}
-          <button onClick={() => run(api(`/api/events/${id}/invite`, { method: 'POST' }))} className={btn.ghost}><Icon name="refresh" size={15} />Renovar</button>
+          {/* El código anterior deja de valer: segundo toque */}
+          <ConfirmButton label="Renovar" confirm="Sí, renovar" icon={<Icon name="refresh" size={15} />} onConfirm={() => run(api(`/api/events/${id}/invite`, { method: 'POST' }))} />
         </div>
-        <Segmented label="Sesión en curso" value={ev.session} onChange={(s) => { patch({ session: s }); setSession(null); loadStandings(s); }} options={SESSIONS} />
+        <Segmented label="Sesión en curso" value={nextSession ?? ev.session} onChange={(s) => setNextSession(s === ev.session ? null : s)} options={SESSIONS} />
+        {nextSession && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-[4px] bg-warn-soft px-3 py-2">
+            <span className="min-w-0 flex-1 text-[14px] font-semibold text-warn">¿Pasar a {SESSIONS.find(([v]) => v === nextSession)[1]}? Las vueltas desde ahora cuentan en esa sesión.</span>
+            <button onClick={() => { patch({ session: nextSession }); setSession(null); loadStandings(nextSession); setNextSession(null); }} className={btn.primary}>Sí, cambiar</button>
+            <button onClick={() => setNextSession(null)} className={btn.ghost}>Cancelar</button>
+          </div>
+        )}
         <p className="-mt-1 text-[13px] text-muted">Las vueltas de los equipos que participan se guardan en la sesión en curso. Los que no participan entrenan por su cuenta: ni cuentan ni salen en el mapa.</p>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => patch({ closed: !ev.closed })} className={btn.ghost}>{ev.closed ? 'Abrir inscripciones' : 'Cerrar inscripciones'}</button>
@@ -164,7 +177,16 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
         <p className="text-[13px] text-muted">Eliminar el evento no borra nada de los equipos: siguen como equipos de entrenamiento y sus vueltas conservan el evento en el historial.</p>
       </Card>
 
-      <RaceControl flag={flag} teams={ev.teams.length} send={(type, text) => socket.emit('event:flag', { eventId: id, type, text })} />
+      {/* Fija arriba en pantallas grandes: la bandera se tiene que poder dar sin buscarla (por encima del mapa: Leaflet usa z-index hasta 1000) */}
+      <div className="z-[1001] lg:sticky lg:top-0">
+        <RaceControl flag={flag} racing={ev.teams.filter((t) => t.racing)} send={async (type, text) => {
+          // Sin conexión no se emite: Socket.io la guardaría y la daría al reconectar, quizá minutos tarde.
+          if (!connected) throw new Error('Sin conexión: la bandera NO se ha dado.');
+          const r = await socket.timeout(3000).emitWithAck('event:flag', { eventId: id, type, text })
+            .catch(() => { throw new Error('El servidor no ha confirmado la bandera: puede que no haya llegado.'); });
+          if (!r?.ok) throw new Error('El servidor no ha aceptado la bandera.');
+        }} />
+      </div>
 
       <Card title="Clasificación" flush badge={<span className="flex flex-wrap gap-2">
         <Segmented value={session ?? ev.session} onChange={(s) => { setSession(s); loadStandings(s); }} options={SESSIONS} />
@@ -183,7 +205,8 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
                   const c = live(r.id);
                   const gap = i === 0 ? null : order === 'best' ? (r.best != null && leader.best != null ? fmtDelta(r.best - leader.best) : '—') : `${r.laps - leader.laps} v`;
                   return (
-                    <tr key={r.id} onClick={() => setFocus(cars[r.id]?.gps ? { ...cars[r.id].gps, t: Date.now() } : null)}
+                    <tr key={r.id} tabIndex={0} onClick={() => setFocus(cars[r.id]?.gps ? { ...cars[r.id].gps, t: Date.now() } : null)}
+                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.click()}
                       className={`cursor-pointer border-t border-line hover:bg-raised ${i === 0 && (r.best || r.laps) ? 'bg-ok-soft' : ''}`}>
                       <td className="num px-3 py-2 font-bold">{i + 1}</td>
                       <td className="px-3 py-2"><span className="num mr-1.5 text-muted">#{r.dorsal}</span><b>{r.name}</b>{r.best_driver && <span className="text-[12px] text-muted"> · mejor: {r.best_driver}</span>}</td>
@@ -195,8 +218,8 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
                       <td className="px-3 py-2"><span className="flex items-center gap-1.5">
                         {!r.racing ? <Pill tone="muted">No participa</Pill> : !c ? <Pill tone="muted">Sin señal</Pill> : c.pit ? <Pill tone="warn">Boxes</Pill> : <Pill tone="ok">En pista · {c.driver}</Pill>}
                         {flag && flag.type !== 'green' && (flag.seen.includes(r.id)
-                          ? <span title="Ha visto la bandera" className="text-ok"><Icon name="check" size={16} /></span>
-                          : <span title="Aún no ha visto la bandera" className="text-warn"><Icon name="flag" size={16} /></span>)}
+                          ? <span title="Ha visto la bandera" className="text-ok"><Icon name="check" size={16} /><span className="sr-only">Ha visto la bandera</span></span>
+                          : <span title="Aún no ha visto la bandera" className="text-warn"><Icon name="flag" size={16} /><span className="sr-only">Aún no ha visto la bandera</span></span>)}
                       </span></td>
                     </tr>
                   );
@@ -219,7 +242,7 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
         {ev.teams.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">Ninguno todavía.</p> : (
           <ul>
             {ev.teams.map((t) => (
-              <TeamRow key={t.id} team={t} eventId={id} onChange={setEv} onError={setError} />
+              <TeamRow key={t.id} team={t} eventId={id} onChange={setEv} />
             ))}
           </ul>
         )}
@@ -228,18 +251,27 @@ function EventDetail({ id, admin, onChanged, onDeleted }) {
   );
 }
 
-// Dirección de carrera: la bandera llega a todos los equipos del evento y sigue activa hasta que se cambia;
-// la verde la retira. Cada botón pide un segundo toque para no dar una bandera roja por error.
-function RaceControl({ flag, teams, send }) {
+// Dirección de carrera: la bandera llega a los equipos que participan y sigue activa hasta que se cambia;
+// la verde la retira. Cada botón pide un segundo toque para no dar una bandera roja por error, y el servidor
+// confirma que la ha dado: si no, se dice bien claro y se puede reintentar.
+function RaceControl({ flag, racing, send }) {
   const [armed, setArmed] = useState(null);
   const [text, setText] = useState('');
+  const [sending, setSending] = useState(null); // { type, error? }
+  const give = (type) => {
+    setSending({ type });
+    send(type, text)
+      .then(() => { setSending(null); if (type === 'text') setText(''); })
+      .catch((e) => setSending({ type, error: e.message }));
+  };
   const fire = (type) => {
     if (armed !== type) { setArmed(type); setTimeout(() => setArmed((a) => (a === type ? null : a)), 3000); return; }
     setArmed(null);
-    send(type, text);
-    if (type === 'text') setText('');
+    give(type);
   };
   const active = flag && flag.type !== 'green';
+  const missing = active ? racing.filter((t) => !flag.seen.includes(t.id)) : [];
+  const nameOf = (type) => (type === 'text' ? 'El aviso' : FLAG_INFO[type].label);
   const button = (type, label = FLAG_INFO[type].label) => (
     <button type="button" onClick={() => fire(type)}
       className={`flex h-12 items-center justify-center gap-2 rounded-[4px] px-3 text-[15px] font-bold uppercase ${FLAG_INFO[type].cls} ${armed === type ? 'ring-4 ring-fg ring-offset-2 ring-offset-panel' : ''}`}>
@@ -248,7 +280,7 @@ function RaceControl({ flag, teams, send }) {
   );
   return (
     <Card title="Dirección de carrera" badge={active
-      ? <Pill tone="warn">{flag.type === 'text' ? 'Aviso' : FLAG_INFO[flag.type].label} · visto por {flag.seen.length}/{teams}</Pill>
+      ? <Pill tone="warn">{flag.type === 'text' ? 'Aviso' : FLAG_INFO[flag.type].label} · visto por {racing.length - missing.length}/{racing.length}</Pill>
       : <Pill tone="ok">Pista libre</Pill>}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {button('green', active ? 'Verde · retirar' : 'Bandera verde')}{button('yellow')}{button('sc')}{button('red')}
@@ -258,21 +290,31 @@ function RaceControl({ flag, teams, send }) {
           placeholder="Aviso a todos los pilotos: «Aceite en la curva 3»" />
         <button disabled={!text.trim()} className={armed === 'text' ? btn.dangerSolid : btn.primary}>{armed === 'text' ? 'Toca otra vez' : 'Enviar aviso'}</button>
       </form>
-      {active && <p className="text-[13px] text-muted">Activa desde las {new Date(flag.ts).toLocaleTimeString('es-ES')}{flag.type === 'text' && <> · «{flag.text}»</>}. En la clasificación, ✓ = el equipo la ha visto.</p>}
+      {sending?.error && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-[4px] bg-crit-soft px-3 py-2">
+          <span className="min-w-0 flex-1 text-[14px] font-bold text-crit">{nameOf(sending.type)}: {sending.error}</span>
+          <button onClick={() => give(sending.type)} className={btn.dangerSolid}><Icon name="refresh" size={14} />Reintentar</button>
+          <button onClick={() => setSending(null)} className={btn.ghost}>Cerrar</button>
+        </div>
+      )}
+      {sending && !sending.error && <p role="status" className="text-[13px] font-semibold text-fg-2">Dando {nameOf(sending.type).toLowerCase()}…</p>}
+      {active && <p className="text-[13px] text-muted">Activa desde las {new Date(flag.ts).toLocaleTimeString('es-ES')}{flag.type === 'text' && <> · «{flag.text}»</>}.
+        {missing.length > 0 && <> <b className="text-warn">Faltan por verla:</b> {missing.map((t) => `#${t.dorsal} ${t.name}`).join(', ')}.</>}</p>}
     </Card>
   );
 }
 
 // Un equipo inscrito: sus pilotos (se puede sacar a uno), meter a un piloto registrado por su email y echar
 // al equipo del evento (sigue existiendo como equipo de entrenamiento).
-function TeamRow({ team: t, eventId, onChange, onError }) {
+function TeamRow({ team: t, eventId, onChange }) {
   const [adding, setAdding] = useState(false);
   const [armed, setArmed] = useState(null); // piloto a punto de sacar (segundo toque para confirmar)
-  const act = (p) => p.then(onChange).catch((e) => onError(e.message));
+  const [error, setError] = useState('');
+  const act = (p) => { setError(''); return p.then((e) => { onChange(e); return true; }).catch((e) => { setError(e.message); return false; }); };
   const add = (e) => {
     e.preventDefault();
     const email = new FormData(e.currentTarget).get('email');
-    act(api(`/api/events/${eventId}/teams/${t.id}/members`, { method: 'POST', body: { email } })).then(() => setAdding(false));
+    act(api(`/api/events/${eventId}/teams/${t.id}/members`, { method: 'POST', body: { email } })).then((ok) => ok && setAdding(false));
   };
   return (
     <li className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0">
@@ -287,6 +329,7 @@ function TeamRow({ team: t, eventId, onChange, onError }) {
             onConfirm={() => act(api(`/api/events/${eventId}/teams/${t.id}`, { method: 'DELETE' }))} />
         </span>
       </div>
+      <ErrorText>{error}</ErrorText>
       <div className="flex flex-wrap gap-2">
         {t.members.length === 0 && <span className="text-[13px] text-muted">Sin pilotos.</span>}
         {t.members.map((m) => (
@@ -315,10 +358,20 @@ function TeamRow({ team: t, eventId, onChange, onError }) {
   );
 }
 
-// Campo que guarda al salir de él (o con Enter), solo si ha cambiado.
+// Campo que guarda al salir de él (o con Enter), solo si ha cambiado. onSave dice si ha ido bien: si no,
+// vuelve al valor anterior (el error se muestra arriba).
 function BlurInput({ value, onSave, ...p }) {
   const [v, setV] = useState(value);
+  const [saved, setSaved] = useState(false);
   useEffect(() => setV(value), [value]);
-  return <input {...p} className={input} value={v} onChange={(e) => setV(e.target.value)}
-    onBlur={() => v !== value && onSave(v)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />;
+  const save = async () => {
+    if (v === value) return;
+    if (await onSave(v)) { setSaved(true); setTimeout(() => setSaved(false), 2000); } else setV(value);
+  };
+  return (
+    <span className="relative block">
+      <input {...p} className={input} value={v} onChange={(e) => setV(e.target.value)} onBlur={save} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+      {saved && <span role="status" className="pointer-events-none absolute right-9 top-1/2 -translate-y-1/2 rounded-[3px] bg-panel px-1 text-[12px] font-semibold text-ok">Guardado ✓</span>}
+    </span>
+  );
 }

@@ -36,7 +36,8 @@ const MODE_VIEWS = {
     eventos: { label: 'Eventos', icon: 'finish', Page: AdminEvents },
   },
 };
-const fromHash = () => location.hash.slice(1);
+// #vista/resto: el resto lo usa la propia vista (p. ej. #eventos/12, el evento abierto).
+const fromHash = () => location.hash.slice(1).split('/')[0];
 const home = (mode, hasTeam) => (mode === 'admin' ? 'cuentas' : mode === 'organizer' || !hasTeam ? 'eventos' : innerWidth < 900 ? 'piloto' : 'box');
 // ¿Se puede abrir esta vista en este modo? (si no, se abre la principal del modo)
 const valid = (view, mode, hasTeam) => view === 'perfil'
@@ -65,7 +66,7 @@ function Views() {
   }, []);
   const hasTeam = !!session.team;
   const current = session.user && (valid(view, mode, hasTeam) ? view : home(mode, hasTeam));
-  useEffect(() => { if (current && location.hash.slice(1) !== current) history.replaceState(null, '', `#${current}`); }, [current]);
+  useEffect(() => { if (current && fromHash() !== current) history.replaceState(null, '', `#${current}`); }, [current]);
 
   if (!session.ready) return null;
   if (!session.user) return <Login />;

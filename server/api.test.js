@@ -249,6 +249,9 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   const msg = next(sp, 'flag');
   so.emit('event:flag', { eventId: ev.id, type: 'text', text: '  Aceite en la curva 3  ' });
   assert.equal((await msg).text, 'Aceite en la curva 3');
+  // Acuse: el panel sabe si el servidor la ha dado; a un piloto se le dice que no.
+  assert.deepEqual(await so.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'yellow' }), { ok: true });
+  assert.deepEqual(await sp.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'yellow' }), { ok: false });
 
   for (const s of [so, sp, sq]) s.close();
 });

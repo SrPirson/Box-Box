@@ -483,6 +483,7 @@ const routes = [
     if (id === user.id) fail(400, 'No puedes cambiar tu propio rol.');
     if (!['admin', 'organizer', 'pilot'].includes(body.role)) fail(400, 'Rol no válido.');
     await q('update users set role = $1 where id = $2', [body.role, id]);
+    await kick(id); // sus conexiones se reconectan con el rol nuevo (p. ej., deja de poder dar banderas)
     return { ok: true };
   }],
   ['POST', /^\/api\/admin\/users\/(\d+)\/reset$/, 'admin', async ({ params }) => {

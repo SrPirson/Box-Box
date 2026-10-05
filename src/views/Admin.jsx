@@ -4,6 +4,7 @@ import Icon from '../icons.jsx';
 import { api, useSession } from '../lib/session.js';
 import { Page, Card, Pill, Segmented, ConfirmButton, ErrorText, input, btn } from './ui.jsx';
 
+const ROLES = { pilot: 'Piloto', organizer: 'Organizador', admin: 'Admin' };
 const date = (d) => new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
 
 export default function Admin() {
@@ -34,6 +35,7 @@ export default function Admin() {
 function Users({ users, run }) {
   const { user: me } = useSession();
   const [temp, setTemp] = useState(null); // { name, password } recién generada
+  const [ask, setAsk] = useState(null); // { id, role }: cambio de rol a confirmar
   if (!users) return <p className="text-muted">Cargando…</p>;
   return (
     <>
@@ -56,10 +58,17 @@ function Users({ users, run }) {
                   <td className="num px-4 py-2.5 text-fg-2">{u.email}</td>
                   <td className="px-4 py-2.5">{u.team ?? <span className="text-muted">—</span>}</td>
                   <td className="px-4 py-2.5">
-                    {u.id === me.id ? <Pill tone="accent">Admin</Pill> : (
-                      <select value={u.role} onChange={(e) => run(() => api(`/api/admin/users/${u.id}`, { method: 'PATCH', body: { role: e.target.value } }))}
+                    {u.id === me.id ? <Pill tone="accent">Admin</Pill> : ask?.id === u.id ? (
+                      <span className="flex items-center gap-1.5 text-[13px]">
+                        <span className="font-semibold text-warn">¿{ROLES[ask.role]}?</span>
+                        <button onClick={() => { setAsk(null); run(() => api(`/api/admin/users/${u.id}`, { method: 'PATCH', body: { role: ask.role } })); }}
+                          className="rounded-[3px] bg-accent px-2 py-1 text-[12px] font-bold uppercase text-panel">Sí</button>
+                        <button onClick={() => setAsk(null)} className="px-1.5 text-[12px] font-semibold uppercase">No</button>
+                      </span>
+                    ) : (
+                      <select value={u.role} onChange={(e) => setAsk({ id: u.id, role: e.target.value })}
                         className="h-8 rounded-[4px] border border-line-strong bg-sunken px-2 text-[13px] font-semibold uppercase" aria-label={`Rol de ${u.name}`}>
-                        <option value="pilot">Piloto</option><option value="organizer">Organizador</option><option value="admin">Admin</option>
+                        {Object.entries(ROLES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
                     )}
                   </td>

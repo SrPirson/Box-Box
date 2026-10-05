@@ -116,10 +116,13 @@ export function attachLive(server, userFromToken) {
       socket.join(eventRoom(e.id));
       socket.emit('event:flag', flagStatus(e.id));
     });
-    socket.on('event:flag', async (d) => {
+    // ack: el panel sabe si la bandera ha llegado al servidor (sin acuse, avisa de que no se ha enviado).
+    socket.on('event:flag', async (d, ack) => {
       const e = await one('select id, organizer_id from events where id = $1', [Number(d?.eventId)]).catch(() => null);
       const text = String(d?.text ?? '').trim().slice(0, 120);
-      if (canRun(u, e) && FLAGS.includes(d.type) && (d.type !== 'text' || text)) await setFlag(e.id, d.type, d.type === 'text' ? text : null);
+      const ok = canRun(u, e) && FLAGS.includes(d?.type) && (d.type !== 'text' || !!text);
+      if (ok) await setFlag(e.id, d.type, d.type === 'text' ? text : null);
+      if (typeof ack === 'function') ack({ ok });
     });
     socket.on('event:unwatch', (eventId) => socket.leave(eventRoom(Number(eventId))));
     if (!u.team_id) return;
