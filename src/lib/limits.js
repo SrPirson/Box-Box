@@ -13,7 +13,22 @@ export const LIMITS = {
 export const PHONE_HOT = 45;
 export const limitsOf =(p) => ({ ...LIMITS, ...p?.limits });
 // Retraso del paquete respecto a cuando tocaba el siguiente: con intervalos largos (pruebas) no es "sin señal".
-export const lateMs = (p, now) => now - p.ts - (p.pollMs ?? 0);
+export const lateMs = (p, now) => now - seenAt(p) - (p.pollMs ?? 0);
+
+// Reloj del móvil ≠ reloj de esta pantalla: unos segundos de desfase bastan para dar todo por «sin datos».
+// Con cada paquete en directo se mide (hora local − p.ts); el mínimo de la última ventana es el desfase más la
+// latencia de red. Las ráfagas de la cola offline no cuentan (son paquetes viejos).
+const SKEW_WINDOW_MS = 60_000;
+const skews = new Map(); // coche → { v, at }
+export function withSkew(p, live, now = Date.now()) {
+  const d = now - p.ts;
+  const s = skews.get(p.car);
+  if (live && (!s || d < s.v || now - s.at > SKEW_WINDOW_MS)) skews.set(p.car, { v: d, at: now });
+  return { ...p, skew: skews.get(p.car)?.v ?? 0 };
+}
+// Instante del paquete (y de su lectura OBD) en el reloj de esta pantalla.
+export const seenAt = (p) => p.ts + (p.skew ?? 0);
+export const obdSeenAt = (p) => (p.obdTs == null ? null : p.obdTs + (p.skew ?? 0));
 
 const NF = [0, 1, 2].map((d) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: 'always' }));
 export const fmt = (v, d = 0) => (v == null || Number.isNaN(v) ? '—' : NF[d].format(v));
