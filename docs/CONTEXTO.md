@@ -136,8 +136,11 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
    banderas (pantalla completa en Piloto, franja, panel del organizador), «Participar en el evento» (Box, Equipo,
    Eventos, franja del día), sesión y clasificación por sesión del organizador, filtros de Estadísticas
    (tipo y pista) y perfil, Sin OBD (Piloto, Box, Estadísticas, Alertas) y la tarjeta Ubicación.
-3. **Probar en el coche con la APK v13**: Bluetooth clásico con el KUULAA (emparejar en Android, elegir en
-   Ajustes → Sensor OBD2), ubicación (ya funciona según el usuario) y banderas con varios móviles.
+3. **Probar en el coche con la APK nueva** (la que sale tras el 08/10): con la v13 el Bluetooth clásico se quedaba
+   en «Conectando…» para siempre (bloqueaba el hilo de los plugins, también «Comprobando…» de Ubicación); ahora
+   conecta en su propio hilo y se puede cancelar. Comprobar que el coche tenga OBD activado (tarjeta Coche), emparejar
+   el KUULAA en Android, elegirlo en Ajustes → Sensor OBD2 y, si falla, anotar el mensaje de error. También el botón
+   ✕ nuevo para salir de Piloto, la ubicación y las banderas con varios móviles.
 
 **Después:**
 
