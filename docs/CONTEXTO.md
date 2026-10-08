@@ -1,6 +1,6 @@
 # Contexto del proyecto · por dónde vamos
 
-> Última actualización: 2026-10-03. Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
+> Última actualización: 2026-10-08. Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
 
 ## Qué es
 
@@ -49,11 +49,11 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 | | |
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
-| Último commit | `856ffc0` Estadísticas: pista de cada vuelta y filtro por pista en libre (más el commit de docs) |
+| Último commit | `a83db65` Box: gauges siempre pintados y sin «sin datos» por desfase de reloj (más el commit de docs) |
 | Despliegue | **https://boxracing.onrender.com** · servicio `boxracing` `srv-db02jqad0e5s739s56gg` (Frankfurt, free, autodeploy de `main`). La antigua https://cencerro-racing.onrender.com (servicio `cencerro` `srv-davb06flk1mc739c6vlg`) sigue activa con `REDIRECT_TO`: los navegadores van a la nueva y las APK antiguas (WebView, `; wv)`) la siguen cargando para actualizarse. **Borrarla cuando todos los móviles tengan la APK v9 o posterior.** `box-box` y `boxbox` en Render estaban cogidas |
 | Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, gratis sin caducidad; creada desde la integración de Vercel). `DATABASE_URL` con `sslmode=verify-full`. Migrada desde Render el 02/10 con `server/migrate.js`. El Postgres de Render (`cencerro-racing-db`) caduca el 31/10/2026 y ya no se usa |
 | APK | Release `apk` de GitHub, **versión 13** (`cencerro.apk`; v12 trajo Bluetooth clásico y pedir ubicación, v13 la ubicación por red y el aviso de GPS apagado; la siguiente conecta el Bluetooth clásico en un hilo propio, porque bloqueaba a todos los plugins y dejaba «Conectando…» y «Comprobando…» colgados). La compila `.github/workflows/android.yml` en cada cambio de `android/`, `capacitor.config.json` o `package.json`; firma fija con el secreto `ANDROID_KEYSTORE` (CN=Cencerro Racing), verificada con apksigner antes de publicar. La app avisa de versión nueva e instala encima |
-| Tests | `npm test` → **18 en verde** (banderas, participar en eventos y tipos de vuelta, estadísticas por pista, sin OBD, ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
+| Tests | `npm test` → **20 en verde** (reloj del móvil desfasado, ELM327 sin «1» final, banderas, participar en eventos y tipos de vuelta, estadísticas por pista, sin OBD, ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
 
 ## Cómo arrancar
 
@@ -87,6 +87,11 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
   participando en un evento (`teams.racing`), la del organizador (`events.track`), igual para todos.
 - **Vueltas y tramos**: el servidor detecta el cruce de meta interpolando el instante; cortes de tramo →
   parciales en el orden en que se cruzan. Cada vuelta guarda `sectors`, `track_id` y `event_id`.
+- **Telemetría y tiempos**: el OBD se lee en su propio bucle (un ciclo por Bluetooth clásico tardaba ~4-5 s
+  y retrasaba todo el paquete); cada paquete lleva la última lectura con `obdTs` y `obdMs`. Los PIDs se piden con
+  «1» final (`010C1`: vuelve con la primera ECU); si el clon dice «?», sin él. BOX no compara la hora del móvil con
+  la suya: mide el desfase por coche con los paquetes en directo (`withSkew` en `limits.js`) y lo descuenta. Con
+  dato viejo, los gauges se pintan igual pero atenuados y con «~».
 - **Boxes**: «Salgo a box»/«Repostar» → viene de camino (alarmas normales); BOX confirma «Coche en boxes» →
   cuenta y se callan sin señal/batería/rpm/pista; termina a ≥ 40 km/h o con «Fin de boxes».
 - **Eventos**: `events` (organizador, código, pista, cerrado, privado) y `teams.event_id`. Códigos de equipo y
@@ -136,11 +141,9 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
    banderas (pantalla completa en Piloto, franja, panel del organizador), «Participar en el evento» (Box, Equipo,
    Eventos, franja del día), sesión y clasificación por sesión del organizador, filtros de Estadísticas
    (tipo y pista) y perfil, Sin OBD (Piloto, Box, Estadísticas, Alertas) y la tarjeta Ubicación.
-3. **Probar en el coche con la APK nueva** (la que sale tras el 08/10): con la v13 el Bluetooth clásico se quedaba
-   en «Conectando…» para siempre (bloqueaba el hilo de los plugins, también «Comprobando…» de Ubicación); ahora
-   conecta en su propio hilo y se puede cancelar. Comprobar que el coche tenga OBD activado (tarjeta Coche), emparejar
-   el KUULAA en Android, elegirlo en Ajustes → Sensor OBD2 y, si falla, anotar el mensaje de error. También el botón
-   ✕ nuevo para salir de Piloto, la ubicación y las banderas con varios móviles.
+3. **Probar con varios móviles** el botón ✕ para salir de Piloto, la ubicación y las banderas. El OBD por
+   Bluetooth clásico (KUULAA) **ya funciona en el coche** (08/10): conecta, y BOX pinta temperatura, RPM y batería.
+   Si algún día vuelve el «~»/SIN DATOS, mirar `obdMs` en Ajustes del móvil (lo que tarda un ciclo de PIDs).
 
 **Después:**
 
