@@ -137,6 +137,7 @@ function TelemetryCard() {
   const gw = useGateway();
   const [copied, setCopied] = useState(false);
   const running = gw.obd === 'on';
+  const busy = running || gw.obd === 'connecting';
   const status = {
     on: ['text-ok', 'bg-ok', `Enviando · cada ${fmtPoll(cfg.pollMs)}`],
     connecting: ['text-warn', 'pulse bg-warn-solid', 'Conectando…'],
@@ -152,9 +153,10 @@ function TelemetryCard() {
       </div>
       {gw.error && <p className="text-[13px] text-crit">{gw.error}</p>}
       <div className="flex gap-2">
-        <button onClick={running ? stop : start}
-          className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[4px] text-[15px] font-bold uppercase tracking-[0.06em] transition-colors ${running ? 'border border-crit text-crit hover:bg-crit-soft' : 'bg-accent text-panel'}`}>
-          <Icon name={running ? 'stop' : 'wheel'} size={16} />{running ? 'Detener' : 'Tomar el volante'}
+        {/* Conectando también se puede cortar: un adaptador que no contesta no debe dejarlo colgado */}
+        <button onClick={busy ? stop : start}
+          className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[4px] text-[15px] font-bold uppercase tracking-[0.06em] transition-colors ${busy ? 'border border-crit text-crit hover:bg-crit-soft' : 'bg-accent text-panel'}`}>
+          <Icon name={busy ? 'stop' : 'wheel'} size={16} />{running ? 'Detener' : busy ? 'Cancelar' : 'Tomar el volante'}
         </button>
         <button onClick={() => speak('Prueba de voz. Entra en box.')} className={`${btn.ghost} h-11`}>
           <Icon name="speaker" size={16} />Probar voz

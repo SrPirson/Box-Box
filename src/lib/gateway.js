@@ -152,7 +152,8 @@ addEventListener('visibilitychange', keepAwake);
 let loopId = 0; // cada start() abre un bucle nuevo; el anterior, si sigue esperando, se retira
 
 export async function start() {
-  if (running) return;
+  if (running || state.obd === 'connecting') return;
+  const id = ++loopId; // stop() lo cambia: si se cancela mientras conecta, este arranque se abandona
   const cfg = getConfig();
   set({ obd: 'connecting', error: '', notice: '', obdLink: 'ok' });
   let read;
@@ -185,8 +186,9 @@ export async function start() {
       read = async () => (elm ? elm.read() : {});
     }
   } catch (e) {
-    return set({ obd: 'error', error: e.message });
+    return id === loopId && set({ obd: 'error', error: e.message });
   }
+  if (id !== loopId) return;
 
   if (native) {
     try { await startBackground(); } catch (e) {
@@ -196,6 +198,7 @@ export async function start() {
       set({ notice: `${e.message}: la telemetría se parará si apagas la pantalla.` });
     }
   } else watchWebGps();
+  if (id !== loopId) return stop(); // cancelado mientras arrancaba el servicio
   // "absolute": referida al norte (la normal es relativa a cómo estaba el móvil al empezar).
   addEventListener('deviceorientationabsolute', onOrient);
 
@@ -213,7 +216,6 @@ export async function start() {
   running = true;
   set({ obd: 'on' });
   keepAwake();
-  const id = ++loopId;
   let obd = {};
   let readAt = -Infinity;
   let sentFix = null;
@@ -249,6 +251,7 @@ export async function start() {
 
 export function stop() {
   running = false;
+  loopId++;
   if (native) stopBackground();
   removeEventListener('deviceorientationabsolute', onOrient);
   setPhone({ compass: null });

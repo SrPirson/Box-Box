@@ -30,8 +30,8 @@ import java.util.UUID;
 @CapacitorPlugin(name = "ClassicBt")
 public class ClassicBtPlugin extends Plugin {
     private static final UUID SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-    private BluetoothSocket socket;
-    private OutputStream out;
+    private volatile BluetoothSocket socket; // la escriben el hilo de conexión y el de los plugins
+    private volatile OutputStream out;
 
     private BluetoothAdapter adapter(PluginCall call) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -62,7 +62,8 @@ public class ClassicBtPlugin extends Plugin {
         call.resolve(ret);
     }
 
-    // Los métodos de plugin corren fuera del hilo principal: connect() puede bloquear unos segundos.
+    // Todos los plugins comparten un único hilo y conectar puede bloquear medio minuto (tres intentos): en un
+    // hilo propio, para que mientras tanto sigan respondiendo los demás (ubicación, temperatura, parar).
     @PluginMethod
     public void connect(PluginCall call) {
         BluetoothAdapter a = adapter(call);
@@ -70,6 +71,10 @@ public class ClassicBtPlugin extends Plugin {
         String address = call.getString("address");
         if (address == null || !BluetoothAdapter.checkBluetoothAddress(address)) { call.reject("Elige el adaptador en Ajustes"); return; }
         close();
+        new Thread(() -> connect(call, a, address), "elm327-connect").start();
+    }
+
+    private void connect(PluginCall call, BluetoothAdapter a, String address) {
         a.cancelDiscovery(); // la búsqueda de dispositivos ralentiza y hace fallar la conexión
         BluetoothDevice d = a.getRemoteDevice(address);
         BluetoothSocket s = null;
