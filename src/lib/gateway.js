@@ -216,21 +216,35 @@ export async function start() {
   running = true;
   set({ obd: 'on' });
   keepAwake();
+  // El OBD se lee en su propio bucle: un ciclo de PIDs por Bluetooth clásico o con una ECU lenta puede tardar
+  // segundos, y si el envío lo esperase, BOX vería todo el paquete (GPS incluido) como «sin datos».
+  // Cada paquete lleva la última lectura y cuándo se hizo (obdTs) y cuánto tardó el ciclo (obdMs).
   let obd = {};
-  let readAt = -Infinity;
+  let obdTs = null;
+  let obdMs = null;
+  (async () => {
+    while (running && id === loopId) {
+      const t0 = performance.now();
+      try { obd = await read(); } catch { obd = {}; }
+      obdMs = Math.round(performance.now() - t0);
+      obdTs = Date.now();
+      let left;
+      while (running && id === loopId && (left = getConfig().pollMs - (performance.now() - t0)) > 0) await nap(Math.min(left, 250));
+    }
+  })();
+  let sentAt = -Infinity;
   let sentFix = null;
   while (running && id === loopId) {
-    // El OBD se lee al ritmo del intervalo; con intervalos largos, cada fix nuevo del GPS se envía al momento
-    // (con la última lectura OBD) para que BOX siga la posición en tiempo real.
-    if (performance.now() - readAt >= getConfig().pollMs - 5) {
-      readAt = performance.now();
-      try { obd = await read(); } catch { obd = {}; }
-    }
+    // Con intervalos largos, cada fix nuevo del GPS se envía al momento (con la última lectura OBD) para que
+    // BOX siga la posición en tiempo real.
+    sentAt = performance.now();
     const s = getSocket(); // por si se cambió de canal en caliente
     const packet = {
       ts: Date.now(),
       pollMs: getConfig().pollMs, // BOX lo usa para no dar "sin señal" con intervalos largos
       obd,
+      obdTs,
+      obdMs,
       gps: gps ?? (cfg.source === 'sim' ? simGps() : null),
       phoneBattery: phone.battery,
       phoneTemp: phone.temp,
@@ -244,7 +258,7 @@ export async function start() {
     sentFix = gps;
     // Espera a trozos: con intervalos de minutos, Detener o bajar el intervalo surten efecto al momento.
     let left;
-    while (running && id === loopId && (left = getConfig().pollMs - (performance.now() - readAt)) > 0
+    while (running && id === loopId && (left = getConfig().pollMs - (performance.now() - sentAt)) > 0
       && !(gps !== sentFix && getConfig().pollMs > 1000)) await nap(Math.min(left, 250));
   }
 }

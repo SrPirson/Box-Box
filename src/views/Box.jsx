@@ -110,7 +110,7 @@ export default function Box({ muted }) {
             <>
               <CarHeader p={p} driver={driver?.name ?? p.driver} state={states[p.car]} alarms={alarms[p.car]} now={now}
                 onPit={!pit && (() => socket.emit('pit', 'arrived'))} />
-              {team.obd && <Gauges p={p} stale={lateMs(p, now) > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />}
+              {team.obd && <Gauges p={p} now={now} avg={month.data?.metrics} />}
             </>
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
@@ -366,19 +366,22 @@ const Stat = ({ icon, label, value, warn }) => (
 );
 
 // ── Gauges: arco para temperatura, barra de LEDs para RPM, digital para voltaje y velocidad ──
-function Gauges({ p, stale, avg = {} }) {
+function Gauges({ p, now, avg = {} }) {
   const o = p.obd ?? {};
   const L = limitsOf(p);
+  // El GPS va con el paquete; el motor, con su última lectura OBD (obdTs), que puede ir más lenta que el envío.
+  const stale = lateMs(p, now) > L.staleWarn * 1000;
+  const engineStale = stale || (p.obdTs != null && now - p.obdTs - (p.pollMs ?? 0) > L.staleWarn * 1000);
   const v = o.voltage;
   const voltState = v == null ? 'ok' : v < L.voltCrit || v > L.voltHighCrit ? 'crit' : v < L.voltWarn || v > L.voltHighWarn ? 'warn' : 'ok';
   return (
     <div className="grid grid-cols-2 gap-px bg-line xl:grid-cols-4">
       {/* Estrecho: temp + batería arriba, RPM y velocidad a lo ancho.
           Portátil: temp · RPM (doble) · batería y velocidad apiladas. */}
-      <TempArc value={o.coolant} stale={stale} L={L} avg={avg.avg_temp} />
-      <div className="order-3 col-span-2 xl:order-none"><RpmBar value={o.rpm} throttle={o.throttle} stale={stale} L={L} avg={avg.avg_rpm} /></div>
+      <TempArc value={o.coolant} stale={engineStale} L={L} avg={avg.avg_temp} />
+      <div className="order-3 col-span-2 xl:order-none"><RpmBar value={o.rpm} throttle={o.throttle} stale={engineStale} L={L} avg={avg.avg_rpm} /></div>
       <div className="contents xl:grid xl:grid-rows-2 xl:gap-px">
-        <Readout label="Batería" unit="V" value={o.voltage} digits={2} stale={stale} compact avg={avg.avg_volt}
+        <Readout label="Batería" unit="V" value={o.voltage} digits={2} stale={engineStale} compact avg={avg.avg_volt}
           state={voltState} bar={{ min: 10, max: 16, marks: [L.voltCrit, L.voltHighWarn] }} />
         <div className="order-4 col-span-2 xl:order-none xl:col-span-1"><Readout label="Velocidad GPS" unit="km/h" value={p.gps?.speed} stale={stale} compact avg={avg.avg_speed} /></div>
       </div>

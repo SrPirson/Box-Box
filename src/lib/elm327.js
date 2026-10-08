@@ -82,6 +82,18 @@ export function createElm(transport, timeoutMs = 1500) {
     ));
 
   let voltageViaAtrv = false;
+  // "010C1": el 1 final le dice al chip que vuelva en cuanto conteste una ECU, en vez de esperar su timeout
+  // por si contestan más (en CAN, ~5 veces más rápido por PID). Los clones que no lo entienden dicen "?":
+  // entonces se pide sin él.
+  let single = true;
+  const ask = async (pid) => {
+    if (single) {
+      const r = await send(pid + '1');
+      if (!r.includes('?')) return r;
+      single = false;
+    }
+    return send(pid);
+  };
   return {
     async init() {
       for (const cmd of INIT) await send(cmd, cmd === 'ATZ' ? 3000 : timeoutMs);
@@ -96,7 +108,7 @@ export function createElm(transport, timeoutMs = 1500) {
       for (const [pid, { key }] of Object.entries(PIDS)) {
         if (key !== 'rpm' && key !== 'voltage' && out.rpm == null) continue;
         if (key === 'voltage' && voltageViaAtrv) { out.voltage = parseAtrv(await send('ATRV')); continue; }
-        out[key] = parsePid(pid, await send(pid));
+        out[key] = parsePid(pid, await ask(pid));
         if (key === 'voltage' && out.voltage == null) { voltageViaAtrv = true; out.voltage = parseAtrv(await send('ATRV')); }
       }
       return out;
