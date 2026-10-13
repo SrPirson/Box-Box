@@ -167,7 +167,7 @@ function TelemetryCard() {
         <dl className="num grid grid-cols-4 gap-px overflow-hidden rounded-[4px] border border-line bg-line text-center">
           {[['RPM', gw.data.obd.rpm], ['°C', gw.data.obd.coolant], ['V', gw.data.obd.voltage], ['ACEL %', gw.data.obd.throttle]].map(([k, v]) => (
             <div key={k} className="bg-sunken px-1 py-2">
-              <dt className="text-[10px] tracking-[0.06em] text-muted">{k}</dt>
+              <dt className="text-[11px] font-semibold tracking-[0.06em] text-muted">{k}</dt>
               <dd className="text-[17px] font-bold">{v ?? '—'}</dd>
             </div>
           ))}

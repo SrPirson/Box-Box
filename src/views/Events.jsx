@@ -277,7 +277,7 @@ function TeamRow({ team: t, eventId, onChange, onError }) {
   return (
     <li className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="num text-muted">#{t.dorsal}</span>
+        <span className="num font-semibold text-fg-2">#{t.dorsal}</span>
         <b className="text-[15px]">{t.name}</b>
         {t.racing ? <Pill tone="ok">Participando</Pill> : <Pill tone="muted">No participa</Pill>}
         <span className="num text-[12px] text-muted" title="Código del equipo: lo usan sus pilotos para unirse">código {t.inviteCode}</span>

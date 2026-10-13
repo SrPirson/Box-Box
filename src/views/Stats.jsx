@@ -94,7 +94,7 @@ export default function Stats() {
             </Card>
           ) : (
             <>
-              <Card title="Tiempos por vuelta" badge={<span className="num text-[12px] text-muted">media {fmtLap(Math.round(avg))}</span>}>
+              <Card title="Tiempos por vuelta" badge={<span className="num text-[13px] font-semibold text-fg-2">media {fmtLap(Math.round(avg))}</span>}>
                 <LapChart laps={laps} avg={avg} bestId={best.id} />
               </Card>
               <SectorsCard sec={sec} bestLap={sec.laps.length ? Math.min(...sec.laps.map((l) => l.ms)) : null} />
@@ -116,7 +116,7 @@ export const Kpi = ({ label, value, sub }) => (
   <div className="flex flex-col gap-1 bg-panel px-4 py-3">
     <span className="label">{label}</span>
     <span className="num text-[24px] font-bold leading-none">{value}</span>
-    <span className="min-h-4 truncate text-[12px] text-muted">{sub || ''}</span>
+    <span className="min-h-4 truncate text-[13px] font-semibold text-fg-2">{sub || ''}</span>
   </div>
 );
 
@@ -225,7 +225,7 @@ function SectorsCard({ sec, bestLap }) {
   });
   return (
     <Card title={`Tramos · ${sec.n}`} flush
-      badge={<span className="num text-[12px] text-muted">vuelta ideal <b className="text-fg">{fmtLap(sec.ideal)}</b>{bestLap && <> · {fmtDelta(sec.ideal - bestLap)} vs mejor vuelta</>}</span>}>
+      badge={<span className="num text-[13px] text-fg-2">vuelta ideal <b className="text-fg">{fmtLap(sec.ideal)}</b>{bestLap && <> · {fmtDelta(sec.ideal - bestLap)} vs mejor vuelta</>}</span>}>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-[14px]">
           <thead className="bg-raised text-left"><tr className="label">
@@ -276,7 +276,7 @@ function MetricsTable({ m, obd }) {
     obd && ['Acelerador', m.avg_throttle, 0, '%'],
   ].filter(Boolean);
   return (
-    <Card title="Telemetría" badge={<span className="num text-[12px] text-muted">{fmt(m.samples ?? 0)} muestras</span>} flush>
+    <Card title="Telemetría" badge={<span className="num text-[13px] text-fg-2">{fmt(m.samples ?? 0)} muestras</span>} flush>
       <table className="w-full text-[14px]">
         <thead className="bg-raised text-left"><tr className="label"><Th>Métrica</Th><Th right>Media</Th><Th right>Extremo</Th></tr></thead>
         <tbody>
@@ -312,7 +312,7 @@ function LapsTable({ laps, avg, bestId, sec, obd }) {
                 {/* Libre: la pista guardada en la que se rodó; en un evento, el evento (su pista es la del organizador) */}
                 <td className="px-4 py-2 text-fg-2">{l.track ?? l.event ?? (l.kind === 'free' ? 'Sin guardar' : '—')}</td>
                 <td className="px-4 py-2 font-semibold">{l.driver ?? '—'}</td>
-                <td className="num px-4 py-2 text-right font-bold">{fmtLap(l.ms)}{l.id === bestId && <span className="ml-1.5 text-[11px] text-ok">MEJOR</span>}</td>
+                <td className="num px-4 py-2 text-right font-bold">{fmtLap(l.ms)}{l.id === bestId && <span className="ml-1.5 text-[12px] text-ok">MEJOR</span>}</td>
                 <td className="px-4 py-2 text-right"><Delta ms={l.ms - avg} /></td>
                 {sec.per.map((s, i) => {
                   const ms = sec.laps.includes(l) ? l.sectors[i] : null; // de otra pista o incompleta: sin parcial
