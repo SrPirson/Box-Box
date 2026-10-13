@@ -54,9 +54,11 @@ export function parseAtrv(raw) {
 
 // Crea un driver sobre cualquier transporte de bytes: { send(str), onData(cb) }.
 // BLE abajo; un plugin Bluetooth Serial de Capacitor encaja con la misma forma.
-export function createElm(transport, timeoutMs = 1500) {
+// reinitMs: sin RPM durante ese tiempo, se reinicia el chip (y se reintenta cada tanto mientras siga sin RPM).
+export function createElm(transport, timeoutMs = 1500, reinitMs = 10000) {
   let buffer = '';
   let pending = null;
+  let late = false; // el último comando expiró: su '>' puede llegar todavía
   let chain = Promise.resolve();
 
   transport.onData((chunk) => {
@@ -66,20 +68,27 @@ export function createElm(transport, timeoutMs = 1500) {
       const out = buffer.slice(0, end).trim();
       buffer = buffer.slice(end + 1);
       // Sin comando pendiente = respuesta tardía de un comando que ya expiró: se descarta.
-      if (pending) { const p = pending; pending = null; p(out); }
+      if (pending) { const p = pending; pending = null; p(out); } else late = false;
     }
   });
 
+  // Espera al próximo '>' (o a su timeout, y entonces queda uno tardío en camino).
+  const wait = (ms) => new Promise((resolve) => {
+    const t = setTimeout(() => { pending = null; buffer = ''; late = true; resolve(''); }, ms);
+    pending = (r) => { clearTimeout(t); resolve(r); };
+  });
+
   // Serializa comandos: cada uno espera al '>' del anterior (o a su timeout).
+  // Si el anterior expiró, antes de mandar otro se espera (y descarta) su respuesta tardía: si no, se le
+  // asignaría a este y desde ahí cada comando recibiría la del anterior para siempre (y RPM siempre null).
+  // Además así no se interrumpe al chip a medias (un "BUS INIT" lento acabaría en "STOPPED").
   const send = (cmd, ms = timeoutMs) =>
-    (chain = chain.then(
-      () =>
-        new Promise((resolve) => {
-          const t = setTimeout(() => { pending = null; buffer = ''; resolve(''); }, ms);
-          pending = (r) => { clearTimeout(t); resolve(r); };
-          transport.send(cmd + '\r');
-        }),
-    ));
+    (chain = chain.then(async () => {
+      if (late) { await wait(ms); late = false; }
+      const r = wait(ms);
+      transport.send(cmd + '\r');
+      return r;
+    }));
 
   let voltageViaAtrv = false;
   // "010C1": el 1 final le dice al chip que vuelva en cuanto conteste una ECU, en vez de esperar su timeout
@@ -94,6 +103,7 @@ export function createElm(transport, timeoutMs = 1500) {
     }
     return send(pid);
   };
+  let rpmAt = Date.now(); // última vez que la ECU dio RPM (o que se reinició el chip)
   return {
     async init() {
       for (const cmd of INIT) await send(cmd, cmd === 'ATZ' ? 3000 : timeoutMs);
@@ -110,6 +120,13 @@ export function createElm(transport, timeoutMs = 1500) {
         if (key === 'voltage' && voltageViaAtrv) { out.voltage = parseAtrv(await send('ATRV')); continue; }
         out[key] = parsePid(pid, await ask(pid));
         if (key === 'voltage' && out.voltage == null) { voltageViaAtrv = true; out.voltage = parseAtrv(await send('ATRV')); }
+      }
+      // Sin RPM un rato: el chip puede haberse quedado colgado con la ECU (apagón momentáneo, se reinició y perdió
+      // la configuración...). Se reinicia; con el contacto quitado es inocuo y solo se repite cada reinitMs.
+      if (out.rpm != null) rpmAt = Date.now();
+      else if (Date.now() - rpmAt > reinitMs) {
+        await this.init();
+        rpmAt = Date.now();
       }
       return out;
     },
