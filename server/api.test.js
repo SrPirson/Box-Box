@@ -422,3 +422,41 @@ test('administración: búsqueda, acciones masivas, auditoría, resumen y «Ver 
   assert.deepEqual(trail.map((r) => r.action), ['impersonate.end', 'impersonate.start']);
   assert.equal(trail[1].data.reason, 'No ve sus eventos');
 });
+
+test('cambio de piloto rápido: el móvil del coche elige quién conduce sin cortar la telemetría', async () => {
+  const reg = (name) => call('/api/register', { method: 'POST', body: { name, email: `${name.toLowerCase()}@x.es`, password: 'pistapista' } });
+  const [carla, dani, fede] = await Promise.all([reg('Carla'), reg('Dani'), reg('Fede')]);
+  const t = await call('/api/teams', { token: carla.token, method: 'POST', body: { name: 'Relevos' } });
+  await call('/api/teams/join', { token: dani.token, method: 'POST', body: { code: t.team.inviteCode } });
+  await call('/api/teams', { token: fede.token, method: 'POST', body: { name: 'Ajenos' } });
+  await call('/api/team', { token: carla.token, method: 'PATCH', body: { track: { line: [[40, -3.0001], [40, -2.9999]] } } });
+  const [sc, sd] = await Promise.all([connect(carla.token), connect(dani.token)]);
+
+  // El móvil de Carla toma el volante y, desde él mismo, elige a Dani: relevo (a boxes), pero el móvil sigue siendo el del coche.
+  await new Promise((r) => setTimeout(r, 200)); // el 'driver' (null) de bienvenida
+  const first = next(sd, 'driver');
+  sc.emit('drive');
+  assert.equal((await first).name, 'Carla');
+  const swap = next(sc, 'driver');
+  const pitIn = next(sd, 'pit');
+  sc.emit('drive', { driverId: dani.user.id });
+  assert.deepEqual([(await swap).name, (await swap).by], ['Dani', carla.user.id]);
+  assert.equal((await pitIn).reason, 'Cambio de piloto');
+
+  // Un miembro de otro equipo se ignora: sigue conduciendo Dani.
+  sc.emit('drive', { driverId: fede.user.id });
+  await new Promise((r) => setTimeout(r, 200));
+
+  // La telemetría del mismo móvil no se corta y las vueltas y muestras son de Dani.
+  const got = next(sd, 'telemetry:batch');
+  const t0 = Date.now() - 100_000;
+  sc.emit('telemetry:batch', { packets: Array.from({ length: 361 }, (_, i) => ({ ts: t0 + i * 250, obd: {}, gps: { lat: 40 - 0.001 + 0.002 * (((i * 250) % 30_000) / 30_000), lng: -3, speed: 120 } })) });
+  assert.equal((await got).packets[0].driver, 'Dani');
+  await new Promise((r) => setTimeout(r, 300));
+  const since = new Date(t0 - 1000).toISOString();
+  const mine = await call(`/api/me/stats?since=${since}`, { token: dani.token });
+  assert.equal(mine.laps.length, 2);
+  assert.ok(mine.metrics.seconds >= 80, JSON.stringify(mine.metrics)); // muestras a 1 Hz atribuidas a Dani
+  assert.equal((await call(`/api/me/stats?since=${since}`, { token: carla.token })).laps.length, 0);
+  for (const s of [sc, sd]) s.close();
+});

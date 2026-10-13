@@ -10,6 +10,7 @@ import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
 import { RaceFlagScreen, RaceFlagBanner } from './RaceFlag.jsx';
 import { EventTodayBanner } from './Racing.jsx';
+import DriverPicker from './DriverPicker.jsx';
 
 // Cada acción tiene un color fijo para memoria muscular. Solo AVERÍA va rellena: es la única que llama.
 const ACTIONS = [
@@ -25,7 +26,7 @@ export default function Pilot({ onNav }) {
   const theme = useTheme();
   const { user, team } = useSession();
   const { driver } = useLive();
-  const isDriver = driver?.id === user.id;
+  const isDriver = driver?.by === user.id; // este móvil es el que envía la telemetría del coche
   const [inbox, setInbox] = useState([]); // mensajes pendientes de responder (el primero se muestra)
   const [sent, setSent] = useState(null);
   // Permiso de ubicación (app Android): se mira al entrar y cada vez que se vuelve a la app, p. ej. desde Ajustes.
@@ -137,17 +138,8 @@ export default function Pilot({ onNav }) {
       )}
       {gw.queued > 0 && <div className="num bg-warn-soft px-3 py-1 text-warn">Sin cobertura · {gw.queued} paquetes en cola</div>}
 
-      {/* Quién conduce: solo el móvil del piloto al volante manda telemetría y recibe los mensajes de BOX */}
-      {!isDriver && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised px-3 py-3">
-          <Icon name="wheel" size={26} className="text-muted" />
-          <div className="min-w-0 flex-1 text-lg font-bold uppercase leading-tight">
-            {driver ? <>Conduce {driver.name}</> : 'Nadie al volante'}
-            <div className="text-[14px] font-semibold normal-case text-muted">Toma el volante para enviar la telemetría desde este móvil.</div>
-          </div>
-          <button onClick={busy ? stop : start} className="h-12 rounded-md bg-accent px-5 text-lg font-bold uppercase tracking-[0.04em] text-panel">{busy ? 'Conectando · cancelar' : 'Tomar el volante'}</button>
-        </div>
-      )}
+      {/* Quién conduce: solo el móvil del coche manda telemetría y recibe los mensajes de BOX; desde él se elige el piloto */}
+      <DriverPicker isDriver={isDriver} busy={busy} />
 
       {/* Rejilla táctil para guantes */}
       <div inert={!isDriver} className={`grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-3 p-3 ${isDriver ? '' : 'opacity-35'}`}>
