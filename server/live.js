@@ -50,9 +50,12 @@ const setPit = (st, pit) => {
 };
 const PIT_REASONS = { pit: 'Entrada a box', fuel: 'Repostaje' };
 
-const setDriver = (st, u) => {
+// driver: quién conduce (a quien se atribuyen vueltas y muestras); by: la cuenta del móvil del coche, la única
+// que puede enviar la telemetría. Suelen coincidir, pero desde el móvil del coche se puede elegir a otro
+// miembro del equipo sin desconectar el OBD.
+const setDriver = (st, u, by = u?.id) => {
   const prev = st.driver;
-  st.driver = u && { id: u.id, name: u.name };
+  st.driver = u && { id: u.id, name: u.name, by };
   if (prev && st.driver && prev.id !== st.driver.id) {
     // Relevo: la vuelta del cambio no es representativa ni de uno ni de otro.
     st.lap.restart();
@@ -88,7 +91,7 @@ export async function kick(userId) {
   for (const s of await io.fetchSockets()) if (s.data.user.id === userId) s.disconnect(true);
   for (const p of states.values()) {
     const st = await p;
-    if (st.driver?.id === userId) setDriver(st, null);
+    if (st.driver?.id === userId || st.driver?.by === userId) setDriver(st, null);
   }
 }
 
@@ -151,13 +154,19 @@ export function attachLive(server, userFromToken) {
       presence(st);
     });
 
-    // Tomar el volante: el piloto anterior deja de poder enviar telemetría.
-    socket.on('drive', () => setDriver(st, u));
+    // Tomar el volante: el móvil anterior deja de poder enviar telemetría. Sin driverId conduce el dueño de
+    // la cuenta, salvo que este móvil ya fuera el del coche (sigue el piloto elegido). Con driverId, conduce
+    // ese miembro del equipo (cambio de piloto rápido); si no es del equipo, se ignora.
+    socket.on('drive', async (d) => {
+      if (d?.driverId == null) return setDriver(st, st.driver?.by === u.id ? st.driver : u, u.id);
+      const m = await one('select id, name from users where id = $1 and team_id = $2', [Number(d.driverId), st.team.id]).catch(() => null);
+      if (m) setDriver(st, m, u.id);
+    });
 
     const telemetry = (packets, batch) => {
       if (!Array.isArray(packets) || !packets.length) return;
       if (!st.driver) setDriver(st, u);
-      if (st.driver.id !== u.id) return socket.emit('driver', st.driver);
+      if (st.driver.by !== u.id) return socket.emit('driver', st.driver);
       const now = Date.now();
       const out = [];
       for (const p of packets.slice(0, 1000).sort((a, b) => a.ts - b.ts)) {
@@ -169,24 +178,25 @@ export function attachLive(server, userFromToken) {
         if (st.pit?.arrived && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null);
         const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
         s.at = loc?.at;
+        const d = st.driver;
         const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
         if (lap) {
           // JSON.stringify: pg mandaría un array JS como array de Postgres, no como jsonb.
           q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id, event_id, kind) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
-            [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors),
+            [st.team.id, d.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors),
               st.team.event_id ? null : st.team.track?.id ?? null, st.team.event_id, kindOf(st.team)])
-            .then(() => st.team.event_id && io.to(eventRoom(st.team.event_id)).emit('event:lap', { teamId: st.team.id, team: st.team.name, ms: lap.ms, driver: u.name }))
+            .then(() => st.team.event_id && io.to(eventRoom(st.team.event_id)).emit('event:lap', { teamId: st.team.id, team: st.team.name, ms: lap.ms, driver: d.name }))
             .catch((e) => console.error('lap', e.message));
-          io.to(r).emit('lap', { ...lap, driver: u.name, driverId: u.id });
+          io.to(r).emit('lap', { ...lap, driver: d.name, driverId: d.id });
         }
         if (ts - st.lastStored >= 1000) {
           st.lastStored = ts;
           q('insert into samples (team_id, driver_id, ts, rpm, coolant, throttle, voltage, speed, lat, lng, kind, track_id) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12)',
-            [st.team.id, u.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng, kindOf(st.team), st.team.event_id ? null : st.team.track?.id ?? null]).catch((e) => console.error('sample', e.message));
+            [st.team.id, d.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng, kindOf(st.team), st.team.event_id ? null : st.team.track?.id ?? null]).catch((e) => console.error('sample', e.message));
         }
         // Fuera de pista: metros al trazado descontando el error del GPS, para no avisar por un fix impreciso.
         const offTrack = loc ? Math.round(Math.max(0, loc.dist - (num(g.acc) ?? 0))) : null;
-        out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: u.name, lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
+        out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: d.name, lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
       }
       batch ? socket.to(r).emit('telemetry:batch', { packets: out }) : socket.to(r).emit('telemetry', out[0]);
       // Resumen para el organizador del evento, como mucho una vez por segundo.
@@ -194,7 +204,7 @@ export function attachLive(server, userFromToken) {
       if (st.team.event_id && now - st.lastEvent >= EVENT_EVERY_MS) {
         st.lastEvent = now;
         io.to(eventRoom(st.team.event_id)).emit('event:car', {
-          teamId: st.team.id, team: st.team.name, car: st.team.dorsal, driver: u.name, ts: last.ts,
+          teamId: st.team.id, team: st.team.name, car: st.team.dorsal, driver: st.driver.name, ts: last.ts,
           gps: last.gps ?? null, compass: last.compass ?? null, lapStartedAt: last.lapStartedAt, pit: st.pit?.arrived ? st.pit.reason : null,
         });
       }

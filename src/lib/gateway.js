@@ -208,8 +208,9 @@ export async function start() {
   if (!watched.has(sock)) {
     watched.add(sock);
     sock.on('driver', (d) => {
-      // Relevo normal (cambio de piloto): aviso informativo, no error.
-      if (running && d && d.id !== getSession().user?.id) { stop(); set({ obd: 'off', notice: `Relevo: ahora conduce ${d.name}. Este móvil ha dejado de enviar telemetría.` }); }
+      // Otro móvil ha tomado el volante (relevo normal): aviso informativo, no error. Si solo se ha elegido
+      // otro piloto desde este mismo móvil (d.by somos nosotros), la telemetría sigue.
+      if (running && d && d.by !== getSession().user?.id) { stop(); set({ obd: 'off', notice: `Relevo: ahora conduce ${d.name}. Este móvil ha dejado de enviar telemetría.` }); }
     });
   }
 
