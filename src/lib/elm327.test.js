@@ -15,7 +15,7 @@ test('decodifica PIDs con y sin espacios, SEARCHING y errores', () => {
 });
 
 test('driver serializa comandos, cae a ATRV y descarta respuestas tardías', async () => {
-  const replies = { ATRV: '13.9V', '010C': '410C0FA0', '0105': '41055A', '0111': '411133', '0142': 'NO DATA' };
+  const replies = { ATRV: '13.9V', '010C1': '410C0FA0', '01051': '41055A', '01111': '411133', '01421': 'NO DATA' };
   let emit;
   const sent = [];
   const elm = createElm({
@@ -24,9 +24,9 @@ test('driver serializa comandos, cae a ATRV y descarta respuestas tardías', asy
   }, 50);
   await elm.init();
   assert.deepEqual(await elm.read(), { rpm: 1000, coolant: 50, throttle: 20, voltage: 13.9 });
-  assert.equal(sent.filter((c) => c === '0142').length, 1);
+  assert.equal(sent.filter((c) => c === '01421').length, 1);
   await elm.read();
-  assert.equal(sent.filter((c) => c === '0142').length, 1);     // ya no reintenta 0142
+  assert.equal(sent.filter((c) => c === '01421').length, 1);    // ya no reintenta 0142
 });
 
 test('con el contacto quitado no espera a cada PID: solo RPM y la tensión del adaptador', async () => {
@@ -37,5 +37,17 @@ test('con el contacto quitado no espera a cada PID: solo RPM y la tensión del a
     onData: (cb) => (emit = cb),
   }, 50);
   assert.deepEqual(await elm.read(), { rpm: null, voltage: 12.4 });
-  assert.deepEqual(sent, ['010C', '0142', 'ATRV']);
+  assert.deepEqual(sent, ['010C1', '01421', 'ATRV']);
+});
+
+test('si el clon no entiende el número de respuestas ("010C1" → "?"), pide sin él', async () => {
+  const replies = { '010C': '410C0FA0', '0105': '41055A', '0111': '411133', '0142': '41423174' };
+  let emit;
+  const sent = [];
+  const elm = createElm({
+    send: (s) => { const c = s.trim(); sent.push(c); setTimeout(() => emit((replies[c] ?? '?') + '\r\r>'), 1); },
+    onData: (cb) => (emit = cb),
+  }, 50);
+  assert.deepEqual(await elm.read(), { rpm: 1000, coolant: 50, throttle: 20, voltage: 12.66 });
+  assert.deepEqual(sent, ['010C1', '010C', '0105', '0111', '0142']);
 });

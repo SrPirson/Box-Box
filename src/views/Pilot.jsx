@@ -21,6 +21,7 @@ const ACTIONS = [
 
 export default function Pilot({ onNav }) {
   const gw = useGateway();
+  const busy = gw.obd === 'on' || gw.obd === 'connecting';
   const theme = useTheme();
   const { user, team } = useSession();
   const { driver } = useLive();
@@ -79,8 +80,8 @@ export default function Pilot({ onNav }) {
     <div className="pilot flex h-full flex-col bg-bg text-fg">
       {/* Estado: solo lo que el piloto puede usar de un vistazo */}
       <div className="num flex h-14 shrink-0 items-center gap-3 whitespace-nowrap border-b border-line px-3 text-lg font-bold sm:gap-4">
-        <button onClick={gw.obd === 'on' ? stop : start} className="flex h-10 items-center gap-2 rounded-md border-2 border-line px-3"
-          aria-label={gw.obd === 'on' ? 'Detener telemetría' : 'Iniciar telemetría'}>
+        <button onClick={busy ? stop : start} className="flex h-10 items-center gap-2 rounded-md border-2 border-line px-3"
+          aria-label={gw.obd === 'on' ? 'Detener telemetría' : busy ? 'Cancelar conexión' : 'Iniciar telemetría'}>
           <span className={`h-3.5 w-3.5 rounded-full ${gw.obd === 'on' ? (gw.obdLink === 'lost' ? 'pulse bg-warn-solid' : 'bg-ok') : gw.obd === 'connecting' ? 'pulse bg-warn-solid' : 'bg-crit'}`} />
           {getConfig().source === 'sim' ? 'SIM' : team.obd && getConfig().source !== 'gps' ? 'OBD' : 'GPS'}
         </button>
@@ -93,6 +94,10 @@ export default function Pilot({ onNav }) {
         </button>
         <button onClick={() => onNav('ajustes')} className="grid h-10 w-10 place-items-center text-muted" aria-label="Configuración">
           <Icon name="sliders" size={22} />
+        </button>
+        {/* Salir de Piloto al resto de vistas (Box, Estadísticas…); la telemetría sigue si está en marcha */}
+        <button onClick={() => onNav('box')} className="grid h-10 w-10 place-items-center text-muted" aria-label="Salir de Piloto">
+          <Icon name="x" size={22} />
         </button>
       </div>
       {/* Coche a la izquierda (azul), móvil a la derecha (violeta): dos temperaturas que no se pueden confundir */}
@@ -140,7 +145,7 @@ export default function Pilot({ onNav }) {
             {driver ? <>Conduce {driver.name}</> : 'Nadie al volante'}
             <div className="text-[14px] font-semibold normal-case text-muted">Toma el volante para enviar la telemetría desde este móvil.</div>
           </div>
-          <button onClick={start} className="h-12 rounded-md bg-accent px-5 text-lg font-bold uppercase tracking-[0.04em] text-panel">Tomar el volante</button>
+          <button onClick={busy ? stop : start} className="h-12 rounded-md bg-accent px-5 text-lg font-bold uppercase tracking-[0.04em] text-panel">{busy ? 'Conectando · cancelar' : 'Tomar el volante'}</button>
         </div>
       )}
 

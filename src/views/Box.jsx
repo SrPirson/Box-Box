@@ -5,7 +5,7 @@ import TrackMap from './TrackMap.jsx';
 import { RacingButton } from './Racing.jsx';
 import { useSocket, useLive } from '../lib/store.js';
 import { api, setTeam, useSession } from '../lib/session.js';
-import { carAlarms, worst, limitsOf, lateMs, fmt, fmtAge, PHONE_HOT } from '../lib/limits.js';
+import { carAlarms, worst, limitsOf, lateMs, seenAt, obdSeenAt, withSkew, fmt, fmtAge, PHONE_HOT } from '../lib/limits.js';
 import { useStats, lapAvg, sectorStats } from './Stats.jsx';
 import { fmtLap, fmtDelta, fmtSplit, ConfirmButton } from './ui.jsx';
 
@@ -30,7 +30,8 @@ export default function Box({ muted }) {
   const today = useStats('today');   // vueltas de hoy
   const month = useStats('month');   // medias de referencia (30 días)
 
-  const ingest = (packets) => {
+  const ingest = (raw, live) => {
+    const packets = raw.map((p) => withSkew(p, live));
     for (const p of packets) {
       if (!p.gps) continue;
       const t = (trails.current[p.car] ??= []);
@@ -46,8 +47,8 @@ export default function Box({ muted }) {
   };
 
   const { socket } = useSocket({
-    telemetry: (p) => ingest([p]),
-    'telemetry:batch': ({ packets }) => ingest(packets.sort((a, b) => a.ts - b.ts)),
+    telemetry: (p) => ingest([p], true),
+    'telemetry:batch': ({ packets }) => ingest(packets.sort((a, b) => a.ts - b.ts), false),
     pilot: (e) => {
       setLog((l) => [{ id: uid(), dir: 'in', car: e.car, text: e.label, ts: Date.now(), critical: e.critical }, ...l]);
       if (e.critical) setBreakdowns((b) => [...b, { ...e, id: uid() }]);
@@ -110,7 +111,7 @@ export default function Box({ muted }) {
             <>
               <CarHeader p={p} driver={driver?.name ?? p.driver} state={states[p.car]} alarms={alarms[p.car]} now={now}
                 onPit={!pit && (() => socket.emit('pit', 'arrived'))} />
-              {team.obd && <Gauges p={p} stale={lateMs(p, now) > limitsOf(p).staleWarn * 1000} avg={month.data?.metrics} />}
+              {team.obd && <Gauges p={p} now={now} avg={month.data?.metrics} />}
             </>
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
@@ -353,7 +354,7 @@ function CarHeader({ p, driver, state, alarms, now, onPit }) {
         {p.phoneTemp != null && <Stat icon="thermo" label="Temp. móvil" value={`${p.phoneTemp} °C`} warn={p.phoneTemp >= PHONE_HOT} />}
         <Stat icon="signal" label="Red" value={(p.net?.type ?? '—').toUpperCase()} />
         <Stat icon="pin" label="GPS" value={p.gps?.acc == null ? '—' : `± ${p.gps.acc} m`} />
-        <Stat icon="crosshair" label="Dato" value={`hace ${fmtAge(now - p.ts)}`} />
+        <Stat icon="crosshair" label="Dato" value={`hace ${fmtAge(now - seenAt(p))}`} />
       </span>
     </div>
   );
@@ -366,19 +367,23 @@ const Stat = ({ icon, label, value, warn }) => (
 );
 
 // ── Gauges: arco para temperatura, barra de LEDs para RPM, digital para voltaje y velocidad ──
-function Gauges({ p, stale, avg = {} }) {
+// Con el dato viejo («~», SIN DATOS) se siguen pintando con el último valor, atenuados.
+function Gauges({ p, now, avg = {} }) {
   const o = p.obd ?? {};
   const L = limitsOf(p);
+  // El GPS va con el paquete; el motor, con su última lectura OBD (obdTs), que puede ir más lenta que el envío.
+  const stale = lateMs(p, now) > L.staleWarn * 1000;
+  const engineStale = stale || (p.obdTs != null && now - obdSeenAt(p) - (p.pollMs ?? 0) > L.staleWarn * 1000);
   const v = o.voltage;
   const voltState = v == null ? 'ok' : v < L.voltCrit || v > L.voltHighCrit ? 'crit' : v < L.voltWarn || v > L.voltHighWarn ? 'warn' : 'ok';
   return (
     <div className="grid grid-cols-2 gap-px bg-line xl:grid-cols-4">
       {/* Estrecho: temp + batería arriba, RPM y velocidad a lo ancho.
           Portátil: temp · RPM (doble) · batería y velocidad apiladas. */}
-      <TempArc value={o.coolant} stale={stale} L={L} avg={avg.avg_temp} />
-      <div className="order-3 col-span-2 xl:order-none"><RpmBar value={o.rpm} throttle={o.throttle} stale={stale} L={L} avg={avg.avg_rpm} /></div>
+      <TempArc value={o.coolant} stale={engineStale} L={L} avg={avg.avg_temp} />
+      <div className="order-3 col-span-2 xl:order-none"><RpmBar value={o.rpm} throttle={o.throttle} stale={engineStale} L={L} avg={avg.avg_rpm} /></div>
       <div className="contents xl:grid xl:grid-rows-2 xl:gap-px">
-        <Readout label="Batería" unit="V" value={o.voltage} digits={2} stale={stale} compact avg={avg.avg_volt}
+        <Readout label="Batería" unit="V" value={o.voltage} digits={2} stale={engineStale} compact avg={avg.avg_volt}
           state={voltState} bar={{ min: 10, max: 16, marks: [L.voltCrit, L.voltHighWarn] }} />
         <div className="order-4 col-span-2 xl:order-none xl:col-span-1"><Readout label="Velocidad GPS" unit="km/h" value={p.gps?.speed} stale={stale} compact avg={avg.avg_speed} /></div>
       </div>
@@ -431,7 +436,7 @@ function TempArc({ value, stale, L, avg }) {
         <path d={arc(L.tempWarn, L.tempCrit, 80)} stroke="var(--arc-warn)" strokeOpacity="0.55" strokeWidth="4" fill="none" />
         <path d={arc(L.tempCrit, max, 80)} stroke="var(--arc-crit)" strokeOpacity="0.55" strokeWidth="4" fill="none" />
         <path d={arc(min, max, 68)} stroke="var(--arc-track)" strokeWidth="12" fill="none" strokeLinecap="butt" />
-        {value != null && !stale && <path d={arc(min, value, 68)} stroke={`var(--arc-${state})`} strokeWidth="12" fill="none" />}
+        {value != null && <path d={arc(min, value, 68)} stroke={`var(--arc-${state})`} strokeWidth="12" fill="none" opacity={stale ? 0.45 : 1} />}
         {tick(L.tempWarn)}{tick(L.tempCrit)}
         <text x={lx} y={ly + 18} textAnchor="middle" className="num" fontSize="10" fill="var(--muted)">{min}</text>
         <text x={rx} y={ry + 18} textAnchor="middle" className="num" fontSize="10" fill="var(--muted)">{max}</text>
@@ -449,7 +454,7 @@ function TempArc({ value, stale, L, avg }) {
 function RpmBar({ value, throttle, stale, L, avg }) {
   const N = 28;
   const max = Math.ceil((L.rpmCrit * 1.08) / 1000) * 1000; // escala: limitador + margen, redondeada a miles
-  const lit = value == null || stale ? 0 : Math.round((Math.min(value, max) / max) * N);
+  const lit = value == null ? 0 : Math.round((Math.min(value, max) / max) * N);
   const zone = (i) => { const r = ((i + 1) / N) * max; return r > L.rpmCrit ? 'crit' : r > L.rpmWarn ? 'warn' : 'ok'; };
   const state = value >= L.rpmCrit ? 'crit' : 'ok';
   return (
@@ -462,7 +467,7 @@ function RpmBar({ value, throttle, stale, L, avg }) {
         </div>
         <div className="flex h-5 gap-[3px]" aria-hidden="true">
           {Array.from({ length: N }, (_, i) => (
-            <span key={i} className="flex-1 rounded-[1px]" style={{ background: i < lit ? `var(--arc-${zone(i)})` : 'var(--arc-track)' }} />
+            <span key={i} className="flex-1 rounded-[1px]" style={{ background: i < lit ? `var(--arc-${zone(i)})` : 'var(--arc-track)', opacity: stale && i < lit ? 0.45 : 1 }} />
           ))}
         </div>
         <div className="num flex justify-between text-[10px] text-muted">
@@ -484,7 +489,7 @@ function Readout({ label, unit, value, digits = 0, state = 'ok', stale, bar, com
         </div>
         {bar && (
           <div className="relative h-1.5 rounded-full bg-sunken">
-            {value != null && !stale && <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: pos(value), background: `var(--arc-${state})` }} />}
+            {value != null && <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: pos(value), background: `var(--arc-${state})`, opacity: stale ? 0.45 : 1 }} />}
             {bar.marks.map((m) => <span key={m} className="absolute -top-1 h-3.5 w-px bg-fg-2" style={{ left: pos(m) }} />)}
           </div>
         )}

@@ -32,3 +32,16 @@ test('detecta umbrales incoherentes', () => {
   assert.ok(limitErrors({ ...LIMITS, tempWarn: 110 }).temp);
   assert.ok(limitErrors({ ...LIMITS, voltCrit: 13 }).volt);
 });
+
+test('el desfase de reloj del móvil no cuenta como «sin datos»', async () => {
+  const { withSkew, lateMs } = await import('./limits.js');
+  const now = 100_000;
+  // Reloj del móvil 5 s atrasado: el paquete llega al momento.
+  const p = withSkew({ car: 'skew', ts: now - 5000, pollMs: 250 }, true, now);
+  assert.ok(lateMs(p, now) <= 0);
+  assert.equal(carAlarms(p, now).length, 0);
+  // 4 s después sin paquetes nuevos sí es aviso.
+  assert.equal(carAlarms(p, now + 4000)[0].key, 'stale');
+  // Un paquete viejo de la cola offline no cambia el desfase medido.
+  assert.equal(withSkew({ car: 'skew', ts: now - 60_000 }, false, now + 100).skew, 5000);
+});
