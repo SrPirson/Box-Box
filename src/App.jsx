@@ -98,7 +98,7 @@ function Views() {
   );
 }
 
-// Un admin viendo la app como otra persona (solo lectura, 30 min): siempre a la vista, con el tiempo que queda.
+// Un admin suplantando a otra persona (control completo, 30 min): siempre a la vista, con el tiempo que queda.
 function ImpersonationBanner() {
   const { user } = useSession();
   const [, tick] = useState(0);
@@ -108,8 +108,8 @@ function ImpersonationBanner() {
   return (
     <div role="status" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 bg-warn-solid px-3 py-1.5 text-[14px] font-bold text-on-warn print:hidden">
       <Icon name="eye" size={16} />
-      <span className="min-w-0 flex-1">Estás viendo la app como {user.name} · solo lectura · quedan {left} min</span>
-      <button onClick={stopImpersonating} className="rounded-[3px] border-2 border-current px-2 py-0.5 uppercase">Salir</button>
+      <span className="min-w-0 flex-1">Estás controlando la cuenta de {user.name} · todo queda en la auditoría · quedan {left} min</span>
+      <button onClick={stopImpersonating} className="rounded-[3px] border-2 border-current px-2 py-0.5 uppercase">Volver a mi cuenta</button>
     </div>
   );
 }
