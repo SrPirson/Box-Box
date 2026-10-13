@@ -184,8 +184,8 @@ function AlarmBanner({ breakdowns, crits, unacked, onAck, onLocate, onDone }) {
         <div key={b.id} className="alarm-ring flex flex-wrap items-center gap-x-4 gap-y-2 bg-crit-solid px-4 py-2.5 text-on-crit">
           <Icon name="wrench" size={22} stroke={2.5} />
           <span className="text-xl font-bold uppercase tracking-[0.04em]">Coche #{b.car} · {b.label}</span>
-          <span className="num text-sm opacity-90">{hhmmss(b.ts)}</span>
-          {b.gps && <span className="num text-sm opacity-90">{b.gps.lat.toFixed(5)}, {b.gps.lng.toFixed(5)}</span>}
+          <span className="num text-[15px] font-semibold">{hhmmss(b.ts)}</span>
+          {b.gps && <span className="num text-[15px] font-semibold">{b.gps.lat.toFixed(5)}, {b.gps.lng.toFixed(5)}</span>}
           <span className="ml-auto flex gap-2">
             {b.gps && <BannerButton onClick={() => onLocate(b.gps)} icon="pin">Ver en mapa</BannerButton>}
             <BannerButton onClick={() => onDone(b.id)} icon="check">Atendido</BannerButton>

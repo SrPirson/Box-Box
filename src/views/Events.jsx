@@ -384,7 +384,7 @@ function Standings({ rows: raw, ev, session, setSession, live, now, flag, onPick
                   <tr key={r.id} tabIndex={0} onClick={() => onPick(r.id)} onKeyDown={(e) => e.key === 'Enter' && onPick(r.id)}
                     className={`cursor-pointer border-t border-line hover:bg-raised ${i === 0 && (r.best || r.laps) ? 'bg-ok-soft' : ''}`}>
                     <td className="num px-3 py-2 font-bold">{i + 1}</td>
-                    <td className="px-3 py-2"><span className="num mr-1.5 text-muted">#{r.dorsal}</span><b>{r.name}</b>{r.best_driver && <span className="text-[12px] text-muted"> · mejor: {r.best_driver}</span>}</td>
+                    <td className="px-3 py-2"><span className="num mr-1.5 font-semibold text-fg-2">#{r.dorsal}</span><b>{r.name}</b>{r.best_driver && <span className="text-[13px] text-fg-2"> · mejor: {r.best_driver}</span>}</td>
                     <td className="num px-3 py-2 text-right">{r.laps}</td>
                     <td className="num px-3 py-2 text-right font-bold">{fmtLap(r.best)}</td>
                     <td className="num px-3 py-2 text-right text-fg-2">{gap ?? '—'}</td>
