@@ -133,7 +133,7 @@ export function FlagPanel({ flag, racing, send, connected, keys = false, big = f
   const missing = active ? racing.filter((t) => !flag.seen.includes(t.id)) : [];
   const nameOf = (type) => (type === 'text' ? 'El aviso' : FLAG_INFO[type].label);
   const size = big ? 'h-[72px] text-[18px] lg:h-14 lg:text-[15px]' : 'h-12 text-[15px]';
-  const key = (k) => keys && <kbd className="hidden rounded-[3px] border border-current px-1 text-[11px] opacity-70 lg:inline">{k}</kbd>;
+  const key = (k) => keys && <kbd className="hidden rounded-[3px] border border-current px-1 text-[11px] lg:inline">{k}</kbd>;
   const button = (type, label, k) => (
     <button type="button" onClick={() => fire(type)} disabled={!connected}
       className={`flex items-center justify-center gap-2 rounded-[4px] px-3 font-bold uppercase disabled:opacity-40 ${size} ${FLAG_INFO[type].cls} ${armed === type ? 'ring-4 ring-fg ring-offset-2 ring-offset-panel' : ''}`}>
@@ -281,8 +281,8 @@ function Console({ id, onNav }) {
                         className="flex w-full items-center gap-2 border-b border-line py-1.5 pr-3 text-left text-[14px] hover:bg-raised">
                         <span className={`h-8 w-1.5 shrink-0 ${band}`} title={!c ? 'Sin señal' : c.pit ? 'En boxes' : 'En pista'} />
                         <span className="num w-6 text-right font-bold">{i + 1}</span>
-                        <span className="num w-9 text-muted">#{r.dorsal}</span>
-                        <span className="min-w-0 flex-1 truncate font-semibold">{r.name}{c?.driver && <span className="text-[12px] font-normal text-muted"> · {c.driver}</span>}</span>
+                        <span className="num w-9 font-semibold text-fg-2">#{r.dorsal}</span>
+                        <span className="min-w-0 flex-1 truncate font-semibold">{r.name}{c?.driver && <span className="text-[13px] font-medium text-fg-2"> · {c.driver}</span>}</span>
                         {notSeen && <span className="text-warn" title="No ha visto la bandera"><Icon name="flag" size={15} /><span className="sr-only">No ha visto la bandera</span></span>}
                         <span className="num w-[72px] text-right font-bold">{gap}</span>
                         <span className="num w-[68px] text-right text-fg-2">{c?.pit ? 'BOX' : fmtLap(r.last)}</span>
@@ -304,7 +304,7 @@ function Console({ id, onNav }) {
           </div>
           <ol className="min-h-0 flex-1 overflow-y-auto px-3 py-1 text-[13px]">
             {L.log.length === 0 && <li className="py-1 text-muted">Aún no hay nada: aquí quedan las banderas, quién las ve y los cambios de sesión.</li>}
-            {L.log.map((l) => <li key={l.id} className="flex gap-3 py-0.5"><span className="num text-muted">{clock(l.ts)}</span><span className={l.kind === 'flag' ? 'font-semibold' : ''}>{logText(l)}</span></li>)}
+            {L.log.map((l) => <li key={l.id} className="flex gap-3 py-0.5"><span className="num text-fg-2">{clock(l.ts)}</span><span className={l.kind === 'flag' ? 'font-semibold' : ''}>{logText(l)}</span></li>)}
           </ol>
         </section>
       </div>

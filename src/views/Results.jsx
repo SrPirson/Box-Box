@@ -25,7 +25,7 @@ function ResultsTable({ rows, sort }) {
           {rows.map((r) => (
             <tr key={r.pos} className="border-t border-line">
               <td className="num px-3 py-2 font-bold">{r.pos}</td>
-              <td className="px-3 py-2"><span className="num mr-1.5 text-muted">#{r.dorsal}</span><b>{r.team}</b></td>
+              <td className="px-3 py-2"><span className="num mr-1.5 font-semibold text-fg-2">#{r.dorsal}</span><b>{r.team}</b></td>
               <td className="num px-3 py-2 text-right">{r.laps}</td>
               <td className="num px-3 py-2 text-right font-bold">{fmtLap(r.best)}</td>
               <td className="num px-3 py-2 text-right text-fg-2">{r.pos === 1 ? '—' : sort === 'laps' ? `${r.laps - lead.laps} v` : fmtDelta(r.best - lead.best)}</td>

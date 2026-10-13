@@ -384,7 +384,7 @@ function Standings({ rows: raw, ev, session, setSession, live, now, flag, onPick
                   <tr key={r.id} tabIndex={0} onClick={() => onPick(r.id)} onKeyDown={(e) => e.key === 'Enter' && onPick(r.id)}
                     className={`cursor-pointer border-t border-line hover:bg-raised ${i === 0 && (r.best || r.laps) ? 'bg-ok-soft' : ''}`}>
                     <td className="num px-3 py-2 font-bold">{i + 1}</td>
-                    <td className="px-3 py-2"><span className="num mr-1.5 text-muted">#{r.dorsal}</span><b>{r.name}</b>{r.best_driver && <span className="text-[12px] text-muted"> · mejor: {r.best_driver}</span>}</td>
+                    <td className="px-3 py-2"><span className="num mr-1.5 font-semibold text-fg-2">#{r.dorsal}</span><b>{r.name}</b>{r.best_driver && <span className="text-[13px] text-fg-2"> · mejor: {r.best_driver}</span>}</td>
                     <td className="num px-3 py-2 text-right">{r.laps}</td>
                     <td className="num px-3 py-2 text-right font-bold">{fmtLap(r.best)}</td>
                     <td className="num px-3 py-2 text-right text-fg-2">{gap ?? '—'}</td>
@@ -488,7 +488,7 @@ function TeamRow({ team: t, eventId, onChange }) {
   return (
     <li className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="num text-muted">#{t.dorsal}</span>
+        <span className="num font-semibold text-fg-2">#{t.dorsal}</span>
         <b className="text-[15px]">{t.name}</b>
         {t.racing ? <Pill tone="ok">Participando</Pill> : <Pill tone="muted">No participa</Pill>}
         <span className="num text-[12px] text-muted" title="Código del equipo: lo usan sus pilotos para unirse">código {t.inviteCode}</span>

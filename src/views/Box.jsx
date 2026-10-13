@@ -184,8 +184,8 @@ function AlarmBanner({ breakdowns, crits, unacked, onAck, onLocate, onDone }) {
         <div key={b.id} className="alarm-ring flex flex-wrap items-center gap-x-4 gap-y-2 bg-crit-solid px-4 py-2.5 text-on-crit">
           <Icon name="wrench" size={22} stroke={2.5} />
           <span className="text-xl font-bold uppercase tracking-[0.04em]">Coche #{b.car} · {b.label}</span>
-          <span className="num text-sm opacity-90">{hhmmss(b.ts)}</span>
-          {b.gps && <span className="num text-sm opacity-90">{b.gps.lat.toFixed(5)}, {b.gps.lng.toFixed(5)}</span>}
+          <span className="num text-[15px] font-semibold">{hhmmss(b.ts)}</span>
+          {b.gps && <span className="num text-[15px] font-semibold">{b.gps.lat.toFixed(5)}, {b.gps.lng.toFixed(5)}</span>}
           <span className="ml-auto flex gap-2">
             {b.gps && <BannerButton onClick={() => onLocate(b.gps)} icon="pin">Ver en mapa</BannerButton>}
             <BannerButton onClick={() => onDone(b.id)} icon="check">Atendido</BannerButton>
@@ -230,7 +230,7 @@ function TeamColumn({ team, laps, lapStartedAt, splits = [], now, onResetLap }) 
   return (
     <aside className="flex flex-col bg-panel lg:min-h-0 lg:overflow-y-auto" aria-label="Equipo y vueltas">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Vueltas · hoy</span><span className="num text-[12px] text-muted">{laps.length}</span>
+        <span className="label">Vueltas · hoy</span><span className="num text-[14px] font-semibold text-fg-2">{laps.length}</span>
       </div>
       <div className="grid grid-cols-2 gap-px border-b border-line bg-line">
         <div className="col-span-2 bg-panel px-3 py-2.5">
@@ -269,7 +269,7 @@ function TeamColumn({ team, laps, lapStartedAt, splits = [], now, onResetLap }) 
               <span className="font-semibold">{fmtLap(l.ms)}</span>
               <span className="ml-auto"><DeltaText ms={l.ms - avg} /></span>
               {sec.laps.includes(l) && (
-                <span className="basis-full pl-8 text-[11px] text-muted">
+                <span className="basis-full pl-8 text-[12px] text-fg-2">
                   {l.sectors.map((ms, i) => <span key={i} className={`mr-2 ${ms === sec.per[i].best ? 'font-bold text-ok' : ''}`}>{fmtSplit(ms)}</span>)}
                 </span>
               )}
@@ -278,7 +278,7 @@ function TeamColumn({ team, laps, lapStartedAt, splits = [], now, onResetLap }) 
         </ol>
       )}
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Equipo</span><span className="num text-[12px] text-muted">{live.online.length}/{team.members.length}</span>
+        <span className="label">Equipo</span><span className="num text-[14px] font-semibold text-fg-2">{live.online.length}/{team.members.length}</span>
       </div>
       <ul className="flex overflow-x-auto lg:flex-col">
         {members.map((m) => {
@@ -300,7 +300,7 @@ const LapStat = ({ label, value, sub, small }) => (
   <div className="min-w-0 bg-panel px-3 py-2">
     <div className="label">{label}</div>
     <div className={`num truncate font-bold ${small ? 'text-[15px] leading-7' : 'text-[18px]'}`}>{value}</div>
-    {sub && <div className="truncate text-[12px] text-muted">{sub}</div>}
+    {sub && <div className="truncate text-[13px] font-semibold text-fg-2">{sub}</div>}
   </div>
 );
 // Más rápido que la media = ▼ verde; más lento = ▲ ámbar.
@@ -346,7 +346,7 @@ function CarHeader({ p, driver, state, alarms, now, onPit }) {
         className="flex items-center gap-1.5 rounded-[4px] border border-line px-2 py-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-fg-2 hover:bg-raised">
         <Icon name="pitIn" size={13} />En boxes</button>}
       <span className={`flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-[0.08em] ${state === 'ok' ? 'text-ok' : state === 'warn' ? 'text-warn' : 'text-crit'}`}>
-        <span className={`h-2 w-2 rounded-full ${BAND[state]}`} />{stateText}
+        <span className={`h-2.5 w-2.5 rounded-full ${BAND[state]}`} />{stateText}
         {alarms.length > 0 && <span className="font-semibold normal-case tracking-normal">· {alarms.map((a) => a.text).join(' · ')}</span>}
       </span>
       <span className="ml-auto flex flex-wrap gap-x-5 gap-y-1">
@@ -360,14 +360,14 @@ function CarHeader({ p, driver, state, alarms, now, onPit }) {
   );
 }
 const Stat = ({ icon, label, value, warn }) => (
-  <span className="flex items-center gap-1.5 text-[13px]">
-    <Icon name={icon} size={14} className="text-muted" /><span className="label">{label}</span>
-    <span className={`num ${warn ? 'text-warn' : 'text-fg-2'}`}>{value}</span>
+  <span className="flex items-center gap-1.5">
+    <Icon name={icon} size={16} className="text-fg-2" /><span className="label">{label}</span>
+    <span className={`num text-[17px] font-bold ${warn ? 'text-warn' : 'text-fg'}`}>{value}</span>
   </span>
 );
 
 // ── Gauges: arco para temperatura, barra de LEDs para RPM, digital para voltaje y velocidad ──
-// Con el dato viejo («~», SIN DATOS) se siguen pintando con el último valor, atenuados.
+// Con el dato viejo («~», SIN DATOS) se siguen pintando con el último valor, en gris.
 function Gauges({ p, now, avg = {} }) {
   const o = p.obd ?? {};
   const L = limitsOf(p);
@@ -411,9 +411,9 @@ function AvgTag({ value, avg, unit, digits = 0 }) {
   const d = value == null ? null : value - avg;
   const tol = digits ? 0.05 : 0.5;
   return (
-    <span className="num truncate text-[11px] text-muted" title="Media de los últimos 30 días">
+    <span className="num truncate text-[12px] text-fg-2" title="Media de los últimos 30 días">
       media {fmt(avg, digits)}
-      {d != null && <span className="ml-1 text-fg-2">{Math.abs(d) < tol ? '=' : d > 0 ? `▲ ${fmt(d, digits)}` : `▼ ${fmt(-d, digits)}`}</span>}
+      {d != null && <span className="ml-1 font-semibold text-fg">{Math.abs(d) < tol ? '=' : d > 0 ? `▲ ${fmt(d, digits)}` : `▼ ${fmt(-d, digits)}`}</span>}
     </span>
   );
 }
@@ -433,18 +433,18 @@ function TempArc({ value, stale, L, avg }) {
   return (
     <GaugeShell label="Temp. motor" state={state} stale={stale} avg={<AvgTag value={value} avg={avg} unit="°C" />}>
       <svg viewBox="0 0 200 150" className="mx-auto -mb-2 w-full max-w-[220px]" role="img" aria-label={`Temperatura ${fmt(value)} grados`}>
-        <path d={arc(L.tempWarn, L.tempCrit, 80)} stroke="var(--arc-warn)" strokeOpacity="0.55" strokeWidth="4" fill="none" />
-        <path d={arc(L.tempCrit, max, 80)} stroke="var(--arc-crit)" strokeOpacity="0.55" strokeWidth="4" fill="none" />
+        <path d={arc(L.tempWarn, L.tempCrit, 80)} stroke="var(--arc-warn)" strokeOpacity="0.8" strokeWidth="4" fill="none" />
+        <path d={arc(L.tempCrit, max, 80)} stroke="var(--arc-crit)" strokeOpacity="0.8" strokeWidth="4" fill="none" />
         <path d={arc(min, max, 68)} stroke="var(--arc-track)" strokeWidth="12" fill="none" strokeLinecap="butt" />
         {value != null && <path d={arc(min, value, 68)} stroke={`var(--arc-${state})`} strokeWidth="12" fill="none" opacity={stale ? 0.45 : 1} />}
         {tick(L.tempWarn)}{tick(L.tempCrit)}
-        <text x={lx} y={ly + 18} textAnchor="middle" className="num" fontSize="10" fill="var(--muted)">{min}</text>
-        <text x={rx} y={ry + 18} textAnchor="middle" className="num" fontSize="10" fill="var(--muted)">{max}</text>
+        <text x={lx} y={ly + 18} textAnchor="middle" className="num" fontSize="11" fill="var(--text-2)">{min}</text>
+        <text x={rx} y={ry + 18} textAnchor="middle" className="num" fontSize="11" fill="var(--text-2)">{max}</text>
         <text x="100" y="100" textAnchor="middle" className="num" fontSize="40" fontWeight="700"
-          fill={stale ? 'var(--muted)' : state === 'ok' ? 'var(--text)' : `var(--${state})`} opacity={stale ? 0.5 : 1}>
+          fill={stale ? 'var(--muted)' : state === 'ok' ? 'var(--text)' : `var(--${state})`}>
           {stale && value != null ? '~' : ''}{fmt(value)}
         </text>
-        <text x="100" y="120" textAnchor="middle" fontSize="13" fill="var(--muted)">°C</text>
+        <text x="100" y="120" textAnchor="middle" fontSize="14" fill="var(--text-2)">°C</text>
       </svg>
     </GaugeShell>
   );
@@ -461,16 +461,16 @@ function RpmBar({ value, throttle, stale, L, avg }) {
     <GaugeShell label="RPM" state={state} stale={stale} avg={<AvgTag value={value} avg={avg} unit="rpm" />}>
       <div className="flex flex-1 flex-col justify-center gap-3">
         <div className="flex items-baseline gap-2">
-          <span className={`num text-[44px] font-bold leading-none ${stale ? 'text-muted opacity-50' : ''}`}>{stale && value != null ? '~' : ''}{fmt(value)}</span>
-          <span className="text-[15px] text-muted">rpm</span>
-          <span className="ml-auto flex items-baseline gap-2 whitespace-nowrap"><span className="label">Acelerador</span><span className="num text-[15px] text-fg-2">{fmt(throttle)} %</span></span>
+          <span className={`num text-[44px] font-bold leading-none ${stale ? 'text-muted' : ''}`}>{stale && value != null ? '~' : ''}{fmt(value)}</span>
+          <span className="text-[16px] font-semibold text-fg-2">rpm</span>
+          <span className="ml-auto flex items-baseline gap-2 whitespace-nowrap"><span className="label">Acelerador</span><span className="num text-[20px] font-bold">{fmt(throttle)} %</span></span>
         </div>
         <div className="flex h-5 gap-[3px]" aria-hidden="true">
           {Array.from({ length: N }, (_, i) => (
             <span key={i} className="flex-1 rounded-[1px]" style={{ background: i < lit ? `var(--arc-${zone(i)})` : 'var(--arc-track)', opacity: stale && i < lit ? 0.45 : 1 }} />
           ))}
         </div>
-        <div className="num flex justify-between text-[10px] text-muted">
+        <div className="num flex justify-between text-[11px] text-fg-2">
           {[0, 0.25, 0.5, 0.75, 1].map((f) => <span key={f}>{fmt((max * f) / 1000, max * f % 1000 ? 1 : 0)}k</span>)}
         </div>
       </div>
@@ -484,8 +484,8 @@ function Readout({ label, unit, value, digits = 0, state = 'ok', stale, bar, com
     <GaugeShell label={label} state={state} stale={stale} compact={compact} avg={<AvgTag value={value} avg={avg} unit={unit} digits={digits ? 1 : 0} />}>
       <div className={`flex flex-1 flex-col justify-center ${compact ? 'gap-3 xl:gap-1.5' : 'gap-3'}`}>
         <div className="flex items-baseline gap-2">
-          <span className={`num font-bold leading-none ${compact ? 'text-[44px] xl:text-[32px]' : 'text-[44px]'} ${stale ? 'text-muted opacity-50' : STATE_TEXT[state]}`}>{stale && value != null ? '~' : ''}{fmt(value, digits)}</span>
-          <span className="text-[15px] text-muted">{unit}</span>
+          <span className={`num font-bold leading-none ${compact ? 'text-[44px] xl:text-[32px]' : 'text-[44px]'} ${stale ? 'text-muted' : STATE_TEXT[state]}`}>{stale && value != null ? '~' : ''}{fmt(value, digits)}</span>
+          <span className="text-[16px] font-semibold text-fg-2">{unit}</span>
         </div>
         {bar && (
           <div className="relative h-1.5 rounded-full bg-sunken">
@@ -493,7 +493,7 @@ function Readout({ label, unit, value, digits = 0, state = 'ok', stale, bar, com
             {bar.marks.map((m) => <span key={m} className="absolute -top-1 h-3.5 w-px bg-fg-2" style={{ left: pos(m) }} />)}
           </div>
         )}
-        {bar && <div className={`num flex justify-between text-[10px] text-muted ${compact ? 'xl:hidden' : ''}`}><span>{bar.min}</span><span>{bar.max}</span></div>}
+        {bar && <div className={`num flex justify-between text-[11px] text-fg-2 ${compact ? 'xl:hidden' : ''}`}><span>{bar.min}</span><span>{bar.max}</span></div>}
       </div>
     </GaugeShell>
   );
@@ -559,7 +559,7 @@ function Messages({ dorsal, log, now, send }) {
       </div>
 
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Registro</span><span className="num text-[12px] text-muted">{log.length}</span>
+        <span className="label">Registro</span><span className="num text-[14px] font-semibold text-fg-2">{log.length}</span>
       </div>
       <ol className="min-h-40 flex-1 lg:overflow-y-auto">
         {log.length === 0 && <li className="px-4 py-8 text-center text-[13px] text-muted">Sin mensajes. Lo que envíes al piloto y sus avisos aparecerán aquí.</li>}
@@ -568,7 +568,7 @@ function Messages({ dorsal, log, now, send }) {
           return (
             <li key={m.id} className={`flex flex-col gap-1 border-b border-line px-3 py-2 ${problem ? 'bg-warn-soft' : m.critical ? 'bg-crit-soft' : ''}`}>
               <div className="flex items-baseline gap-2">
-                <span className="num text-[12px] text-muted">{hhmmss(m.ts)}</span>
+                <span className="num text-[12px] text-fg-2">{hhmmss(m.ts)}</span>
                 <span className="num text-[12px] font-semibold text-fg-2">{m.dir === 'in' ? `#${m.car} → BOX` : `BOX → ${m.to === 'all' ? 'PILOTO' : '#' + m.to}`}</span>
                 {m.dir === 'in' && <Badge tone={m.critical ? 'crit' : 'info'}>{m.critical ? 'Avería' : 'Piloto'}</Badge>}
               </div>
@@ -614,7 +614,7 @@ const Badge = ({ tone, children }) => (
 function AckBadge({ car, ack, waited, sentAt }) {
   if (ack) {
     const tone = { OK: 'ok', NO: 'crit', PROBLEMA: 'warn' }[ack.answer];
-    return <Badge tone={tone}><span className="num">#{car}</span> {ack.answer} <span className="num font-medium opacity-80">· {fmt((ack.at - sentAt) / 1000, 1)} s</span></Badge>;
+    return <Badge tone={tone}><span className="num">#{car}</span> {ack.answer} <span className="num font-medium">· {fmt((ack.at - sentAt) / 1000, 1)} s</span></Badge>;
   }
   if (waited > NO_ACK_MS) return <Badge tone="warn"><span className="num">#{car}</span> Sin respuesta <span className="num font-medium">{fmt(waited / 1000)} s</span></Badge>;
   return <Badge tone="pending"><span className="pulse h-1.5 w-1.5 rounded-full bg-pending" /><span className="num">#{car}</span> Pendiente</Badge>;

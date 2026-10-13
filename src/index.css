@@ -6,30 +6,30 @@
 :root, [data-theme='light'] {
   color-scheme: light;
   --bg: #eceff3; --panel: #ffffff; --raised: #f6f7f9; --sunken: #e2e6eb;
-  --border: #c5ccd5; --border-strong: #8e98a5;
-  --text: #0e1318; --text-2: #3c4550; --muted: #5c6672;
+  --border: #a9b2bd; --border-strong: #6f7987;
+  --text: #0e1318; --text-2: #262e38; --muted: #46505c; /* 13.7 · 8.2:1 sobre panel (≥6.5 en sunken) */
   --accent: #4b4fd8; --accent-soft: #e7e8fb;
-  --ok: #11793a; --warn: #8f5b00; --crit: #c4142b; --info: #0b5bd3; --pending: #5c6672;
+  --ok: #0a6a30; --warn: #7a4c00; --crit: #b3101f; --info: #0a4fb8; --pending: #46505c; /* ≥6.7:1 sobre panel */
   --ok-solid: #11793a; --on-ok: #fff; --warn-solid: #f5b81c; --on-warn: #0e1318; --crit-solid: #c4142b; --on-crit: #fff;
   --ok-soft: #e3f4e8; --warn-soft: #fdf1d3; --crit-soft: #fbe3e5; --info-soft: #e2ecfb;
-  --arc-track: #e2e6eb; --arc-ok: #1f9d4f; --arc-warn: #b87c00; --arc-crit: #c4142b;
+  --arc-track: #e2e6eb; --arc-ok: #168a43; --arc-warn: #a86f00; --arc-crit: #c4142b;
   --chart: #4b4fd8; /* serie de gráficos (validada: banda de luminosidad y ≥3:1 sobre panel) */
 }
 [data-theme='dark'] {
   color-scheme: dark;
   --bg: #0b0e12; --panel: #12161c; --raised: #1a2029; --sunken: #07090c;
-  --border: #2a313b; --border-strong: #3d4653;
-  --text: #e8ecf1; --text-2: #a6b0bd; --muted: #7d8896;
+  --border: #38414d; --border-strong: #5a6573;
+  --text: #e8ecf1; --text-2: #c5cdd7; --muted: #9da8b6; /* 11.3 · 7.5:1 sobre panel (≥6.8 en raised) */
   --accent: #8f96ff; --accent-soft: #1e2140;
-  --ok: #3ccf6e; --warn: #f5b81c; --crit: #ff5a52; --info: #4ea1ff; --pending: #8b96a6;
+  --ok: #4ade80; --warn: #ffc53d; --crit: #ff6b62; --info: #6cb4ff; --pending: #9da8b6; /* ≥6.5:1 sobre panel */
   --ok-solid: #3ccf6e; --on-ok: #0b0e12; --warn-solid: #f5b81c; --on-warn: #0b0e12; --crit-solid: #ff5a52; --on-crit: #0b0e12;
   --ok-soft: #12291b; --warn-soft: #2e2510; --crit-soft: #331516; --info-soft: #13233a;
   --arc-track: #232a33; --arc-ok: #3ccf6e; --arc-warn: #f5b81c; --arc-crit: #ff5a52;
   --chart: #7c84f5;
 }
 /* Piloto: máximo contraste. Claro = negro sobre blanco (sol directo); oscuro = OLED puro sin deslumbrar. */
-[data-theme='light'] .pilot { --bg: #fff; --panel: #fff; --text: #000; --border: #000; }
-[data-theme='dark'] .pilot { --bg: #000; --panel: #000; --raised: #0d1014; --text: #d0d5dc; --border: #3d4653; }
+[data-theme='light'] .pilot { --bg: #fff; --panel: #fff; --text: #000; --text-2: #1a2028; --muted: #2e3640; --border: #000; } /* 16.4 · 12.2:1 */
+[data-theme='dark'] .pilot { --bg: #000; --panel: #000; --raised: #0d1014; --text: #d0d5dc; --text-2: #c5cdd7; --muted: #a9b3c0; --border: #525c6a; } /* 13.1 · 9.9:1 */
 
 @theme inline {
   --font-sans: 'Barlow Condensed', ui-sans-serif, system-ui, sans-serif;

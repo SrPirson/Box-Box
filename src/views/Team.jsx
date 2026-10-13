@@ -251,7 +251,7 @@ function MembersCard({ team, user, owner, setError }) {
   const live = useLive();
   const remove = async (id) => { try { setTeam(await api(`/api/team/members/${id}`, { method: 'DELETE' })); } catch (e) { setError(e.message); } };
   return (
-    <Card title="Miembros" badge={<span className="num text-[12px] text-muted">{team.members.length}</span>} flush>
+    <Card title="Miembros" badge={<span className="num text-[14px] font-semibold text-fg-2">{team.members.length}</span>} flush>
       <ul>
         {team.members.map((m) => {
           const online = live.online.includes(m.id);
