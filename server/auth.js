@@ -19,9 +19,10 @@ export async function checkPassword(pass, stored) {
 }
 
 const mac = (body) => createHmac('sha256', KEY).update(body).digest();
-// pv = sal de la contraseña: al cambiarla, todos los tokens anteriores dejan de valer.
-export function sign(user) {
-  const body = Buffer.from(JSON.stringify({ uid: user.id, pv: user.pass.slice(0, 8), exp: Date.now() + TOKEN_DAYS * 864e5 })).toString('base64url');
+// pv = sal de la contraseña: al cambiarla, todos los tokens anteriores dejan de valer. extra: p. ej. imp (el admin
+// que ve la app como esta persona, en solo lectura), con una duración más corta (ms).
+export function sign(user, extra = {}, ms = TOKEN_DAYS * 864e5) {
+  const body = Buffer.from(JSON.stringify({ uid: user.id, pv: user.pass.slice(0, 8), exp: Date.now() + ms, ...extra })).toString('base64url');
   return `${body}.${mac(body).toString('base64url')}`;
 }
 export function verify(token) {

@@ -38,6 +38,7 @@ export const FLAG_INFO = {
   yellow: { label: 'Bandera amarilla', say: 'Bandera amarilla. Precaución, no adelantar', cls: 'bg-warn-solid text-on-warn' },
   sc: { label: 'Safety car', say: 'Safety car en pista. No adelantar', cls: 'bg-warn-solid text-on-warn' },
   red: { label: 'Bandera roja', say: 'Bandera roja. Carrera detenida, vuelve a boxes despacio', cls: 'bg-crit-solid text-on-crit' },
+  chequered: { label: 'Bandera a cuadros', say: 'Bandera a cuadros. Fin de la sesión, vuelve a boxes', cls: 'bg-fg text-panel' },
   text: { label: 'Dirección de carrera', say: 'Dirección de carrera', cls: 'bg-info text-panel' },
 };
 const flagSpeech = (f) => (f.type === 'text' ? `${FLAG_INFO.text.say}: ${f.text}` : FLAG_INFO[f.type]?.say ?? '');

@@ -50,6 +50,8 @@ const P = {
   timer: <><path d="M10 2h4m-2 12 3-3" /><circle cx="12" cy="14" r="8" /></>,
   finish: <><path d="M4 22V4" /><path d="M4 4h16v10H4" /><path d="M8 4v10m4-10v10m4-10v10M4 9h16" /></>,
   plus: <path d="M12 5v14m-7-7h14" />,
+  back: <path d="m15 18-6-6 6-6" />,
+  chevron: <path d="m9 18 6-6-6-6" />,
   flag: <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22v-7" /></>,
 };
 

@@ -111,6 +111,48 @@ export function SCHEMA() {
   alter table events add column if not exists private boolean not null default false;
   -- Sesión en curso del evento, que marca el organizador: 'practice' (entrenamiento) o 'race' (carrera).
   alter table events add column if not exists session text not null default 'race';
+  -- Borrador: el evento recién creado no sale en la lista pública ni admite inscripciones hasta que el
+  -- organizador lo publica (con fecha y línea de meta). Los que ya existían quedan publicados.
+  alter table events add column if not exists draft boolean not null default false;
+  -- Cupo de equipos (null: sin límite) y cuándo empezó la sesión en curso (reloj de Race Control).
+  alter table events add column if not exists max_teams int;
+  alter table events add column if not exists session_started_at timestamptz;
+  -- Registro de dirección de carrera: banderas, cambios de sesión y quién ha visto cada bandera. Sirve para
+  -- Race Control (en vivo y exportable) y para recuperar la bandera activa si el servidor se reinicia.
+  create table if not exists event_log (
+    id serial primary key,
+    event_id int not null references events(id) on delete cascade,
+    ts timestamptz not null default now(),
+    kind text not null,
+    data jsonb not null default '{}'
+  );
+  create index if not exists event_log_event on event_log (event_id, id);
+  -- Resultado publicado de cada sesión: una instantánea de la clasificación (no cambia aunque lleguen vueltas
+  -- después). Se ve sin cuenta en #tiempos/<public_code>.
+  create table if not exists event_results (
+    event_id int not null references events(id) on delete cascade,
+    session text not null,
+    published_at timestamptz not null default now(),
+    published_by text,
+    sort text not null default 'best',
+    rows jsonb not null,
+    primary key (event_id, session)
+  );
+  alter table events add column if not exists public_code text unique;
+  -- Auditoría de la plataforma: quién (actor) hizo qué (action) y a quién (subject, si es una cuenta).
+  create table if not exists audit_log (
+    id serial primary key,
+    ts timestamptz not null default now(),
+    actor_id int,
+    actor text,
+    action text not null,
+    subject int,
+    data jsonb not null default '{}'
+  );
+  create index if not exists audit_log_ts on audit_log (id desc);
+  create index if not exists audit_log_subject on audit_log (subject, id desc);
+  -- Último acceso (se actualiza como mucho cada 5 min).
+  alter table users add column if not exists last_seen_at timestamptz;
   -- Tipo de cada vuelta y muestra: 'free' (libre, fuera de un evento), 'practice' o 'race' (sesión del evento).
   -- Las vueltas de antes con evento eran de carrera (idempotente: las nuevas de evento nunca son 'free').
   alter table laps add column if not exists kind text not null default 'free';
