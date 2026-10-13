@@ -1,7 +1,7 @@
 // Gateway móvil: lee OBD2 (real o simulado) + GPS + batería + red, empaqueta y envía a BOX.
 // Si no hay conexión, encola los paquetes y los retransmite en ráfaga al recuperar señal.
 import { useSyncExternalStore } from 'react';
-import { createElm, connectBle, connectClassic } from './elm327.js';
+import { keepLinked, connectBle, connectClassic } from './elm327.js';
 import { phoneHeading } from './heading.js';
 import { getConfig, getSocket } from './store.js';
 import { getSession } from './session.js';
@@ -166,24 +166,18 @@ export async function start() {
       read = async () => ({});
     } else {
       // Si el adaptador se cae (contacto quitado al repostar, cambio de piloto, cobertura BLE), la telemetría
-      // sigue con GPS y sin OBD mientras se reconecta solo al mismo adaptador cada pocos segundos.
-      let elm = null;
+      // sigue con GPS y sin OBD mientras se reconecta solo al mismo adaptador cada pocos segundos, durante horas.
       let device = null;
-      const link = async () => {
-        const t = await (cfg.source === 'classic' ? connectClassic(lost, cfg.classicAddr) : connectBle(lost, device));
-        device = t.device;
-        const e = createElm(t);
-        await e.init();
-        elm = e;
-        set({ obdLink: 'ok' });
-      };
-      const retry = () => { if (running && !elm) link().catch(() => setTimeout(retry, 3000)); };
-      function lost() {
-        elm = null;
-        if (running) { set({ obdLink: 'lost' }); setTimeout(retry, 1000); }
-      }
-      await link();
-      read = async () => (elm ? elm.read() : {});
+      const obdLink = keepLinked(
+        async (lost) => {
+          const t = await (cfg.source === 'classic' ? connectClassic(lost, cfg.classicAddr) : connectBle(lost, device));
+          device = t.device;
+          return t;
+        },
+        { active: () => id === loopId, onChange: (ok) => set({ obdLink: ok ? 'ok' : 'lost' }) },
+      );
+      await obdLink.ready;
+      read = obdLink.read;
     }
   } catch (e) {
     return id === loopId && set({ obd: 'error', error: e.message });

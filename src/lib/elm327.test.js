@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePid, parseAtrv, createElm } from './elm327.js';
+import { parsePid, parseAtrv, createElm, keepLinked } from './elm327.js';
 
 test('decodifica PIDs con y sin espacios, SEARCHING y errores', () => {
   assert.equal(parsePid('010C', '41 0C 1A F8'), 1726);          // (0x1A*256+0xF8)/4
@@ -63,7 +63,8 @@ function fakeElm(reply, slow = () => 1) {
       const c = s.trim();
       const n = sent.filter((x) => x === c).length;
       sent.push(c);
-      busy = busy.then(() => new Promise((r) => setTimeout(r, slow(c, n)))).then(() => emit(reply(c) + '\r\r>'));
+      // reply null: no contesta nada (enlace zombi).
+      busy = busy.then(() => new Promise((r) => setTimeout(r, slow(c, n)))).then(() => reply(c) != null && emit(reply(c) + '\r\r>'));
     },
     onData: (cb) => (emit = cb),
   };
@@ -95,4 +96,59 @@ test('si la ECU deja de dar RPM, reinicia el chip cada cierto tiempo hasta que v
   assert.ok(sent.filter((c) => c === 'ATZ').length >= 3); // la inicial y al menos dos reintentos
   ecu = true;
   assert.equal((await elm.read()).rpm, 1000);
+});
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const okReply = (c) => (c === 'ATRV' ? '12.4V' : c.startsWith('AT') ? 'OK' : c === '010C1' ? '410C0FA0' : 'NO DATA');
+
+test('una escritura fallida da el enlace por perdido y el driver deja de escribir', async () => {
+  let lost = 0;
+  let writes = 0;
+  const elm = createElm({ send: async () => { writes++; throw new Error('Sin conexión'); }, onData: () => {} }, 50, 10000, () => lost++);
+  assert.deepEqual(await elm.read(), { rpm: null, voltage: null });
+  assert.equal(lost, 1);
+  assert.equal(writes, 1);
+});
+
+test('varios timeouts seguidos sin ningún ">" dan el enlace por perdido', async () => {
+  let lost = 0;
+  const elm = createElm({ send: () => {}, onData: () => {} }, 10, 10000, () => lost++);
+  await elm.init();
+  assert.equal(lost, 1);
+});
+
+test('reconecta solo, una y otra vez, sin dos intentos a la vez y con init completo', async () => {
+  const links = [];
+  const states = [];
+  let busy = 0;
+  let maxBusy = 0;
+  let tries = 0;
+  const obd = keepLinked(async (onLost) => {
+    maxBusy = Math.max(maxBusy, ++busy);
+    await sleep(5);
+    busy--;
+    if (++tries === 3) throw new Error('Adaptador apagado'); // un intento fallido entre medias
+    const link = { onLost, mute: false, closed: false };
+    const { transport, sent } = fakeElm((c) => (link.mute ? null : okReply(c)));
+    links.push(Object.assign(link, { sent }));
+    return { ...transport, close: () => { link.closed = true; } };
+  }, { retryMs: 5, timeoutMs: 20, onChange: (ok) => states.push(ok) });
+  await obd.ready;
+  const relinked = async (n) => { while (links.length < n || states.at(-1) !== true) { await obd.read(); await sleep(5); } };
+  assert.equal((await obd.read()).rpm, 1000);
+  links[0].onLost(); // coche apagado: el transporte avisa
+  assert.deepEqual(await obd.read(), {});
+  await relinked(2);
+  assert.equal((await obd.read()).rpm, 1000);
+  links[1].mute = true; // enlace zombi: nadie avisa, pero no contesta nada
+  await relinked(3);
+  assert.equal((await obd.read()).rpm, 1000);
+  links[2].onLost();
+  await relinked(4);
+  assert.equal((await obd.read()).rpm, 1000);
+  assert.equal(maxBusy, 1);
+  assert.equal(tries, 5);
+  assert.deepEqual(states, [true, false, true, false, true, false, true]);
+  assert.deepEqual(links.map((l) => l.closed), [true, true, true, false]); // los viejos se liberan
+  assert.ok(links.every((l) => l.sent.includes('ATZ')));
 });

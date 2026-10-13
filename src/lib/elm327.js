@@ -55,16 +55,27 @@ export function parseAtrv(raw) {
 // Crea un driver sobre cualquier transporte de bytes: { send(str), onData(cb) }.
 // BLE abajo; un plugin Bluetooth Serial de Capacitor encaja con la misma forma.
 // reinitMs: sin RPM durante ese tiempo, se reinicia el chip (y se reintenta cada tanto mientras siga sin RPM).
-export function createElm(transport, timeoutMs = 1500, reinitMs = 10000) {
+// onLost: el enlace está muerto aunque el transporte no lo haya dicho (escritura fallida o el chip mudo); desde
+// entonces el driver no manda nada más.
+export function createElm(transport, timeoutMs = 1500, reinitMs = 10000, onLost = () => {}) {
   let buffer = '';
   let pending = null;
   let late = false; // el último comando expiró: su '>' puede llegar todavía
+  let silent = 0; // timeouts seguidos sin ningún '>': con el chip vivo nunca pasa (hasta sin ECU contesta)
+  let dead = false;
   let chain = Promise.resolve();
+  const lose = () => {
+    if (dead) return;
+    dead = true;
+    if (pending) { const p = pending; pending = null; p(''); }
+    onLost();
+  };
 
   transport.onData((chunk) => {
     buffer += chunk;
     let end;
     while ((end = buffer.indexOf('>')) >= 0) {
+      silent = 0;
       const out = buffer.slice(0, end).trim();
       buffer = buffer.slice(end + 1);
       // Sin comando pendiente = respuesta tardía de un comando que ya expiró: se descarta.
@@ -74,7 +85,10 @@ export function createElm(transport, timeoutMs = 1500, reinitMs = 10000) {
 
   // Espera al próximo '>' (o a su timeout, y entonces queda uno tardío en camino).
   const wait = (ms) => new Promise((resolve) => {
-    const t = setTimeout(() => { pending = null; buffer = ''; late = true; resolve(''); }, ms);
+    const t = setTimeout(() => {
+      pending = null; buffer = ''; late = true; resolve('');
+      if (++silent >= 4) lose();
+    }, ms);
     pending = (r) => { clearTimeout(t); resolve(r); };
   });
 
@@ -84,9 +98,11 @@ export function createElm(transport, timeoutMs = 1500, reinitMs = 10000) {
   // Además así no se interrumpe al chip a medias (un "BUS INIT" lento acabaría en "STOPPED").
   const send = (cmd, ms = timeoutMs) =>
     (chain = chain.then(async () => {
+      if (dead) return '';
       if (late) { await wait(ms); late = false; }
+      if (dead) return '';
       const r = wait(ms);
-      transport.send(cmd + '\r');
+      Promise.resolve().then(() => transport.send(cmd + '\r')).catch(lose); // escritura fallida = enlace caído
       return r;
     }));
 
@@ -106,7 +122,7 @@ export function createElm(transport, timeoutMs = 1500, reinitMs = 10000) {
   let rpmAt = Date.now(); // última vez que la ECU dio RPM (o que se reinició el chip)
   return {
     async init() {
-      for (const cmd of INIT) await send(cmd, cmd === 'ATZ' ? 3000 : timeoutMs);
+      for (const cmd of INIT) await send(cmd, cmd === 'ATZ' ? 2 * timeoutMs : timeoutMs); // ATZ tarda ~1 s
       // Primera consulta con margen: con ATSP0 la búsqueda de protocolo puede tardar varios segundos.
       await send('0100', 8000);
     },
@@ -130,7 +146,48 @@ export function createElm(transport, timeoutMs = 1500, reinitMs = 10000) {
       }
       return out;
     },
+    // Retira el driver (enlace perdido): no vuelve a escribir, ni en la conexión nueva.
+    close() { dead = true; },
   };
+}
+
+// Mantiene el OBD enlazado: si el adaptador se cae (coche apagado al repostar, fuera de alcance, enlace mudo),
+// reconecta solo cada retryMs mientras active(), tantas veces como haga falta y nunca dos intentos a la vez.
+// connect(onLost) abre el transporte; cada conexión nueva hace la inicialización completa del chip.
+// Devuelve { ready: primera conexión (falla si no conecta), read() }. onChange(true|false): enlazado o no.
+export function keepLinked(connect, { active = () => true, onChange = () => {}, retryMs = 3000, timeoutMs, reinitMs } = {}) {
+  let elm = null;
+  let linking = false;
+  let up = false; // si la primera conexión falla, lo dice ready y no se reintenta por detrás
+  const retry = () => {
+    if (!up || !active() || elm || linking) return;
+    link().catch(() => setTimeout(retry, retryMs));
+  };
+  const link = async () => {
+    linking = true;
+    const me = {}; // este enlace: el aviso de uno viejo no tumba al nuevo
+    const lost = () => {
+      if (me.dead) return;
+      me.dead = true;
+      me.elm?.close();
+      Promise.resolve().then(() => me.t?.close?.()).catch(() => {}); // libera el enlace zombi antes de reconectar
+      if (elm && elm === me.elm) { elm = null; onChange(false); }
+      setTimeout(retry, retryMs);
+    };
+    try {
+      me.t = await connect(lost);
+      if (me.dead) { Promise.resolve().then(() => me.t.close?.()).catch(() => {}); throw new Error('Adaptador perdido al conectar'); }
+      me.elm = createElm(me.t, timeoutMs, reinitMs, lost);
+      await me.elm.init();
+      if (me.dead) throw new Error('Adaptador perdido al iniciar');
+      elm = me.elm;
+      up = true;
+      onChange(true);
+    } finally {
+      linking = false;
+    }
+  };
+  return { ready: link(), read: async () => (elm ? elm.read() : {}) };
 }
 
 // Transporte BLE: adaptadores BLE 4.0 (el clásico va por connectClassic, más abajo).
@@ -169,6 +226,7 @@ async function connectNative(onDisconnect, device) {
       return tx[2] ? BleClient.writeWithoutResponse(id, tx[0], tx[1], v) : BleClient.write(id, tx[0], tx[1], v);
     },
     onData: (cb) => { listener = cb; },
+    close: () => BleClient.disconnect(id),
   };
 }
 
@@ -196,6 +254,7 @@ async function connectWeb(onDisconnect, device) {
     device,
     send: (s) => (tx.properties.writeWithoutResponse ? tx.writeValueWithoutResponse(enc.encode(s)) : tx.writeValue(enc.encode(s))),
     onData: (cb) => rx.addEventListener('characteristicvaluechanged', (e) => cb(dec.decode(e.target.value))),
+    close: () => device.gatt.disconnect(),
   };
 }
 
@@ -213,5 +272,5 @@ export async function connectClassic(onDisconnect, address) {
   await ClassicBt.addListener('data', (d) => listener(d.value));
   await ClassicBt.addListener('disconnected', () => onDisconnect());
   await ClassicBt.connect({ address }).catch((e) => { throw needsUpdate(e); });
-  return { device: address, send: (s) => ClassicBt.write({ value: s }), onData: (cb) => { listener = cb; } };
+  return { device: address, send: (s) => ClassicBt.write({ value: s }), onData: (cb) => { listener = cb; }, close: () => ClassicBt.disconnect() };
 }

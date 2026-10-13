@@ -21,6 +21,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 // Adaptadores ELM327 de Bluetooth clásico (los que se emparejan con PIN 1234): puerto serie SPP por RFCOMM.
 // El adaptador se empareja antes en los ajustes de Bluetooth de Android; aquí solo se listan los emparejados.
@@ -32,6 +34,9 @@ public class ClassicBtPlugin extends Plugin {
     private static final UUID SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private volatile BluetoothSocket socket; // la escriben el hilo de conexión y el de los plugins
     private volatile OutputStream out;
+    // Las escrituras, en orden y en su propio hilo: con el enlace medio muerto (coche apagado) write() puede
+    // bloquear hasta que Android da el enlace por caído, y en el hilo de los plugins bloquearía también disconnect().
+    private final ExecutorService writer = Executors.newSingleThreadExecutor();
 
     private BluetoothAdapter adapter(PluginCall call) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -133,14 +138,17 @@ public class ClassicBtPlugin extends Plugin {
 
     @PluginMethod
     public void write(PluginCall call) {
-        try {
-            if (out == null) throw new IOException("Sin conexión con el adaptador");
-            out.write(call.getString("value", "").getBytes(StandardCharsets.ISO_8859_1));
-            out.flush();
-            call.resolve();
-        } catch (IOException e) {
-            call.reject(e.getMessage());
-        }
+        writer.execute(() -> {
+            try {
+                OutputStream o = out;
+                if (o == null) throw new IOException("Sin conexión con el adaptador");
+                o.write(call.getString("value", "").getBytes(StandardCharsets.ISO_8859_1));
+                o.flush();
+                call.resolve();
+            } catch (IOException e) {
+                call.reject(e.getMessage());
+            }
+        });
     }
 
     @PluginMethod
