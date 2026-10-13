@@ -13,7 +13,10 @@ before(async () => {
     env: { ...process.env, PORT, PGLITE_DIR: 'memory://', ADMIN_EMAIL: 'jefe@cencerro.es', DATABASE_URL: '' },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-  await new Promise((r) => server.stdout.on('data', (d) => d.includes('escuchando') && r()));
+  await new Promise((r, j) => {
+    server.stdout.on('data', (d) => d.includes('escuchando') && r());
+    server.on('exit', (c) => j(new Error(`El servidor no ha arrancado (salida ${c})`))); // sin esto, el test se cuelga
+  });
 });
 after(() => server.kill());
 
@@ -142,7 +145,7 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   // Administración: un piloto no puede; el admin restablece la contraseña de Ana.
   assert.equal((await call('/api/admin/users', { token: beto.token })).status, 403);
   const users = await call('/api/admin/users', { token: jefe.token });
-  assert.ok(Object.values(users).some((u) => u.email === 'ana@x.es'));
+  assert.ok(users.rows.some((u) => u.email === 'ana@x.es'));
   const reset = await call(`/api/admin/users/${ana.user.id}/reset`, { token: jefe.token, method: 'POST' });
   assert.equal((await call('/api/me', { token: ana.token })).status, 401); // token antiguo invalidado
   const relog = await call('/api/login', { method: 'POST', body: { email: 'ana@x.es', password: reset.tempPassword } });
@@ -174,7 +177,10 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   const ev = await call('/api/events', { token: olga.token, method: 'POST', body: { name: '24h Jarama', startsOn: '2026-11-07', place: 'Jarama' } });
   assert.equal(ev.startsOn, '2026-11-07');
   const line = [[40, -3.0001], [40, -2.9999]];
-  await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { track: { line } } });
+  // Nace en borrador: nadie se inscribe ni lo ve en la lista hasta publicarlo, y sin meta no se puede publicar.
+  assert.equal(ev.draft, true);
+  assert.equal((await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { draft: false } })).status, 400);
+  assert.equal((await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { track: { line }, draft: false } })).draft, false);
 
   // Un piloto inscribe su equipo con el código del evento: hereda la pista y no puede cambiarla.
   const pepe = await call('/api/register', { method: 'POST', body: { name: 'Pepe', email: 'pepe@x.es', password: 'pistapista' } });
@@ -249,6 +255,29 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   const msg = next(sp, 'flag');
   so.emit('event:flag', { eventId: ev.id, type: 'text', text: '  Aceite en la curva 3  ' });
   assert.equal((await msg).text, 'Aceite en la curva 3');
+  // Acuse: el panel sabe si el servidor la ha dado; a un piloto se le dice que no.
+  assert.deepEqual(await so.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'yellow' }), { ok: true });
+  assert.deepEqual(await sp.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'yellow' }), { ok: false });
+  assert.deepEqual(await so.timeout(2000).emitWithAck('event:flag', { eventId: ev.id, type: 'chequered' }), { ok: true });
+  // Todo queda en el registro de Race Control (lo último primero), con quién lo hizo.
+  const log = Object.values(await call(`/api/events/${ev.id}/log`, { token: olga.token })).filter((x) => typeof x === 'object');
+  assert.deepEqual(log.slice(0, 2).map((l) => l.data.type), ['chequered', 'yellow']);
+  assert.equal(log[0].data.by, 'Olga');
+  assert.ok(log.some((l) => l.kind === 'seen' && l.data.teamId === reg.team.id && l.data.flagTs === red.ts));
+  assert.equal((await call(`/api/events/${ev.id}/log`, { token: pepe.token })).status, 403);
+  // Resultado de la carrera: instantánea con enlace público que se ve sin cuenta (y la sesión sin vueltas, no).
+  assert.equal((await call(`/api/events/${ev.id}/results`, { token: olga.token, method: 'POST', body: { session: 'practice' } })).status, 409);
+  const published = await call(`/api/events/${ev.id}/results`, { token: olga.token, method: 'POST', body: { session: 'race' } });
+  assert.deepEqual(published.results[0].rows.map((r) => [r.pos, r.team, r.laps, r.bestDriver]), [[1, 'Los Rápidos', 2, 'Pepe']]);
+  assert.notEqual(published.publicCode, ev.inviteCode);
+  const pub = await call(`/api/public/results/${published.publicCode}`);
+  assert.equal(pub.event.name, '24h Jarama');
+  assert.equal(pub.results[0].session, 'race');
+  assert.equal((await call('/api/public/results/NOEXISTE')).status, 404);
+  // Cambiar de sesión pone en marcha su reloj y se registra.
+  const practice = await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { session: 'practice' } });
+  assert.ok(Date.now() - practice.sessionStartedAt < 5000);
+  assert.equal((await call(`/api/events/${ev.id}/log`, { token: olga.token }))[0].data.session, 'practice');
 
   for (const s of [so, sp, sq]) s.close();
 });
@@ -260,16 +289,29 @@ test('lista pública de eventos, gestión de inscritos por el organizador y perf
   await call(`/api/admin/users/${org.user.id}`, { token: admin.token, method: 'PATCH', body: { role: 'organizer' } });
   const pub = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Resistencia Cheste', startsOn: '2099-05-01', place: 'Cheste' } });
   const priv = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Privado Club', startsOn: '2099-05-02' } });
+  const draft = await call('/api/events', { token: org.token, method: 'POST', body: { name: 'Borrador Cheste', startsOn: '2099-05-03' } });
+  const finish = { line: [[40, -3.0001], [40, -2.9999]] };
+  for (const e of [pub, priv]) await call(`/api/events/${e.id}`, { token: org.token, method: 'PATCH', body: { track: finish, draft: false } });
   await call(`/api/events/${priv.id}`, { token: org.token, method: 'PATCH', body: { private: true } });
 
   // El piloto ve solo el público, lo encuentra buscando y se inscribe sin código; el privado no se puede así.
   const rita = await reg('Rita', 'rita@x.es');
   const list = Object.values(await call('/api/events/public?q=chest', { token: rita.token })).filter((x) => typeof x === 'object');
-  assert.deepEqual(list.map((e) => e.name), ['Resistencia Cheste']);
+  assert.deepEqual(list.map((e) => e.name), ['Resistencia Cheste']); // ni el privado ni el borrador
+  assert.equal((await call('/api/teams', { token: (await reg('Bea', 'bea@x.es')).token, method: 'POST', body: { name: 'X', eventCode: draft.inviteCode } })).status, 409);
+  // Cupo: con un equipo inscrito y cupo 1, el siguiente no entra; el cupo no admite valores raros.
+  assert.equal((await call(`/api/events/${pub.id}`, { token: org.token, method: 'PATCH', body: { maxTeams: 0 } })).status, 400);
   assert.equal(Object.values(await call('/api/events/public?q=Privado', { token: rita.token })).filter((x) => typeof x === 'object').length, 0);
   assert.equal((await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'X', eventId: priv.id } })).status, 404);
   const team = (await call('/api/teams', { token: rita.token, method: 'POST', body: { name: 'Rita Racing', eventId: pub.id } })).team;
   assert.equal(team.event.name, 'Resistencia Cheste');
+  await call(`/api/events/${pub.id}`, { token: org.token, method: 'PATCH', body: { maxTeams: 1 } });
+  const full = await call('/api/teams', { token: (await reg('Cris', 'cris@x.es')).token, method: 'POST', body: { name: 'Lleno', eventId: pub.id } });
+  assert.deepEqual([full.status, full.error], [409, 'El evento está completo: no quedan plazas.']);
+  // El borrador puede copiar la pista de otro evento del organizador; y se puede recordar a un equipo que participe.
+  const sources = Object.values(await call(`/api/events/${draft.id}/track-sources`, { token: org.token })).filter((x) => typeof x === 'object');
+  assert.deepEqual(sources.map((x) => x.label).sort(), ['Evento · Privado Club', 'Evento · Resistencia Cheste']);
+  assert.equal((await call(`/api/events/${pub.id}/teams/${team.id}/remind`, { token: org.token, method: 'POST' })).ok, true);
 
   // El organizador mete a un piloto registrado por su email, lo saca y echa al equipo del evento.
   const sam = await reg('Sam', 'sam@x.es');
@@ -347,4 +389,36 @@ test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
     assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: bad } })).status, 400, bad);
   }
   assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: null } })).carIcon, null);
+});
+
+test('administración: búsqueda, acciones masivas, auditoría, resumen y «Ver como» en solo lectura', async () => {
+  const admin = await call('/api/login', { method: 'POST', body: { email: 'jefe@cencerro.es', password: 'adminadmin' } });
+  const reg = (name, email) => call('/api/register', { method: 'POST', body: { name, email, password: 'pistapista' } });
+  const [zoe, zack] = [await reg('Zoe Zeta', 'zoe@x.es'), await reg('Zack Zeta', 'zack@x.es')];
+  const found = await call('/api/admin/users?q=zeta', { token: admin.token });
+  assert.deepEqual([found.total, found.rows.map((u) => u.name).sort()], [2, ['Zack Zeta', 'Zoe Zeta']]);
+  assert.equal((await call('/api/admin/users?q=zeta&per=1&page=2', { token: admin.token })).rows.length, 1);
+
+  // Masivas: el admin no se cambia a sí mismo; lo demás sí, y queda auditado.
+  const bulk = await call('/api/admin/users/bulk', { token: admin.token, method: 'POST', body: { ids: [zoe.user.id, zack.user.id, admin.user.id], action: 'role', role: 'organizer' } });
+  assert.deepEqual([bulk.done.length, bulk.failed.map((f) => f.id)], [2, [admin.user.id]]);
+  assert.equal((await call('/api/admin/users?q=zeta&role=organizer', { token: admin.token })).total, 2);
+  const audit = await call('/api/admin/audit', { token: admin.token });
+  assert.deepEqual([audit.rows[0].action, audit.rows[0].actor], ['user.role', admin.user.name]);
+  assert.equal((await call(`/api/admin/users/${zoe.user.id}`, { token: admin.token })).history[0].data.to, 'organizer');
+  const overview = await call('/api/admin/overview', { token: admin.token });
+  assert.ok(overview.counts.users >= 2 && overview.counts.organizers >= 2);
+
+  // «Ver como»: con motivo, nunca a un admin, solo lectura y auditado.
+  assert.equal((await call(`/api/admin/users/${zack.user.id}/impersonate`, { token: admin.token, method: 'POST', body: {} })).status, 400);
+  assert.equal((await call(`/api/admin/users/${admin.user.id}/impersonate`, { token: admin.token, method: 'POST', body: { reason: 'probar' } })).status, 403);
+  const { token } = await call(`/api/admin/users/${zack.user.id}/impersonate`, { token: admin.token, method: 'POST', body: { reason: 'No ve sus eventos' } });
+  const me = await call('/api/me', { token });
+  assert.equal(me.user.id, zack.user.id);
+  assert.ok(me.user.impersonatedUntil - Date.now() <= 30 * 60_000);
+  assert.equal((await call('/api/events', { token, method: 'POST', body: { name: 'No' } })).status, 403);
+  assert.equal((await call('/api/impersonation/end', { token, method: 'POST' })).ok, true);
+  const trail = (await call('/api/admin/audit', { token: admin.token })).rows.slice(0, 2);
+  assert.deepEqual(trail.map((r) => r.action), ['impersonate.end', 'impersonate.start']);
+  assert.equal(trail[1].data.reason, 'No ve sus eventos');
 });
