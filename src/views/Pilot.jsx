@@ -11,6 +11,9 @@ import { PHONE_HOT } from '../lib/limits.js';
 import { RaceFlagScreen, RaceFlagBanner } from './RaceFlag.jsx';
 import { EventTodayBanner } from './Racing.jsx';
 import DriverPicker from './DriverPicker.jsx';
+import PilotTimes from './PilotTimes.jsx';
+
+const VIEW_KEY = 'cencerro.pilotView';
 
 // Cada acción tiene un color fijo para memoria muscular. Solo AVERÍA va rellena: es la única que llama.
 const ACTIONS = [
@@ -29,6 +32,9 @@ export default function Pilot({ onNav }) {
   const isDriver = driver?.by === user.id; // este móvil es el que envía la telemetría del coche
   const [inbox, setInbox] = useState([]); // mensajes pendientes de responder (el primero se muestra)
   const [sent, setSent] = useState(null);
+  // Vista elegida ('alerts' | 'times'), recordada en este móvil.
+  const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) || 'alerts'; } catch { return 'alerts'; } });
+  const pickView = (v) => { setView(v); try { localStorage.setItem(VIEW_KEY, v); } catch {} };
   // Permiso de ubicación (app Android): se mira al entrar y cada vez que se vuelve a la app, p. ej. desde Ajustes.
   const [loc, setLoc] = useState(null);
   const noLocation = !locationOk(loc);
@@ -80,7 +86,7 @@ export default function Pilot({ onNav }) {
   return (
     <div className="pilot flex h-full flex-col bg-bg text-fg">
       {/* Estado: solo lo que el piloto puede usar de un vistazo */}
-      <div className="num flex h-14 shrink-0 items-center gap-3 whitespace-nowrap border-b border-line px-3 text-lg font-bold sm:gap-4">
+      <div className="num flex h-14 shrink-0 items-center gap-3 whitespace-nowrap border-b-2 border-line px-3 text-xl font-bold sm:gap-4">
         <button onClick={busy ? stop : start} className="flex h-10 items-center gap-2 rounded-md border-2 border-line px-3"
           aria-label={gw.obd === 'on' ? 'Detener telemetría' : busy ? 'Cancelar conexión' : 'Iniciar telemetría'}>
           <span className={`h-3.5 w-3.5 rounded-full ${gw.obd === 'on' ? (gw.obdLink === 'lost' ? 'pulse bg-warn-solid' : 'bg-ok') : gw.obd === 'connecting' ? 'pulse bg-warn-solid' : 'bg-crit'}`} />
@@ -89,35 +95,35 @@ export default function Pilot({ onNav }) {
         <span className="flex items-center gap-2" title="Conexión con BOX">
           <span className={`h-3.5 w-3.5 rounded-full ${connected ? 'bg-ok' : 'pulse bg-crit'}`} />BOX
         </span>
-        <span className="ml-auto text-muted">#{team.dorsal}</span>
-        <button onClick={toggleTheme} className="grid h-10 w-10 place-items-center" aria-label="Cambiar tema">
+        <span className="ml-auto text-2xl">#{team.dorsal}</span>
+        <button onClick={toggleTheme} className="grid h-11 w-11 place-items-center" aria-label="Cambiar tema">
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={22} />
         </button>
-        <button onClick={() => onNav('ajustes')} className="grid h-10 w-10 place-items-center text-muted" aria-label="Configuración">
+        <button onClick={() => onNav('ajustes')} className="grid h-11 w-11 place-items-center" aria-label="Configuración">
           <Icon name="sliders" size={22} />
         </button>
         {/* Salir de Piloto al resto de vistas (Box, Estadísticas…); la telemetría sigue si está en marcha */}
-        <button onClick={() => onNav('box')} className="grid h-10 w-10 place-items-center text-muted" aria-label="Salir de Piloto">
+        <button onClick={() => onNav('box')} className="grid h-11 w-11 place-items-center" aria-label="Salir de Piloto">
           <Icon name="x" size={22} />
         </button>
       </div>
       {/* Coche a la izquierda (azul), móvil a la derecha (violeta): dos temperaturas que no se pueden confundir */}
-      <div className="num flex shrink-0 justify-between whitespace-nowrap border-b border-line text-xl font-bold">
+      <div className="num flex shrink-0 justify-between whitespace-nowrap border-b-2 border-line text-2xl font-bold">
         {team.obd ? <div className="flex items-center gap-3 border-l-4 border-info px-3 py-2" title="Coche">
-          <span className="flex flex-col items-center text-info"><Icon name="car" size={22} /><span className="text-[11px] tracking-[0.08em]">COCHE</span></span>
+          <span className="flex flex-col items-center text-info"><Icon name="car" size={22} /><span className="text-[13px] font-bold tracking-[0.08em]">COCHE</span></span>
           <span className={`flex items-center ${o.coolant > team.limits.tempCrit ? 'text-crit' : ''}`} title="Temperatura del motor">
             <Icon name="thermo" size={20} className="text-info" />{o.coolant ?? '—'}°
           </span>
-          <span className="hidden min-[430px]:inline">{o.rpm ?? '—'}<span className="text-sm text-muted"> rpm</span></span>
+          <span className="hidden min-[430px]:inline">{o.rpm ?? '—'}<span className="text-base text-fg-2"> rpm</span></span>
         </div> : <span />}
         <div className="flex items-center justify-end gap-2 border-r-4 border-accent px-3 py-2" title="Móvil">
           <span className={`flex items-center ${bat != null && bat < team.limits.phoneWarn ? 'text-crit' : ''}`} title="Batería del móvil">
-            <Icon name="battery" size={20} className="mr-1 text-accent" />{bat ?? '—'}<span className="text-sm text-muted">%</span>
+            <Icon name="battery" size={20} className="mr-1 text-accent" />{bat ?? '—'}<span className="text-base text-fg-2">%</span>
           </span>
           <span className={`flex items-center ${temp >= PHONE_HOT ? 'text-crit' : ''}`} title="Temperatura del móvil">
             <Icon name="thermo" size={20} className="text-accent" />{temp ?? '—'}°
           </span>
-          <span className="flex flex-col items-center text-accent"><Icon name="phone" size={22} /><span className="text-[11px] tracking-[0.08em]">MÓVIL</span></span>
+          <span className="flex flex-col items-center text-accent"><Icon name="phone" size={22} /><span className="text-[13px] font-bold tracking-[0.08em]">MÓVIL</span></span>
         </div>
       </div>
       <RaceFlagBanner big />
@@ -141,29 +147,42 @@ export default function Pilot({ onNav }) {
       {/* Quién conduce: solo el móvil del coche manda telemetría y recibe los mensajes de BOX; desde él se elige el piloto */}
       <DriverPicker isDriver={isDriver} busy={busy} />
 
-      {/* Rejilla táctil para guantes */}
-      <div inert={!isDriver} className={`grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-3 p-3 ${isDriver ? '' : 'opacity-35'}`}>
-        {ACTIONS.map((a) => {
-          const done = sent?.type === a.type;
-          return (
-            <button key={a.type} onClick={() => fire(a)}
-              className={`flex flex-col items-center justify-center gap-2 rounded-md border-[3px] p-2 text-center text-[26px] font-bold uppercase leading-[1.05] tracking-[0.02em] transition-transform active:scale-[0.97] sm:text-4xl ${a.cls} ${done ? 'opacity-70' : ''}`}>
-              <Icon name={done ? 'check' : a.icon} size={36} stroke={2.5} />
-              {done ? sent.text : a.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Dos vistas: AVISOS (botones para BOX) y TIEMPOS (vueltas y tramos). Se cambia con la franja del borde. */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          {view === 'times' ? <PilotTimes /> : <>
+          {/* Rejilla táctil para guantes */}
+          <div inert={!isDriver} className={`grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-3 p-3 ${isDriver ? '' : 'opacity-35'}`}>
+            {ACTIONS.map((a) => {
+              const done = sent?.type === a.type;
+              return (
+                <button key={a.type} onClick={() => fire(a)}
+                  className={`flex flex-col items-center justify-center gap-2 rounded-md border-[3px] p-2 text-center text-[26px] font-bold uppercase leading-[1.05] tracking-[0.02em] transition-transform active:scale-[0.97] sm:text-4xl ${a.cls} ${done ? 'opacity-70' : ''}`}>
+                  <Icon name={done ? 'check' : a.icon} size={36} stroke={2.5} />
+                  {done ? sent.text : a.label}
+                </button>
+              );
+            })}
+          </div>
 
-      {/* Anular la vuelta en curso (me he salido, he tenido que parar): la siguiente empieza en meta, desde el T1.
-          Doble toque para no perder una vuelta buena por un roce con los guantes. */}
-      {isDriver && (
-        <button onClick={resetLap}
-          className={`mx-3 mb-3 flex h-16 shrink-0 items-center justify-center gap-3 rounded-md border-[3px] text-2xl font-bold uppercase tracking-[0.04em] active:scale-[0.98] ${armed ? 'border-warn-solid bg-warn-solid text-on-warn' : 'border-line text-fg-2'}`}>
-          <Icon name={lapDone ? 'check' : 'undo'} size={28} stroke={2.5} />
-          {lapDone ? 'Vuelta anulada · empieza en meta' : armed ? 'Toca otra vez para anular' : 'Anular vuelta'}
+          {/* Anular la vuelta en curso (me he salido, he tenido que parar): la siguiente empieza en meta, desde el T1.
+              Doble toque para no perder una vuelta buena por un roce con los guantes. */}
+          {isDriver && (
+            <button onClick={resetLap}
+              className={`mx-3 mb-3 flex h-16 shrink-0 items-center justify-center gap-3 rounded-md border-[3px] text-2xl font-bold uppercase tracking-[0.04em] active:scale-[0.98] ${armed ? 'border-warn-solid bg-warn-solid text-on-warn' : 'border-line text-fg'}`}>
+              <Icon name={lapDone ? 'check' : 'undo'} size={28} stroke={2.5} />
+              {lapDone ? 'Vuelta anulada · empieza en meta' : armed ? 'Toca otra vez para anular' : 'Anular vuelta'}
+            </button>
+          )}
+          </>}
+        </div>
+        <button onClick={() => pickView(view === 'times' ? 'alerts' : 'times')}
+          className="flex w-20 shrink-0 flex-col items-center justify-center gap-3 border-l-[3px] border-line bg-raised text-2xl font-bold uppercase tracking-[0.08em] active:scale-[0.97]"
+          aria-label={view === 'times' ? 'Ver avisos' : 'Ver tiempos'}>
+          <Icon name={view === 'times' ? 'alert' : 'timer'} size={36} stroke={2.5} />
+          <span className="[writing-mode:vertical-rl]">{view === 'times' ? 'Avisos' : 'Tiempos'}</span>
         </button>
-      )}
+      </div>
 
       {/* Dirección de carrera: por encima de todo, también de los mensajes de BOX */}
       <RaceFlagScreen />
@@ -171,7 +190,7 @@ export default function Pilot({ onNav }) {
       {/* Interrupción prioritaria de BOX */}
       {inbox[0] && (
         <div role="alertdialog" aria-label="Mensaje de BOX" className="safe fixed inset-0 z-[2000] bg-bg"><div className="flex h-full flex-col p-3">
-          <div className="num flex items-center justify-between text-lg text-muted">
+          <div className="num flex items-center justify-between text-xl font-bold text-fg-2">
             <span>{inbox[0].id ? 'BOX' : 'EQUIPO'} · {new Date(inbox[0].ts ?? Date.now()).toLocaleTimeString('es-ES')}</span>
             {inbox.length > 1 && <span>+{inbox.length - 1} en cola</span>}
           </div>

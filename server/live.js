@@ -234,6 +234,8 @@ export function attachLive(server, userFromToken) {
         out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: d.name, lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
       }
       batch ? socket.to(r).emit('telemetry:batch', { packets: out }) : socket.to(r).emit('telemetry', out[0]);
+      // El emisor no recibe su telemetría: le basta el cronómetro y los parciales para su vista de tiempos.
+      socket.emit('lap:live', { lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
       // Resumen para el organizador del evento, como mucho una vez por segundo.
       const last = out.at(-1);
       if (st.team.event_id && now - st.lastEvent >= EVENT_EVERY_MS) {

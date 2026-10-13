@@ -29,7 +29,7 @@
 }
 /* Piloto: máximo contraste. Claro = negro sobre blanco (sol directo); oscuro = OLED puro sin deslumbrar. */
 [data-theme='light'] .pilot { --bg: #fff; --panel: #fff; --text: #000; --text-2: #1a2028; --muted: #2e3640; --border: #000; } /* 16.4 · 12.2:1 */
-[data-theme='dark'] .pilot { --bg: #000; --panel: #000; --raised: #0d1014; --text: #d0d5dc; --text-2: #c5cdd7; --muted: #a9b3c0; --border: #525c6a; } /* 13.1 · 9.9:1 */
+[data-theme='dark'] .pilot { --bg: #000; --panel: #000; --raised: #0d1014; --text: #eef1f5; --text-2: #c5cdd7; --muted: #a9b3c0; --border: #525c6a; } /* 13.1 · 9.9:1 */
 
 @theme inline {
   --font-sans: 'Barlow Condensed', ui-sans-serif, system-ui, sans-serif;
