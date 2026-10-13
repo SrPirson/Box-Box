@@ -658,13 +658,13 @@ const routes = [
     const rows = await q('select id, ts, actor, action, subject, data, count(*) over()::int as total from audit_log order by id desc limit 100 offset $1', [(page - 1) * 100]);
     return { rows: rows.map(({ total, ...r }) => r), total: rows[0]?.total ?? 0, page, per: 100 };
   }],
-  // «Ver como»: token de solo lectura de 30 min para ver la app como esa persona (soporte). Con motivo, auditado,
-  // nunca a otro admin.
+  // Suplantar: token de 30 min para controlar la cuenta de esa persona (soporte). Motivo opcional, todo auditado
+  // (inicio, fin y cada escritura), nunca a otro admin.
   ['POST', /^\/api\/admin\/users\/(\d+)\/impersonate$/, 'admin', async ({ user, params, body }) => {
-    const reason = str(body.reason, 'Motivo', { min: 5, max: 200 });
+    const reason = body.reason ? str(body.reason, 'Motivo', { max: 200 }) : null;
     const target = await reload(Number(params[0]));
     if (!target) fail(404, 'Ese usuario no existe.');
-    if (target.id === user.id || target.role === 'admin') fail(403, 'No se puede ver la app como otro administrador.');
+    if (target.id === user.id || target.role === 'admin') fail(403, 'No se puede suplantar a otro administrador.');
     audit(user, 'impersonate.start', target.id, { name: target.name, reason });
     return { token: sign(target, { imp: user.id }, IMPERSONATE_MS) };
   }],
@@ -732,8 +732,9 @@ export async function handleApi(req, res) {
     if (access !== 'none') {
       ctx.user = await userFromToken(req.headers.authorization?.replace(/^Bearer /, ''));
       if (!ctx.user) fail(401, 'Tu sesión ha caducado. Vuelve a entrar.');
-      // Viendo la app como otra persona: solo lectura (salvo para terminar).
-      if (ctx.user.imp && req.method !== 'GET' && route[1] !== '/api/impersonation/end') fail(403, 'Estás viendo la app como otra persona: solo lectura.');
+      // Suplantando: ni contraseña ni baja de la cuenta; cada escritura queda en la auditoría con el admin real.
+      if (ctx.user.imp && ['POST /api/password', 'DELETE /api/me'].includes(`${req.method} ${route[1]}`)) fail(403, 'Suplantando una cuenta no se puede cambiar su contraseña ni eliminarla.');
+      if (ctx.user.imp && req.method !== 'GET' && route[1] !== '/api/impersonation/end') audit(await one('select id, name from users where id = $1', [ctx.user.imp]), 'impersonate.write', ctx.user.id, { name: ctx.user.name, method: req.method, path: url.pathname });
       if (access === 'admin' && ctx.user.role !== 'admin') fail(403, 'Solo para administradores.');
       if (access === 'organizer' && !isOrganizer(ctx.user)) fail(403, 'Solo para organizadores de eventos.');
       if (access === 'team') {

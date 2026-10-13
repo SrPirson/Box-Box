@@ -391,7 +391,7 @@ test('pistas guardadas: guardar, editar, aplicar y eliminar', async () => {
   assert.equal((await call('/api/team', { token, method: 'PATCH', body: { carIcon: null } })).carIcon, null);
 });
 
-test('administración: búsqueda, acciones masivas, auditoría, resumen y «Ver como» en solo lectura', async () => {
+test('administración: búsqueda, acciones masivas, auditoría, resumen y suplantación auditada', async () => {
   const admin = await call('/api/login', { method: 'POST', body: { email: 'jefe@cencerro.es', password: 'adminadmin' } });
   const reg = (name, email) => call('/api/register', { method: 'POST', body: { name, email, password: 'pistapista' } });
   const [zoe, zack] = [await reg('Zoe Zeta', 'zoe@x.es'), await reg('Zack Zeta', 'zack@x.es')];
@@ -409,16 +409,17 @@ test('administración: búsqueda, acciones masivas, auditoría, resumen y «Ver 
   const overview = await call('/api/admin/overview', { token: admin.token });
   assert.ok(overview.counts.users >= 2 && overview.counts.organizers >= 2);
 
-  // «Ver como»: con motivo, nunca a un admin, solo lectura y auditado.
-  assert.equal((await call(`/api/admin/users/${zack.user.id}/impersonate`, { token: admin.token, method: 'POST', body: {} })).status, 400);
-  assert.equal((await call(`/api/admin/users/${admin.user.id}/impersonate`, { token: admin.token, method: 'POST', body: { reason: 'probar' } })).status, 403);
-  const { token } = await call(`/api/admin/users/${zack.user.id}/impersonate`, { token: admin.token, method: 'POST', body: { reason: 'No ve sus eventos' } });
+  // Suplantar: sin motivo, nunca a un admin; puede escribir (auditado) pero no cambiar la contraseña ni darse de baja.
+  assert.equal((await call(`/api/admin/users/${admin.user.id}/impersonate`, { token: admin.token, method: 'POST', body: {} })).status, 403);
+  const { token } = await call(`/api/admin/users/${zack.user.id}/impersonate`, { token: admin.token, method: 'POST', body: {} });
   const me = await call('/api/me', { token });
   assert.equal(me.user.id, zack.user.id);
   assert.ok(me.user.impersonatedUntil - Date.now() <= 30 * 60_000);
-  assert.equal((await call('/api/events', { token, method: 'POST', body: { name: 'No' } })).status, 403);
+  assert.equal((await call('/api/me', { token, method: 'PATCH', body: { name: 'Zack Suplantado' } })).user.name, 'Zack Suplantado');
+  assert.equal((await call('/api/password', { token, method: 'POST', body: { current: 'x', next: 'nuevaclave123' } })).status, 403);
+  assert.equal((await call('/api/me', { token, method: 'DELETE', body: { password: 'x' } })).status, 403);
   assert.equal((await call('/api/impersonation/end', { token, method: 'POST' })).ok, true);
-  const trail = (await call('/api/admin/audit', { token: admin.token })).rows.slice(0, 2);
-  assert.deepEqual(trail.map((r) => r.action), ['impersonate.end', 'impersonate.start']);
-  assert.equal(trail[1].data.reason, 'No ve sus eventos');
+  const trail = (await call('/api/admin/audit', { token: admin.token })).rows.slice(0, 3);
+  assert.deepEqual(trail.map((r) => r.action), ['impersonate.end', 'impersonate.write', 'impersonate.start']);
+  assert.deepEqual([trail[1].actor, trail[1].subject, trail[1].data.method, trail[1].data.path], [admin.user.name, zack.user.id, 'PATCH', '/api/me']);
 });

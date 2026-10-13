@@ -1,5 +1,5 @@
 // Administración de la plataforma: Resumen (métricas, en vivo y lo que necesita atención), Cuentas (búsqueda,
-// filtros y acciones masivas en el servidor, con panel de detalle y «Ver como» en solo lectura), Equipos y
+// filtros y acciones masivas en el servidor, con panel de detalle y «Suplantar» de un clic), Equipos y
 // Auditoría. Cada cambio de un admin queda en la auditoría.
 import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
@@ -32,8 +32,9 @@ export function auditText(r) {
     'event.delete': () => `Evento eliminado: ${d.event}`,
     'event.organizer': () => `Nuevo organizador de ${d.event}`,
     'event.results': () => `Resultado publicado en ${d.event} (${d.session === 'race' ? 'carrera' : 'entrenamiento'})`,
-    'impersonate.start': () => `Ver como ${d.name} · motivo: «${d.reason}»`,
-    'impersonate.end': () => `Fin de ver como ${d.name}`,
+    'impersonate.start': () => `Suplanta a ${d.name}${d.reason ? ` · motivo: «${d.reason}»` : ''}`,
+    'impersonate.write': () => `Suplantando a ${d.name}: ${d.method} ${d.path}`,
+    'impersonate.end': () => `Fin de suplantar a ${d.name}`,
   }[r.action] ?? (() => r.action))();
 }
 
@@ -226,12 +227,11 @@ function BulkBar({ count, onAction, onClear }) {
   );
 }
 
-// Panel lateral de una cuenta: datos, rol, contraseña, «Ver como», eliminar e historial.
+// Panel lateral de una cuenta: datos, rol, contraseña, suplantar, eliminar e historial.
 function UserPanel({ id, me, onClose, onChanged, onTemps, onNav }) {
   const [u, setU] = useState(null);
   const [error, setError] = useState('');
   const [role, setRole] = useState(null); // rol a confirmar
-  const [reason, setReason] = useState(null); // «Ver como»: motivo (null: cerrado)
   const load = () => api(`/api/admin/users/${id}`).then(setU).catch((e) => setError(e.message));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const k = (e) => e.key === 'Escape' && onClose(); addEventListener('keydown', k); return () => removeEventListener('keydown', k); });
@@ -274,21 +274,13 @@ function UserPanel({ id, me, onClose, onChanged, onTemps, onNav }) {
             {!self && <div className="flex flex-wrap gap-2">
               <button onClick={() => act(async () => { const r = await api(`/api/admin/users/${u.id}/reset`, { method: 'POST' }); onTemps([{ id: u.id, name: u.name, password: r.tempPassword }]); })} className={btn.ghost}>
                 <Icon name="key" size={14} />Restablecer contraseña</button>
-              {u.role !== 'admin' && reason == null && <button onClick={() => setReason('')} className={btn.ghost}><Icon name="eye" size={14} />Ver como {u.name.split(' ')[0]}</button>}
+              {/* Un clic: 30 min con control de su cuenta; cada cambio queda en la auditoría. Sin act(): con el token
+                  nuevo ya no se puede recargar esta cuenta (es solo para admins). */}
+              {u.role !== 'admin' && <button title="Controlar su cuenta 30 min (queda en la auditoría)" className={btn.ghost}
+                onClick={() => api(`/api/admin/users/${u.id}/impersonate`, { method: 'POST', body: {} })
+                  .then(({ token }) => impersonate(token)).then(() => onNav('')).catch((err) => setError(err.message))}>
+                <Icon name="eye" size={14} />Suplantar</button>}
             </div>}
-            {reason != null && (
-              <form className="flex flex-col gap-2 rounded-[4px] border border-line bg-sunken p-3" onSubmit={(e) => {
-                e.preventDefault();
-                // Sin act(): con el token nuevo ya no se puede recargar esta cuenta (es solo para admins).
-                api(`/api/admin/users/${u.id}/impersonate`, { method: 'POST', body: { reason } })
-                  .then(({ token }) => impersonate(token)).then(() => onNav('')).catch((err) => setError(err.message));
-              }}>
-                <Field label="Motivo (queda en la auditoría)" help="Verás la app como esta persona durante 30 min, en solo lectura: no podrás cambiar nada ni enviar nada en su nombre.">
-                  <input className={input} value={reason} onChange={(e) => setReason(e.target.value)} minLength={5} maxLength={200} required autoFocus placeholder="No ve sus vueltas en Estadísticas" />
-                </Field>
-                <span className="flex gap-2"><button className={btn.primary}>Ver como {u.name.split(' ')[0]}</button><button type="button" onClick={() => setReason(null)} className={btn.ghost}>Cancelar</button></span>
-              </form>
-            )}
             {!self && (
               <div className="flex flex-col gap-2 rounded-[4px] border border-crit p-3">
                 <span className="label text-crit">Zona de peligro</span>
@@ -361,7 +353,7 @@ export function AdminAudit({ onNav }) {
   useEffect(() => { api(`/api/admin/audit?page=${page}`).then(setData).catch((e) => setError(e.message)); }, [page]);
   const pages = data ? Math.max(1, Math.ceil(data.total / data.per)) : 1;
   return (
-    <Page title="Auditoría" subtitle="Quién ha cambiado qué: roles, contraseñas, bajas, eventos, resultados y cada «Ver como» con su motivo.">
+    <Page title="Auditoría" subtitle="Quién ha cambiado qué: roles, contraseñas, bajas, eventos, resultados y cada suplantación con lo que se hizo.">
       <ErrorText>{error}</ErrorText>
       <Card title={`Registro${data ? ` · ${data.total}` : ''}`} flush>
         {!data ? <p className="p-4 text-muted">Cargando…</p> : data.rows.length === 0 ? <p className="p-4 text-[14px] text-muted">Aún no hay nada registrado.</p> : (

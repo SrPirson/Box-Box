@@ -49,7 +49,7 @@ export async function refresh() {
   set({ ready: true });
 }
 
-// «Ver como» (solo lectura): se guarda el token del admin y se entra con el de esa persona. Al salir, o cuando
+// Suplantar: se guarda el token del admin y se entra con el de esa persona. Al salir, o cuando
 // caduca (30 min, el servidor responde 401), se vuelve a la sesión del admin.
 export function impersonate(token) {
   write(ADMIN, state.token);
