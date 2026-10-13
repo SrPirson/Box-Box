@@ -21,14 +21,33 @@ const eventRoom = (eventId) => `event:${eventId}`;
 const EVENT_EVERY_MS = 1000;
 
 // Dirección de carrera: la bandera actual de cada evento llega a todos sus equipos y se queda hasta que el
-// organizador la cambia; la verde la retira. Solo en memoria. seen: equipos que la han visto (pulsan «Visto»).
-const FLAGS = ['green', 'yellow', 'sc', 'red', 'text'];
+// organizador la cambia; la verde la retira. seen: equipos que la han visto (pulsan «Visto»). En memoria y en
+// event_log, del que se recupera al arrancar.
+const FLAGS = ['green', 'yellow', 'sc', 'red', 'chequered', 'text'];
 const flags = new Map(); // eventId → { type, text, ts, seen: Set<teamId> }
 const flagOf = (eventId) => { const f = flags.get(eventId); return f ? { type: f.type, text: f.text, ts: f.ts, age: Date.now() - f.ts } : null; };
 const flagStatus = (eventId) => { const f = flags.get(eventId); return f && { ...flagOf(eventId), seen: [...f.seen] }; };
 const canRun = (u, e) => e && (u.role === 'admin' || (u.role === 'organizer' && e.organizer_id === u.id));
-async function setFlag(eventId, type, text) {
-  flags.set(eventId, { type, text, ts: Date.now(), seen: new Set() });
+// Registro del evento: se guarda y llega en vivo a quien sigue el evento (Race Control).
+export async function logEvent(eventId, kind, data) {
+  const r = await one('insert into event_log (event_id, kind, data) values ($1, $2, $3) returning id, ts, kind, data', [eventId, kind, data])
+    .catch((e) => { console.error('event_log', e.message); return null; });
+  if (r) io.to(eventRoom(eventId)).emit('event:log', r);
+}
+// Al arrancar: la última bandera de cada evento (del último día; la verde no se queda) y quién la ha visto.
+async function restoreFlags() {
+  const rows = await q(`select distinct on (event_id) event_id, data from event_log
+    where kind = 'flag' and ts > now() - interval '1 day' order by event_id, id desc`);
+  for (const { event_id: ev, data: f } of rows) {
+    if (f.type === 'green' || flags.has(ev)) continue;
+    const seen = await q(`select data->>'teamId' as t from event_log where event_id = $1 and kind = 'seen' and (data->>'flagTs')::bigint = $2`, [ev, f.ts]);
+    flags.set(ev, { type: f.type, text: f.text, ts: f.ts, seen: new Set(seen.map((s) => Number(s.t))) });
+  }
+}
+async function setFlag(eventId, type, text, by) {
+  const ts = Date.now();
+  flags.set(eventId, { type, text, ts, seen: new Set() });
+  logEvent(eventId, 'flag', { type, text, ts, by });
   for (const t of await q('select id from teams where event_id = $1 and racing', [eventId])) io.to(room(t.id)).emit('flag', flagOf(eventId));
   io.to(eventRoom(eventId)).emit('event:flag', flagStatus(eventId));
 }
@@ -50,9 +69,12 @@ const setPit = (st, pit) => {
 };
 const PIT_REASONS = { pit: 'Entrada a box', fuel: 'Repostaje' };
 
-const setDriver = (st, u) => {
+// driver: quién conduce (a quien se atribuyen vueltas y muestras); by: la cuenta del móvil del coche, la única
+// que puede enviar la telemetría. Suelen coincidir, pero desde el móvil del coche se puede elegir a otro
+// miembro del equipo sin desconectar el OBD.
+const setDriver = (st, u, by = u?.id) => {
   const prev = st.driver;
-  st.driver = u && { id: u.id, name: u.name };
+  st.driver = u && { id: u.id, name: u.name, by };
   if (prev && st.driver && prev.id !== st.driver.id) {
     // Relevo: la vuelta del cambio no es representativa ni de uno ni de otro.
     st.lap.restart();
@@ -62,6 +84,15 @@ const setDriver = (st, u) => {
   io.to(room(st.team.id)).emit('driver', st.driver);
 };
 const presence = (st) => io.to(room(st.team.id)).emit('presence', [...st.online.keys()]);
+
+// Para el resumen del admin: equipos con alguien conectado ahora y banderas activas (no verdes) por evento.
+export async function liveStats() {
+  const all = await Promise.all(states.values());
+  return {
+    teamsOnline: all.filter((st) => st.team && st.online.size > 0).length,
+    flags: [...flags.entries()].filter(([, f]) => f.type !== 'green').map(([eventId, f]) => ({ eventId, type: f.type, ts: f.ts })),
+  };
+}
 
 // Llamado por la API cuando cambian dorsal, límites, meta o trazado.
 export async function teamChanged(teamId) {
@@ -88,7 +119,7 @@ export async function kick(userId) {
   for (const s of await io.fetchSockets()) if (s.data.user.id === userId) s.disconnect(true);
   for (const p of states.values()) {
     const st = await p;
-    if (st.driver?.id === userId) setDriver(st, null);
+    if (st.driver?.id === userId || st.driver?.by === userId) setDriver(st, null);
   }
 }
 
@@ -99,8 +130,11 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 export function attachLive(server, userFromToken) {
   io = server;
+  // Nadie entra hasta tener recuperadas las banderas: quien conecta tras un reinicio recibe la que hay.
+  const restored = restoreFlags().catch((e) => console.error('banderas', e.message));
   // Entran los miembros de un equipo y, aunque no tengan equipo, los organizadores (para seguir sus eventos).
   io.use(async (socket, next) => {
+    await restored;
     const u = await userFromToken(socket.handshake.auth?.token).catch(() => null);
     if (!u || (!u.team_id && !['organizer', 'admin'].includes(u.role))) return next(new Error('unauthorized'));
     socket.data.user = u;
@@ -116,10 +150,13 @@ export function attachLive(server, userFromToken) {
       socket.join(eventRoom(e.id));
       socket.emit('event:flag', flagStatus(e.id));
     });
-    socket.on('event:flag', async (d) => {
+    // ack: el panel sabe si la bandera ha llegado al servidor (sin acuse, avisa de que no se ha enviado).
+    socket.on('event:flag', async (d, ack) => {
       const e = await one('select id, organizer_id from events where id = $1', [Number(d?.eventId)]).catch(() => null);
       const text = String(d?.text ?? '').trim().slice(0, 120);
-      if (canRun(u, e) && FLAGS.includes(d.type) && (d.type !== 'text' || text)) await setFlag(e.id, d.type, d.type === 'text' ? text : null);
+      const ok = canRun(u, e) && FLAGS.includes(d?.type) && (d.type !== 'text' || !!text);
+      if (ok) await setFlag(e.id, d.type, d.type === 'text' ? text : null, u.name);
+      if (typeof ack === 'function') ack({ ok });
     });
     socket.on('event:unwatch', (eventId) => socket.leave(eventRoom(Number(eventId))));
     if (!u.team_id) return;
@@ -137,8 +174,9 @@ export function attachLive(server, userFromToken) {
     socket.on('flag:seen', (ts) => {
       const ev = st.team.event_id;
       const f = flags.get(ev);
-      if (!f || f.ts !== ts) return;
+      if (!f || f.ts !== ts || f.seen.has(st.team.id)) return;
       f.seen.add(st.team.id);
+      logEvent(ev, 'seen', { flagTs: ts, teamId: st.team.id, team: st.team.name, by: u.name });
       io.to(eventRoom(ev)).emit('event:flag', flagStatus(ev));
     });
     // BOX confirma la llegada del coche ('arrived', empieza la cuenta) o termina/cancela la parada (false).
@@ -151,13 +189,19 @@ export function attachLive(server, userFromToken) {
       presence(st);
     });
 
-    // Tomar el volante: el piloto anterior deja de poder enviar telemetría.
-    socket.on('drive', () => setDriver(st, u));
+    // Tomar el volante: el móvil anterior deja de poder enviar telemetría. Sin driverId conduce el dueño de
+    // la cuenta, salvo que este móvil ya fuera el del coche (sigue el piloto elegido). Con driverId, conduce
+    // ese miembro del equipo (cambio de piloto rápido); si no es del equipo, se ignora.
+    socket.on('drive', async (d) => {
+      if (d?.driverId == null) return setDriver(st, st.driver?.by === u.id ? st.driver : u, u.id);
+      const m = await one('select id, name from users where id = $1 and team_id = $2', [Number(d.driverId), st.team.id]).catch(() => null);
+      if (m) setDriver(st, m, u.id);
+    });
 
     const telemetry = (packets, batch) => {
       if (!Array.isArray(packets) || !packets.length) return;
       if (!st.driver) setDriver(st, u);
-      if (st.driver.id !== u.id) return socket.emit('driver', st.driver);
+      if (st.driver.by !== u.id) return socket.emit('driver', st.driver);
       const now = Date.now();
       const out = [];
       for (const p of packets.slice(0, 1000).sort((a, b) => a.ts - b.ts)) {
@@ -169,24 +213,25 @@ export function attachLive(server, userFromToken) {
         if (st.pit?.arrived && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null);
         const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
         s.at = loc?.at;
+        const d = st.driver;
         const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
         if (lap) {
           // JSON.stringify: pg mandaría un array JS como array de Postgres, no como jsonb.
           q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id, event_id, kind) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
-            [st.team.id, u.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors),
+            [st.team.id, d.id, lap.startedAt, lap.ms, lap.avgTemp, lap.maxTemp, lap.avgRpm, lap.maxRpm, lap.maxSpeed, lap.minVolt, lap.sectors && JSON.stringify(lap.sectors),
               st.team.event_id ? null : st.team.track?.id ?? null, st.team.event_id, kindOf(st.team)])
-            .then(() => st.team.event_id && io.to(eventRoom(st.team.event_id)).emit('event:lap', { teamId: st.team.id, team: st.team.name, ms: lap.ms, driver: u.name }))
+            .then(() => st.team.event_id && io.to(eventRoom(st.team.event_id)).emit('event:lap', { teamId: st.team.id, team: st.team.name, ms: lap.ms, driver: d.name }))
             .catch((e) => console.error('lap', e.message));
-          io.to(r).emit('lap', { ...lap, driver: u.name, driverId: u.id });
+          io.to(r).emit('lap', { ...lap, driver: d.name, driverId: d.id });
         }
         if (ts - st.lastStored >= 1000) {
           st.lastStored = ts;
           q('insert into samples (team_id, driver_id, ts, rpm, coolant, throttle, voltage, speed, lat, lng, kind, track_id) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12)',
-            [st.team.id, u.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng, kindOf(st.team), st.team.event_id ? null : st.team.track?.id ?? null]).catch((e) => console.error('sample', e.message));
+            [st.team.id, d.id, ts, s.rpm, s.coolant, s.throttle, s.voltage, s.speed, s.lat, s.lng, kindOf(st.team), st.team.event_id ? null : st.team.track?.id ?? null]).catch((e) => console.error('sample', e.message));
         }
         // Fuera de pista: metros al trazado descontando el error del GPS, para no avisar por un fix impreciso.
         const offTrack = loc ? Math.round(Math.max(0, loc.dist - (num(g.acc) ?? 0))) : null;
-        out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: u.name, lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
+        out.push({ ...p, ts, offTrack, car: st.team.dorsal, limits: st.team.limits, driver: d.name, lapStartedAt: st.lap.startedAt, lapSplits: st.lap.splits });
       }
       batch ? socket.to(r).emit('telemetry:batch', { packets: out }) : socket.to(r).emit('telemetry', out[0]);
       // Resumen para el organizador del evento, como mucho una vez por segundo.
@@ -194,7 +239,7 @@ export function attachLive(server, userFromToken) {
       if (st.team.event_id && now - st.lastEvent >= EVENT_EVERY_MS) {
         st.lastEvent = now;
         io.to(eventRoom(st.team.event_id)).emit('event:car', {
-          teamId: st.team.id, team: st.team.name, car: st.team.dorsal, driver: u.name, ts: last.ts,
+          teamId: st.team.id, team: st.team.name, car: st.team.dorsal, driver: st.driver.name, ts: last.ts,
           gps: last.gps ?? null, compass: last.compass ?? null, lapStartedAt: last.lapStartedAt, pit: st.pit?.arrived ? st.pit.reason : null,
         });
       }

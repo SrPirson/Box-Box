@@ -1,7 +1,7 @@
 // API REST: cuentas, equipos con invitación, administración y estadísticas.
 import { q, one } from './db.js';
 import { hashPassword, checkPassword, sign, verify, randomCode, tempPassword } from './auth.js';
-import { teamChanged, kick, teamNotice } from './live.js';
+import { teamChanged, kick, teamNotice, logEvent, liveStats } from './live.js';
 import { LIMITS, limitErrors } from '../src/lib/limits.js';
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
@@ -13,8 +13,15 @@ export async function userFromToken(token) {
   const p = verify(token);
   if (!p) return null;
   const u = await one('select * from users where id = $1', [p.uid]);
-  return u && u.pass.slice(0, 8) === p.pv ? u : null;
+  if (!u || u.pass.slice(0, 8) !== p.pv) return null;
+  // Último acceso, como mucho una escritura cada 5 min; viendo la app como otra persona no cuenta.
+  if (!p.imp && (!u.last_seen_at || Date.now() - u.last_seen_at > 300_000)) q('update users set last_seen_at = now() where id = $1', [u.id]).catch(() => {});
+  return p.imp ? { ...u, imp: p.imp, impUntil: p.exp } : u;
 }
+
+// Auditoría: actor (quien lo hace), acción, cuenta afectada (subject) y detalles legibles (nombres, motivo…).
+const audit = (actor, action, subject = null, data = {}) => q('insert into audit_log (actor_id, actor, action, subject, data) values ($1, $2, $3, $4, $5)',
+  [actor?.id ?? null, actor?.name ?? null, action, subject, data]).catch((e) => console.error('audit', e.message));
 
 // ── Validación en el borde ──
 const str = (v, name, { min = 1, max = 100 } = {}) => {
@@ -31,10 +38,20 @@ const password = (v) => str(v, 'Contraseña', { min: 8, max: 200 });
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // ── Respuestas ──
-const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id });
+const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id,
+  ...(u.imp && { impersonatedUntil: u.impUntil }) });
 // Columnas de un evento (la fecha como texto: un date de Postgres llega como Date a medianoche local y se desplaza).
-const EVENT_COLS = "id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session";
-const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session });
+const EVENT_COLS = `id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft, max_teams, public_code,
+  (extract(epoch from session_started_at) * 1000)::float8 as session_started_at`;
+const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session,
+  draft: e.draft, maxTeams: e.max_teams, sessionStartedAt: e.session_started_at });
+// ¿Se puede inscribir un equipo en este evento? (e: con id, closed, draft y max_teams)
+const ENROLL_COLS = 'id, closed, draft, max_teams';
+async function checkEnroll(e) {
+  if (e?.draft) fail(409, 'Este evento aún no está publicado.');
+  if (e?.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
+  if (e?.max_teams && (await one('select count(*)::int as n from teams where event_id = $1', [e.id])).n >= e.max_teams) fail(409, 'El evento está completo: no quedan plazas.');
+}
 const KINDS = ['free', 'practice', 'race'];
 // Filtro opcional por tipo de vuelta (?kind=free|practice|race); null = todas.
 const kindParam = (url) => { const k = url.searchParams.get('kind'); return KINDS.includes(k) ? k : null; };
@@ -84,8 +101,24 @@ async function eventPayload(e) {
       coalesce(json_agg(json_build_object('id', u.id, 'name', u.name) order by u.created_at) filter (where u.id is not null), '[]') as members
     from teams t left join users u on u.team_id = t.id where t.event_id = $1 group by t.id order by t.created_at`, [e.id]);
   const org = e.organizer_id && await one('select name from users where id = $1', [e.organizer_id]);
-  return { ...eventSummary(e), inviteCode: e.invite_code, track: e.track, organizerId: e.organizer_id, organizer: org?.name ?? null,
+  return { ...eventSummary(e), inviteCode: e.invite_code, publicCode: e.public_code, track: e.track, organizerId: e.organizer_id, organizer: org?.name ?? null,
     teams: teams.map((t) => ({ id: t.id, name: t.name, dorsal: t.dorsal, inviteCode: t.invite_code, members: t.members, carIcon: t.car_icon, carIconStyle: t.car_icon_style, racing: t.racing })) };
+}
+// Clasificación de una sesión por equipo: vueltas, mejor, última y cuándo cruzó la meta por última vez
+// (desempate en resistencia), con el piloto de la mejor vuelta.
+const standingsOf = (e, s) => q(`select t.id, t.name, t.dorsal, t.racing, count(l.id)::int as laps, min(l.ms)::int as best,
+    (array_agg(l.ms order by l.started_at desc))[1] as last,
+    max(l.started_at + l.ms * interval '1 millisecond') as last_at,
+    (select u.name from laps b join users u on u.id = b.driver_id where b.team_id = t.id and b.event_id = $1 and b.kind = $2 order by b.ms limit 1) as best_driver
+  from teams t left join laps l on l.team_id = t.id and l.event_id = $1 and l.kind = $2
+  where t.event_id = $1 group by t.id order by t.created_at`, [e.id, s]);
+// Resultados publicados de un evento (entrenamiento primero) y el código de su enlace público.
+async function eventResults(eventId) {
+  const [results, e] = await Promise.all([
+    q(`select session, published_at as "publishedAt", published_by as "publishedBy", sort, rows from event_results where event_id = $1 order by session = 'race', session`, [eventId]),
+    one('select public_code from events where id = $1', [eventId]),
+  ]);
+  return { publicCode: e?.public_code ?? null, results };
 }
 const eventFields = (body) => {
   const set = {};
@@ -102,6 +135,11 @@ const eventFields = (body) => {
     set.session = body.session;
   }
   if ('track' in body) { const geo = trackGeometry(body.track); set.track = Object.keys(geo).length ? geo : null; }
+  if ('maxTeams' in body) {
+    const n = body.maxTeams === '' || body.maxTeams == null ? null : Number(body.maxTeams);
+    if (n != null && !(Number.isInteger(n) && n >= 1 && n <= 500)) fail(400, 'El cupo tiene que ser un número de equipos entre 1 y 500, o vacío para no tener límite.');
+    set.max_teams = n;
+  }
   return set;
 };
 // Cambios en la pista del evento (o el evento borrado): cada equipo recarga la suya y reinicia el cronometraje.
@@ -205,10 +243,10 @@ const routes = [
     let eventId = null;
     if (body.eventCode || body.eventId) {
       const e = body.eventCode
-        ? await one('select id, closed from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()])
-        : await one('select id, closed from events where id = $1 and not private', [Number(body.eventId)]);
+        ? await one(`select ${ENROLL_COLS} from events where invite_code = $1`, [String(body.eventCode).trim().toUpperCase()])
+        : await one(`select ${ENROLL_COLS} from events where id = $1 and not private`, [Number(body.eventId)]);
       if (!e) fail(404, body.eventCode ? 'Ese código de evento no existe.' : 'Ese evento no existe o es privado.');
-      if (e.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
+      await checkEnroll(e);
       eventId = e.id;
     }
     // En un evento, el siguiente dorsal libre (para no tener varios «#1»); el equipo puede cambiarlo después.
@@ -227,6 +265,7 @@ const routes = [
     if (t) return { kind: 'team', team: { name: t.name, event: t.event } };
     const e = await one(`select ${EVENT_COLS} from events where invite_code = $1`, [code]);
     if (!e) fail(404, 'Ese código no existe. Pide uno nuevo al equipo o al organizador.');
+    if (e.draft) fail(409, 'Este evento aún no está publicado.');
     const teams = await q('select t.name, t.dorsal, (select count(*)::int from users u where u.team_id = t.id) as members from teams t where t.event_id = $1 order by t.created_at', [e.id]);
     return { kind: 'event', event: { ...eventSummary(e), teams } };
   }],
@@ -241,10 +280,10 @@ const routes = [
   ['POST', '/api/team/enroll', 'team', async ({ user, team, body }) => {
     if (!isOwner(user, team)) fail(403, 'Solo el capitán puede inscribir al equipo en un evento.');
     let e = null;
-    if (body.eventCode) e = await one('select id, closed from events where invite_code = $1', [String(body.eventCode).trim().toUpperCase()]);
-    else if (body.eventId != null) e = await one('select id, closed from events where id = $1 and not private', [Number(body.eventId)]);
+    if (body.eventCode) e = await one(`select ${ENROLL_COLS} from events where invite_code = $1`, [String(body.eventCode).trim().toUpperCase()]);
+    else if (body.eventId != null) e = await one(`select ${ENROLL_COLS} from events where id = $1 and not private`, [Number(body.eventId)]);
     if ((body.eventCode || body.eventId != null) && !e) fail(404, 'Ese evento no existe o es privado.');
-    if (e?.closed) fail(409, 'Las inscripciones de este evento están cerradas.');
+    if (e && e.id !== team.event_id) await checkEnroll(e);
     let dorsal = team.dorsal;
     if (e && (await one('select 1 from teams where event_id = $1 and dorsal = $2 and id <> $3', [e.id, dorsal, team.id]))) {
       dorsal = String((await one(`select coalesce(max(nullif(regexp_replace(dorsal, '[^0-9]', '', 'g'), '')::int), 0) + 1 as n from teams where event_id = $1`, [e.id])).n);
@@ -381,8 +420,10 @@ const routes = [
 
   // Eventos (organizadores; el admin ve y gestiona todos).
   // Lista del organizador (sus eventos) o del admin (todos, con su organizador).
-  ['GET', '/api/events', 'organizer', ({ user, url }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, e.private,
-      o.name as organizer, (select count(*)::int from teams t where t.event_id = e.id) as teams
+  ['GET', '/api/events', 'organizer', ({ user, url }) => q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, e.private, e.draft, e.max_teams as "maxTeams",
+      (e.track->'line') is not null as "hasFinish", e.invite_code as "inviteCode",
+      o.name as organizer, (select count(*)::int from teams t where t.event_id = e.id) as teams,
+      (select count(*)::int from teams t where t.event_id = e.id and t.racing) as racing
     from events e left join users o on o.id = e.organizer_id
     where ($1 and $3) or e.organizer_id = $2 order by e.starts_on desc nulls last, e.created_at desc`,
   [user.role === 'admin', user.id, url.searchParams.get('all') === '1'])],
@@ -392,14 +433,15 @@ const routes = [
     return q(`select e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as "startsOn", e.place, e.closed, o.name as organizer,
         (select count(*)::int from teams t where t.event_id = e.id) as teams
       from events e left join users o on o.id = e.organizer_id
-      where not e.private and ($1 = '' or e.name ilike '%' || $1 || '%' or e.place ilike '%' || $1 || '%')
+      where not e.private and not e.draft and ($1 = '' or e.name ilike '%' || $1 || '%' or e.place ilike '%' || $1 || '%')
         and ${past ? 'e.starts_on < current_date' : '(e.starts_on is null or e.starts_on >= current_date) and not e.closed'}
       order by e.starts_on ${past ? 'desc' : 'asc'} nulls last, e.created_at desc limit 100`, [String(url.searchParams.get('q') ?? '').trim().slice(0, 60)]);
   }],
   ['POST', '/api/events', 'organizer', async ({ user, body }) => {
     const f = eventFields({ name: body.name, place: body.place ?? '', startsOn: body.startsOn });
-    const e = await one('insert into events (name, place, starts_on, organizer_id, invite_code) values ($1, $2, $3, $4, $5) returning id',
+    const e = await one('insert into events (name, place, starts_on, organizer_id, invite_code, draft) values ($1, $2, $3, $4, $5, true) returning id',
       [f.name, f.place, f.starts_on, user.id, await uniqueCode()]);
+    audit(user, 'event.create', null, { eventId: e.id, event: f.name });
     return eventPayload(await ownEvent(user, e.id));
   }],
   ['GET', /^\/api\/events\/(\d+)$/, 'organizer', async ({ user, params }) => eventPayload(await ownEvent(user, Number(params[0])))],
@@ -412,11 +454,46 @@ const routes = [
       const o = await one("select id from users where id = $1 and role in ('organizer', 'admin')", [Number(body.organizerId)]);
       if (!o) fail(400, 'Esa persona no es organizadora.');
       set.organizer_id = o.id;
+      audit(user, 'event.organizer', o.id, { eventId: e.id, event: e.name });
     }
+    // Publicar (no tiene vuelta atrás): hace falta la fecha y la meta, o no se cronometraría ninguna vuelta.
+    if (body.draft === false && e.draft) {
+      if (!('starts_on' in set ? set.starts_on : e.starts_on)) fail(400, 'Pon la fecha del evento antes de publicarlo.');
+      if (!('track' in set ? set.track : e.track)?.line) fail(400, 'Marca la línea de meta antes de publicar: sin ella no se cronometra ninguna vuelta.');
+      set.draft = false;
+      audit(user, 'event.publish', null, { eventId: e.id, event: e.name });
+    }
+    // Cambiar de sesión (o empezarla de nuevo) pone en marcha su reloj y queda en el registro.
+    const newSession = 'session' in set && set.session !== e.session;
+    if (newSession || body.sessionStart === true) set.session_started_at = new Date();
     const keys = Object.keys(set);
     if (keys.length) await q(`update events set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} where id = $1`, [e.id, ...keys.map((k) => set[k])]);
     if (keys.length) await eventTeamsChanged(e.id); // los equipos ven nombre, fecha, estado y pista del evento
+    if (set.session_started_at) await logEvent(e.id, 'session', { session: set.session ?? e.session, restart: !newSession, by: user.name });
     return eventPayload(await ownEvent(user, e.id));
+  }],
+  // Registro de dirección de carrera (lo más reciente primero).
+  ['GET', /^\/api\/events\/(\d+)\/log$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    return q('select id, ts, kind, data from event_log where event_id = $1 order by id desc limit 500', [e.id]);
+  }],
+  // Pistas que se pueden copiar a este evento: las guardadas del equipo del organizador y las de sus otros eventos.
+  ['GET', /^\/api\/events\/(\d+)\/track-sources$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const [tracks, events] = await Promise.all([
+      user.team_id ? q('select id, name, track from tracks where team_id = $1 order by name', [user.team_id]) : [],
+      q(`select id, name, track from events where organizer_id = $1 and id <> $2 and track->'line' is not null order by created_at desc limit 50`, [e.organizer_id, e.id]),
+    ]);
+    return [...tracks.map((t) => ({ key: `t${t.id}`, label: `Pista guardada · ${t.name}`, track: t.track })),
+      ...events.map((x) => ({ key: `e${x.id}`, label: `Evento · ${x.name}`, track: x.track }))];
+  }],
+  // Recordar a un equipo inscrito que active «Participar» (le llega al registro de su BOX).
+  ['POST', /^\/api\/events\/(\d+)\/teams\/(\d+)\/remind$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const t = await one('select id from teams where id = $1 and event_id = $2', [Number(params[1]), e.id]);
+    if (!t) fail(404, 'Ese equipo no está en el evento.');
+    teamNotice(t.id, `La organización de «${e.name}» os recuerda que activéis «Participar» para correr el evento.`);
+    return { ok: true };
   }],
   ['POST', /^\/api\/events\/(\d+)\/invite$/, 'organizer', async ({ user, params }) => {
     const e = await ownEvent(user, Number(params[0]));
@@ -455,6 +532,7 @@ const routes = [
     const e = await ownEvent(user, Number(params[0]));
     const teams = await q('select id from teams where event_id = $1', [e.id]);
     await q('delete from events where id = $1', [e.id]);
+    audit(user, 'event.delete', null, { eventId: e.id, event: e.name, teams: teams.length });
     for (const t of teams) await teamChanged(t.id);
     return { ok: true };
   }],
@@ -462,54 +540,168 @@ const routes = [
   // última y cuándo cruzó la meta por última vez (desempate en resistencia).
   ['GET', /^\/api\/events\/(\d+)\/standings$/, 'organizer', async ({ user, params, url }) => {
     const e = await ownEvent(user, Number(params[0]));
-    const s = ['practice', 'race'].includes(url.searchParams.get('session')) ? url.searchParams.get('session') : e.session;
-    return q(`select t.id, t.name, t.dorsal, t.racing, count(l.id)::int as laps, min(l.ms)::int as best,
-        (array_agg(l.ms order by l.started_at desc))[1] as last,
-        max(l.started_at + l.ms * interval '1 millisecond') as last_at,
-        (select u.name from laps b join users u on u.id = b.driver_id where b.team_id = t.id and b.event_id = $1 and b.kind = $2 order by b.ms limit 1) as best_driver
-      from teams t left join laps l on l.team_id = t.id and l.event_id = $1 and l.kind = $2
-      where t.event_id = $1 group by t.id order by t.created_at`, [e.id, s]);
+    return standingsOf(e, ['practice', 'race'].includes(url.searchParams.get('session')) ? url.searchParams.get('session') : e.session);
+  }],
+  // Publicar el resultado de una sesión (sort: 'best' mejor vuelta o 'laps' más vueltas): una instantánea que ya
+  // no cambia, con enlace público. Volver a publicar la sustituye.
+  ['POST', /^\/api\/events\/(\d+)\/results$/, 'organizer', async ({ user, params, body }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    if (!['practice', 'race'].includes(body.session)) fail(400, 'Sesión no válida.');
+    const sort = body.sort === 'laps' ? 'laps' : 'best';
+    const rows = (await standingsOf(e, body.session)).filter((r) => r.laps > 0)
+      .sort(sort === 'best' ? (a, b) => a.best - b.best : (a, b) => b.laps - a.laps || new Date(a.last_at) - new Date(b.last_at))
+      .map((r, i) => ({ pos: i + 1, dorsal: r.dorsal, team: r.name, laps: r.laps, best: r.best, last: r.last, bestDriver: r.best_driver }));
+    if (!rows.length) fail(409, 'Aún no hay ninguna vuelta en esa sesión.');
+    // Código propio del enlace público: no es el de inscripción (en un evento privado ese no debe circular).
+    if (!e.public_code) await q('update events set public_code = $1 where id = $2', [randomCode(10), e.id]);
+    await q(`insert into event_results (event_id, session, published_by, sort, rows) values ($1, $2, $3, $4, $5)
+      on conflict (event_id, session) do update set published_at = now(), published_by = $3, sort = $4, rows = $5`,
+    [e.id, body.session, user.name, sort, JSON.stringify(rows)]);
+    await logEvent(e.id, 'results', { session: body.session, by: user.name });
+    audit(user, 'event.results', null, { eventId: e.id, event: e.name, session: body.session });
+    return eventResults(e.id);
+  }],
+  ['GET', /^\/api\/events\/(\d+)\/results$/, 'organizer', async ({ user, params }) => eventResults((await ownEvent(user, Number(params[0]))).id)],
+  // Página pública de resultados (sin cuenta): solo lo publicado, sin más datos personales que el nombre del piloto.
+  ['GET', /^\/api\/public\/results\/([A-Za-z0-9]+)$/, 'none', async ({ params }) => {
+    const e = await one(`select id, name, to_char(starts_on, 'YYYY-MM-DD') as "startsOn", place from events where public_code = $1`, [params[0].toUpperCase()]);
+    const r = e && await eventResults(e.id);
+    if (!r?.results.length) fail(404, 'No hay resultados publicados con ese enlace.');
+    return { event: { name: e.name, startsOn: e.startsOn, place: e.place }, results: r.results };
   }],
 
   // Administración de la plataforma
-  ['GET', '/api/admin/users', 'admin', () => q(`select u.id, u.email, u.name, u.role, u.must_reset, u.created_at, t.name as team
-    from users u left join teams t on t.id = u.team_id order by u.created_at desc`)],
+  // Cuentas con búsqueda (nombre, email o equipo), rol (o 'staff': organizadores y admins) y páginas de `per`.
+  ['GET', '/api/admin/users', 'admin', async ({ url }) => {
+    const p = url.searchParams;
+    const per = Math.min(500, Math.max(1, Number(p.get('per')) || 50));
+    const page = Math.max(1, Number(p.get('page')) || 1);
+    const rows = await q(`select u.id, u.email, u.name, u.role, u.must_reset, u.created_at, u.last_seen_at, t.name as team, count(*) over()::int as total
+      from users u left join teams t on t.id = u.team_id
+      where ($1 = '' or u.name ilike '%' || $1 || '%' or u.email ilike '%' || $1 || '%' or t.name ilike '%' || $1 || '%')
+        and ($2 = '' or u.role = $2 or ($2 = 'staff' and u.role in ('organizer', 'admin')))
+      order by u.created_at desc limit $3 offset $4`, [String(p.get('q') ?? '').trim().slice(0, 100), String(p.get('role') ?? ''), per, (page - 1) * per]);
+    return { rows: rows.map(({ total, ...u }) => u), total: rows[0]?.total ?? 0, page, per };
+  }],
+  // Una cuenta: datos, equipo, eventos que organiza e historial de auditoría (lo que le han hecho y lo que ha hecho).
+  ['GET', /^\/api\/admin\/users\/(\d+)$/, 'admin', async ({ params }) => {
+    const id = Number(params[0]);
+    const u = await one(`select u.id, u.email, u.name, u.role, u.must_reset, u.created_at, u.last_seen_at, t.name as team, t.id as team_id,
+        (select count(*)::int from events e where e.organizer_id = u.id) as events,
+        (select count(*)::int from laps l where l.driver_id = u.id) as laps
+      from users u left join teams t on t.id = u.team_id where u.id = $1`, [id]);
+    if (!u) fail(404, 'Ese usuario no existe.');
+    return { ...u, history: await q('select id, ts, actor, action, data from audit_log where subject = $1 or actor_id = $1 order by id desc limit 50', [id]) };
+  }],
   ['GET', '/api/admin/teams', 'admin', () => q(`select t.id, t.name, t.dorsal, t.invite_code, t.created_at, o.name as owner,
     (select count(*)::int from users m where m.team_id = t.id) as members,
     (select count(*)::int from laps l where l.team_id = t.id) as laps
     from teams t left join users o on o.id = t.owner_id order by t.created_at desc`)],
   ['PATCH', /^\/api\/admin\/users\/(\d+)$/, 'admin', async ({ user, params, body }) => {
-    const id = Number(params[0]);
-    if (id === user.id) fail(400, 'No puedes cambiar tu propio rol.');
-    if (!['admin', 'organizer', 'pilot'].includes(body.role)) fail(400, 'Rol no válido.');
-    await q('update users set role = $1 where id = $2', [body.role, id]);
+    await setRole(user, Number(params[0]), body.role);
     return { ok: true };
   }],
-  ['POST', /^\/api\/admin\/users\/(\d+)\/reset$/, 'admin', async ({ params }) => {
-    const temp = tempPassword();
-    const u = await one('update users set pass = $1, must_reset = true where id = $2 returning id', [await hashPassword(temp), Number(params[0])]);
-    if (!u) fail(404, 'Ese usuario no existe.');
-    await kick(u.id);
-    return { tempPassword: temp };
+  ['POST', /^\/api\/admin\/users\/(\d+)\/reset$/, 'admin', async ({ user, params }) => ({ tempPassword: (await resetUser(user, Number(params[0]))).password })],
+  ['DELETE', /^\/api\/admin\/users\/(\d+)$/, 'admin', async ({ user, params }) => { await deleteUser(user, Number(params[0])); return { ok: true }; }],
+  // Acciones masivas: role (con body.role), reset o delete. Sigue con las demás si una falla y dice cuáles.
+  ['POST', '/api/admin/users/bulk', 'admin', async ({ user, body }) => {
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(Number).filter(Number.isInteger))].slice(0, 500);
+    if (!ids.length) fail(400, 'No hay cuentas seleccionadas.');
+    if (!['role', 'reset', 'delete'].includes(body.action)) fail(400, 'Acción no válida.');
+    const done = [], failed = [], passwords = [];
+    for (const id of ids) {
+      try {
+        if (body.action === 'role') await setRole(user, id, body.role);
+        else if (body.action === 'reset') passwords.push(await resetUser(user, id));
+        else await deleteUser(user, id);
+        done.push(id);
+      } catch (e) { failed.push({ id, error: e.message }); }
+    }
+    return { done, failed, passwords };
   }],
-  ['DELETE', /^\/api\/admin\/users\/(\d+)$/, 'admin', async ({ user, params }) => {
+  ['DELETE', /^\/api\/admin\/teams\/(\d+)$/, 'admin', async ({ user, params }) => {
     const id = Number(params[0]);
-    if (id === user.id) fail(400, 'No puedes eliminar tu propia cuenta.');
-    const u = await reload(id);
-    if (!u) fail(404, 'Ese usuario no existe.');
-    await leaveTeam(u);
-    await q('delete from users where id = $1', [id]);
-    return { ok: true };
-  }],
-  ['DELETE', /^\/api\/admin\/teams\/(\d+)$/, 'admin', async ({ params }) => {
-    const id = Number(params[0]);
+    const t = await one('select name from teams where id = $1', [id]);
     const members = await q('select id from users where team_id = $1', [id]);
     await q('delete from teams where id = $1', [id]);
     for (const m of members) await kick(m.id);
     await teamChanged(id);
+    if (t) audit(user, 'team.delete', null, { team: t.name, members: members.length });
+    return { ok: true };
+  }],
+  // Resumen de la plataforma en una consulta, más lo que pasa ahora mismo en vivo.
+  ['GET', '/api/admin/overview', 'admin', async () => {
+    const [c, live, attention, events] = await Promise.all([
+      one(`select (select count(*)::int from users) as users,
+          (select count(*)::int from users where created_at > now() - interval '7 days') as "usersWeek",
+          (select count(*)::int from users where last_seen_at > now() - interval '7 days') as "activeWeek",
+          (select count(*)::int from users where role = 'organizer') as organizers,
+          (select count(*)::int from teams) as teams,
+          (select count(*)::int from events where starts_on = current_date and not draft) as "eventsToday",
+          (select count(*)::int from events where starts_on > current_date and starts_on <= current_date + 30 and not draft) as "eventsNext",
+          (select count(*)::int from laps where started_at > now() - interval '7 days') as "lapsWeek"`),
+      liveStats(),
+      q(`select id, name, email from users where must_reset and created_at < now() - interval '7 days' order by created_at limit 20`),
+      q(`select e.id, e.name, (select count(*)::int from teams t where t.event_id = e.id and not t.racing) as idle
+        from events e where e.starts_on = current_date and not e.draft`),
+    ]);
+    const names = Object.fromEntries((live.flags.length ? await q('select id, name from events where id = any($1)', [live.flags.map((f) => f.eventId)]) : []).map((e) => [e.id, e.name]));
+    return {
+      counts: c, teamsOnline: live.teamsOnline,
+      flags: live.flags.map((f) => ({ ...f, event: names[f.eventId] ?? `Evento ${f.eventId}` })),
+      stalePasswords: attention, idleToday: events.filter((e) => e.idle > 0),
+      recent: await q('select id, ts, actor, action, subject, data from audit_log order by id desc limit 12'),
+    };
+  }],
+  ['GET', '/api/admin/audit', 'admin', async ({ url }) => {
+    const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
+    const rows = await q('select id, ts, actor, action, subject, data, count(*) over()::int as total from audit_log order by id desc limit 100 offset $1', [(page - 1) * 100]);
+    return { rows: rows.map(({ total, ...r }) => r), total: rows[0]?.total ?? 0, page, per: 100 };
+  }],
+  // Suplantar: token de 30 min para controlar la cuenta de esa persona (soporte). Motivo opcional, todo auditado
+  // (inicio, fin y cada escritura), nunca a otro admin.
+  ['POST', /^\/api\/admin\/users\/(\d+)\/impersonate$/, 'admin', async ({ user, params, body }) => {
+    const reason = body.reason ? str(body.reason, 'Motivo', { max: 200 }) : null;
+    const target = await reload(Number(params[0]));
+    if (!target) fail(404, 'Ese usuario no existe.');
+    if (target.id === user.id || target.role === 'admin') fail(403, 'No se puede suplantar a otro administrador.');
+    audit(user, 'impersonate.start', target.id, { name: target.name, reason });
+    return { token: sign(target, { imp: user.id }, IMPERSONATE_MS) };
+  }],
+  ['POST', '/api/impersonation/end', 'user', async ({ user }) => {
+    if (user.imp) audit(await one('select id, name from users where id = $1', [user.imp]), 'impersonate.end', user.id, { name: user.name });
     return { ok: true };
   }],
 ];
+const IMPERSONATE_MS = 30 * 60_000;
+
+// Acciones de administración sobre una cuenta (sueltas o masivas), auditadas.
+async function setRole(admin, id, role) {
+  if (id === admin.id) fail(400, 'No puedes cambiar tu propio rol.');
+  if (!['admin', 'organizer', 'pilot'].includes(role)) fail(400, 'Rol no válido.');
+  const before = await one('select name, role from users where id = $1', [id]);
+  if (!before) fail(404, 'Ese usuario no existe.');
+  if (before.role === role) return;
+  await q('update users set role = $1 where id = $2', [role, id]);
+  await kick(id); // sus conexiones se reconectan con el rol nuevo (p. ej., deja de poder dar banderas)
+  audit(admin, 'user.role', id, { name: before.name, from: before.role, to: role });
+}
+async function resetUser(admin, id) {
+  const temp = tempPassword();
+  const u = await one('update users set pass = $1, must_reset = true where id = $2 returning id, name', [await hashPassword(temp), id]);
+  if (!u) fail(404, 'Ese usuario no existe.');
+  await kick(u.id);
+  audit(admin, 'user.reset', u.id, { name: u.name });
+  return { id: u.id, name: u.name, password: temp };
+}
+async function deleteUser(admin, id) {
+  if (id === admin.id) fail(400, 'No puedes eliminar tu propia cuenta.');
+  const u = await reload(id);
+  if (!u) fail(404, 'Ese usuario no existe.');
+  await leaveTeam(u);
+  await q('delete from users where id = $1', [id]);
+  audit(admin, 'user.delete', id, { name: u.name, email: u.email });
+}
 
 async function readBody(req) {
   const chunks = [];
@@ -540,6 +732,9 @@ export async function handleApi(req, res) {
     if (access !== 'none') {
       ctx.user = await userFromToken(req.headers.authorization?.replace(/^Bearer /, ''));
       if (!ctx.user) fail(401, 'Tu sesión ha caducado. Vuelve a entrar.');
+      // Suplantando: ni contraseña ni baja de la cuenta; cada escritura queda en la auditoría con el admin real.
+      if (ctx.user.imp && ['POST /api/password', 'DELETE /api/me'].includes(`${req.method} ${route[1]}`)) fail(403, 'Suplantando una cuenta no se puede cambiar su contraseña ni eliminarla.');
+      if (ctx.user.imp && req.method !== 'GET' && route[1] !== '/api/impersonation/end') audit(await one('select id, name from users where id = $1', [ctx.user.imp]), 'impersonate.write', ctx.user.id, { name: ctx.user.name, method: req.method, path: url.pathname });
       if (access === 'admin' && ctx.user.role !== 'admin') fail(403, 'Solo para administradores.');
       if (access === 'organizer' && !isOrganizer(ctx.user)) fail(403, 'Solo para organizadores de eventos.');
       if (access === 'team') {
