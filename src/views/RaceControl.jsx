@@ -200,21 +200,27 @@ export function PenaltyPanel({ ev, penalties, onChange }) {
   const n = Number(laps);
   return (
     <div className="flex flex-col gap-2">
+      <p className="text-[13px] text-muted">Resta vueltas a un equipo en la sesión en curso ({sessionName(ev.session).toLowerCase()}) o retíralo de la carrera.
+        Le aparece en Piloto y Box hasta que pulsa «Visto», y sale en el directo público.</p>
       <ErrorText>{error}</ErrorText>
-      <select className={input} value={teamId} onChange={(e) => setTeamId(e.target.value)} aria-label="Equipo a sancionar">
-        <option value="">— Equipo —</option>
-        {ev.teams.filter((t) => t.racing).map((t) => <option key={t.id} value={t.id}>#{t.dorsal} {t.name}</option>)}
-      </select>
+      <label className="flex flex-col gap-1"><span className="label">Equipo</span>
+        <select className={input} value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+          <option value="">— Elige el equipo —</option>
+          {ev.teams.filter((t) => t.racing).map((t) => <option key={t.id} value={t.id}>#{t.dorsal} {t.name}</option>)}
+        </select>
+      </label>
       <div className="flex gap-2">
-        <input className={`${input} w-20`} type="number" min={1} max={100} inputMode="numeric" value={laps} onChange={(e) => setLaps(e.target.value)} aria-label="Vueltas de sanción" />
-        <input className={`${input} min-w-0 flex-1`} value={reason} maxLength={120} onChange={(e) => setReason(e.target.value)} placeholder="Motivo: «Saltarse la roja»" aria-label="Motivo" />
+        <label className="flex w-28 shrink-0 flex-col gap-1"><span className="label">Vueltas a restar</span>
+          <input className={input} type="number" min={1} max={100} inputMode="numeric" value={laps} onChange={(e) => setLaps(e.target.value)} /></label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1"><span className="label">Motivo</span>
+          <input className={input} value={reason} maxLength={120} onChange={(e) => setReason(e.target.value)} placeholder="Saltarse la bandera roja" /></label>
       </div>
-      {teamId ? (
+      {teamId && (
         <div className="flex flex-wrap gap-2">
-          {Number.isInteger(n) && n >= 1 && <ConfirmButton solid label={`Sancionar · ${n} vuelta${n === 1 ? '' : 's'}`} confirm="Sí, sancionar" onConfirm={() => give(false)} />}
-          <ConfirmButton label="Retirar" confirm="Sí, retirar" onConfirm={() => give(true)} />
+          {Number.isInteger(n) && n >= 1 && <ConfirmButton solid label={`Restar ${n} vuelta${n === 1 ? '' : 's'}`} confirm="Sí, sancionar" onConfirm={() => give(false)} />}
+          <ConfirmButton label="Retirar de la carrera" confirm="Sí, retirar" onConfirm={() => give(true)} />
         </div>
-      ) : <p className="text-[12px] text-muted">Elige el equipo: las vueltas se restan de su clasificación en esta sesión y le sale en Piloto y Box hasta que lo ve.</p>}
+      )}
       {now.length > 0 && (
         <ul className="flex flex-col border-t border-line text-[13px]">
           {now.map((p) => (
@@ -320,7 +326,7 @@ function Console({ id, onNav }) {
             <p className="text-[12px] text-muted">Las vueltas siguientes cuentan en la sesión en curso.</p>
           </div>
           <div className="flex flex-col gap-2 border-t border-line pt-3">
-            <span className="label">Sanciones · {sessionName(ev.session)}</span>
+            <span className="label">Sanciones a equipos</span>
             <PenaltyPanel ev={ev} penalties={L.penalties} onChange={L.setPenalties} />
           </div>
         </section>

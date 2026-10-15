@@ -63,3 +63,10 @@ test('retransmisión: enlaces de YouTube, Twitch y Kick a su reproductor', async
   assert.equal(embedUrl('http://inseguro.tv', 'x.es'), null);
   assert.equal(embedUrl('no es un enlace', 'x.es'), null);
 });
+
+test('duración de la carrera legible', async () => {
+  const { targetText } = await import('./events.js');
+  assert.deepEqual([360, 90, 20].map((n) => targetText('endurance', n)), ['6 h', '1 h 30 min', '20 min']);
+  assert.equal(targetText('laps', 100), '100 vueltas');
+  assert.equal(targetText('best', 5), '');
+});

@@ -6,7 +6,7 @@ import Icon from '../icons.jsx';
 import { SESSIONS } from './Racing.jsx';
 import { Wordmark } from './Auth.jsx';
 import { api } from '../lib/session.js';
-import { RACE_FORMATS, embedUrl } from '../lib/events.js';
+import { RACE_FORMATS, embedUrl, targetText } from '../lib/events.js';
 import { Card, Segmented, ErrorText, btn, fmtLap, fmtDelta, downloadCsv } from './ui.jsx';
 
 const sessionName = (s) => SESSIONS.find(([v]) => v === s)?.[1] ?? s;
@@ -165,7 +165,7 @@ export function PublicLive({ code }) {
           <div className="min-w-0">
             <Wordmark className="mb-2 h-6" />
             <h1 className="truncate text-2xl font-bold uppercase tracking-[0.06em]">{ev?.name ?? 'Directo'}</h1>
-            {ev && <p className="text-[14px] text-muted">{[sessionName(ev.session), race && RACE_FORMATS[format]?.label, race && ev.raceTarget && RACE_FORMATS[format]?.unit && `${ev.raceTarget} ${RACE_FORMATS[format].unit}`, ev.place].filter(Boolean).join(' · ')}</p>}
+            {ev && <p className="text-[14px] text-muted">{[sessionName(ev.session), race && RACE_FORMATS[format]?.label, race && targetText(format, ev.raceTarget), ev.place].filter(Boolean).join(' · ')}</p>}
           </div>
           {ev && (
             <div className="text-right">

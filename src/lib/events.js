@@ -69,6 +69,13 @@ export const RACE_FORMATS = {
   laps: { label: 'A N vueltas', unit: 'vueltas', help: 'Gana quien completa antes las vueltas; después, por vueltas y quién cruzó antes.' },
   best: { label: 'Mejor vuelta', unit: null, help: 'Clasificación por la vuelta más rápida.' },
 };
+// Duración o vueltas legibles: «6 h», «1 h 30 min», «20 min», «100 vueltas».
+export function targetText(format, n) {
+  if (!n || !RACE_FORMATS[format]?.unit) return '';
+  if (format !== 'endurance') return `${n} vueltas`;
+  const h = Math.floor(n / 60), m = n % 60;
+  return [h && `${h} h`, m && `${m} min`].filter(Boolean).join(' ');
+}
 export const formatOf = (ev, session = ev.session) => (session === 'practice' ? 'best' : ev.raceFormat ?? 'endurance');
 
 // Clasificación: filas de la sesión ({ id, laps, best, last_at, pen, retired, ... }) ordenadas según el formato.

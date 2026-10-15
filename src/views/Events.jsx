@@ -9,7 +9,7 @@ import { SESSIONS } from './Racing.jsx';
 import { useEventLive, FlagPanel, PenaltyPanel, STALE_MS } from './RaceControl.jsx';
 import { ResultsTab, liveLink, lapsText } from './Results.jsx';
 import { api, inviteLink } from '../lib/session.js';
-import { EVENT_STATES, RACE_FORMATS, eventState, missingToPublish, readiness } from '../lib/events.js';
+import { EVENT_STATES, RACE_FORMATS, targetText, eventState, missingToPublish, readiness } from '../lib/events.js';
 import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, btn, fmtLap } from './ui.jsx';
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
@@ -17,8 +17,8 @@ const TABS = [['resumen', 'Resumen'], ['pista', 'Pista'], ['inscritos', 'Inscrit
 const STEPS = ['Datos', 'Pista', 'Inscripción', 'Revisar y publicar'];
 const StatePill = ({ state }) => <Pill tone={EVENT_STATES[state].tone}>{state === 'today' && <span className="pulse h-1.5 w-1.5 rounded-full bg-ok" />}{EVENT_STATES[state].label}</Pill>;
 const formatText = (ev) => {
-  const f = RACE_FORMATS[ev.raceFormat ?? 'endurance'];
-  return `${f.label}${f.unit && ev.raceTarget ? ` · ${ev.raceTarget} ${f.unit}` : ''}`;
+  const format = ev.raceFormat ?? 'endurance';
+  return [RACE_FORMATS[format].label, targetText(format, ev.raceTarget)].filter(Boolean).join(' · ');
 };
 const Check = ({ ok, optional }) => <span className={ok ? 'text-ok' : optional ? 'text-muted' : 'text-warn'}><Icon name={ok ? 'check' : 'flag'} size={16} /></span>;
 
@@ -116,7 +116,7 @@ function Wizard({ id, step, go }) {
   const saveData = async (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    const body = { name: f.get('name'), startsOn: f.get('startsOn'), place: f.get('place'), raceFormat: f.get('raceFormat'), raceTarget: f.get('raceFormat') === 'best' ? null : f.get('raceTarget') || null };
+    const body = { name: f.get('name'), startsOn: f.get('startsOn'), place: f.get('place'), raceFormat: f.get('raceFormat'), raceTarget: f.get('raceFormat') === 'best' || !f.get('raceTarget') ? null : Math.round(Number(f.get('raceTarget')) * (f.get('raceUnit') === 'h' ? 60 : 1)) };
     setError('');
     if (!id) {
       try { const created = await api('/api/events', { method: 'POST', body }); go([created.id, 'asistente', 2]); } catch (err) { setError(err.message); }
@@ -260,7 +260,7 @@ function Workspace({ id, tab, admin, go, onNav }) {
             {/* Para dirigir la carrera, mejor Race Control (pantalla completa y atajos); aquí, a mano para probar */}
             <Card title="Dirección de carrera"><FlagPanel flag={L.flag} racing={racing} send={L.sendFlag} connected={L.connected} /></Card>
             <SessionSwitch ev={ev} onChange={L.changeSession} />
-            <Card title={`Sanciones · ${SESSIONS.find(([v]) => v === ev.session)[1]}`}><PenaltyPanel ev={ev} penalties={L.penalties} onChange={L.setPenalties} /></Card>
+            <Card title="Sanciones a equipos"><PenaltyPanel ev={ev} penalties={L.penalties} onChange={L.setPenalties} /></Card>
             <Standings rows={L.standings} ev={ev} session={L.session} setSession={L.setSession} live={L.live} now={now} flag={L.flag}
               onPick={(teamId) => setFocus(L.cars[teamId]?.gps ? { ...L.cars[teamId].gps, t: Date.now() } : null)} />
             <Card title="Coches en vivo" flush><div className="h-[520px]">{map(false)}</div></Card>
@@ -538,21 +538,29 @@ function TeamRow({ team: t, eventId, onChange }) {
   );
 }
 
-// Formato de la carrera y su duración (minutos) o vueltas. Con `patch`, se guarda al momento (Ajustes); sin él,
-// son campos del formulario del asistente (raceFormat, raceTarget).
+// Formato de la carrera y su duración (en minutos u horas; se guarda en minutos) o vueltas. Con `patch`, se guarda
+// al momento (Ajustes); sin él, son campos del formulario del asistente (raceFormat, raceTarget, raceUnit).
 function FormatFields({ ev, patch }) {
   const [format, setFormat] = useState(ev?.raceFormat ?? 'endurance');
+  const [unit, setUnit] = useState(ev?.raceTarget >= 60 && ev.raceTarget % 30 === 0 ? 'h' : 'min');
   const f = RACE_FORMATS[format];
+  const k = format === 'endurance' && unit === 'h' ? 60 : 1; // minutos por unidad mostrada
+  const shown = ev?.raceTarget ? String(ev.raceTarget / k) : '';
   const pick = (v) => { setFormat(v); if (patch) patch({ raceFormat: v, ...(v === 'best' && { raceTarget: null }) }); };
+  const numProps = { type: 'number', min: k === 60 ? 0.5 : 1, step: k === 60 ? 0.5 : 1, max: 10000, inputMode: 'decimal', placeholder: 'Sin fijar' };
   return (
     <div className="flex flex-wrap items-end gap-3">
       <input type="hidden" name="raceFormat" value={format} />
+      <input type="hidden" name="raceUnit" value={format === 'endurance' ? unit : ''} />
       <Segmented label="Formato de la carrera" value={format} onChange={pick} options={Object.entries(RACE_FORMATS).map(([k, v]) => [k, v.label])} />
       {f.unit && (
-        <Field label={f.unit === 'min' ? 'Duración (minutos)' : 'Vueltas'}>
-          <span className="block w-32">{patch
-            ? <BlurInput type="number" min={1} max={10000} inputMode="numeric" placeholder="Sin fijar" value={ev.raceTarget ?? ''} onSave={(v) => patch({ raceTarget: v === '' ? null : Number(v) })} />
-            : <input className={input} name="raceTarget" type="number" min={1} max={10000} inputMode="numeric" placeholder="Sin fijar" defaultValue={ev?.raceTarget ?? ''} />}</span>
+        <Field label={format === 'endurance' ? 'Duración' : 'Vueltas'}>
+          <span className="flex items-center gap-2">
+            <span className="block w-28">{patch
+              ? <BlurInput key={unit} {...numProps} value={shown} onSave={(v) => patch({ raceTarget: v === '' ? null : Math.round(Number(v) * k) })} />
+              : <input key={unit} className={input} name="raceTarget" {...numProps} defaultValue={shown} />}</span>
+            {format === 'endurance' && <Segmented value={unit} onChange={setUnit} options={[['min', 'Minutos'], ['h', 'Horas']]} />}
+          </span>
         </Field>
       )}
       <p className="basis-full text-[13px] text-muted">{f.help} El entrenamiento siempre va por mejor vuelta.{format === 'endurance' && ' Con la duración, Race Control y el directo cuentan lo que queda.'}</p>
