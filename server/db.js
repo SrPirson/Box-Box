@@ -179,5 +179,7 @@ export function SCHEMA() {
     created_at timestamptz not null default now(),
     seen_at timestamptz
   );
-  create index if not exists penalties_event on penalties (event_id, session);`;
+  create index if not exists penalties_event on penalties (event_id, session);
+  -- Retransmisión del evento (YouTube, Twitch, Kick u otra página https): se ve en el directo público.
+  alter table events add column if not exists video_url text;`;
 }

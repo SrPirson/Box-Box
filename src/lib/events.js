@@ -44,6 +44,24 @@ export function readiness(ev, { cars = {}, log = [], now = Date.now() } = {}) {
   };
 }
 
+// Reproductor embebido de la retransmisión: YouTube, Twitch y Kick a su reproductor; cualquier otra página https,
+// tal cual. host: el dominio de esta web (Twitch lo exige). null si no es un enlace https.
+export function embedUrl(url, host) {
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  if (u.protocol !== 'https:') return null;
+  const h = u.hostname.replace(/^(www\.|m\.)/, '');
+  const seg = u.pathname.split('/').filter(Boolean);
+  if (h === 'youtu.be' && seg[0]) return `https://www.youtube.com/embed/${seg[0]}?autoplay=1&mute=1`;
+  if (h === 'youtube.com') {
+    const id = u.searchParams.get('v') ?? (['live', 'embed', 'shorts'].includes(seg[0]) ? seg[1] : null);
+    if (id) return `https://www.youtube.com/embed/${id}?autoplay=1&mute=1`;
+  }
+  if (h === 'twitch.tv' && seg[0]) return `https://player.twitch.tv/?channel=${seg[0]}&parent=${host}&muted=true`;
+  if (h === 'kick.com' && seg[0]) return `https://player.kick.com/${seg[0]}`;
+  return u.href;
+}
+
 // Formato de la carrera, que elige el organizador. El entrenamiento siempre va por mejor vuelta.
 // target: minutos (resistencia) o vueltas (a N vueltas).
 export const RACE_FORMATS = {

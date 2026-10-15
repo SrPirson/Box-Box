@@ -452,6 +452,12 @@ function Settings({ ev, admin, patch, run, setError, onDeleted }) {
       <Card title="Carrera">
         <FormatFields ev={ev} patch={patch} />
       </Card>
+      <Card title="Retransmisión y directo público">
+        <Field label="Vídeo en directo" help="Enlace del directo en YouTube, Twitch, Kick u otra web (https). Se ve en el directo público, junto al mapa y la clasificación.">
+          <BlurInput type="url" maxLength={300} placeholder="https://www.youtube.com/watch?v=…" value={ev.videoUrl ?? ''} onSave={(videoUrl) => patch({ videoUrl })} />
+        </Field>
+        {ev.publicCode && <p className="text-[14px]">Enlace para el público (sin cuenta): <a href={liveLink(ev.publicCode)} target="_blank" rel="noreferrer" className="num font-semibold text-accent underline">{liveLink(ev.publicCode)}</a></p>}
+      </Card>
       <Card title="Inscripción">
         <Segmented label="Visibilidad" value={ev.private ? 'private' : 'public'} onChange={(v) => patch({ private: v === 'private' })}
           options={[['public', 'Público · sale en la lista'], ['private', 'Privado · solo con código']]} />

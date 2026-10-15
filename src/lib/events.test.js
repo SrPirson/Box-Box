@@ -50,3 +50,16 @@ test('clasificación: resistencia con sanciones, a N vueltas, mejor vuelta y ret
   assert.deepEqual(b.map((r) => r.id), [3, 1, 2, 4]);
   assert.equal(b[1].gap, '+1.000');
 });
+
+test('retransmisión: enlaces de YouTube, Twitch y Kick a su reproductor', async () => {
+  const { embedUrl } = await import('./events.js');
+  const yt = 'https://www.youtube.com/embed/abc123?autoplay=1&mute=1';
+  assert.equal(embedUrl('https://www.youtube.com/watch?v=abc123', 'x.es'), yt);
+  assert.equal(embedUrl('https://youtu.be/abc123', 'x.es'), yt);
+  assert.equal(embedUrl('https://youtube.com/live/abc123?si=z', 'x.es'), yt);
+  assert.equal(embedUrl('https://www.twitch.tv/lacencerro', 'boxracing.onrender.com'), 'https://player.twitch.tv/?channel=lacencerro&parent=boxracing.onrender.com&muted=true');
+  assert.equal(embedUrl('https://kick.com/lacencerro', 'x.es'), 'https://player.kick.com/lacencerro');
+  assert.equal(embedUrl('https://otra.tv/directo', 'x.es'), 'https://otra.tv/directo');
+  assert.equal(embedUrl('http://inseguro.tv', 'x.es'), null);
+  assert.equal(embedUrl('no es un enlace', 'x.es'), null);
+});

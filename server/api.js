@@ -1,7 +1,7 @@
 // API REST: cuentas, equipos con invitación, administración y estadísticas.
 import { q, one } from './db.js';
 import { hashPassword, checkPassword, sign, verify, randomCode, tempPassword } from './auth.js';
-import { teamChanged, kick, teamNotice, logEvent, liveStats, teamPenalty, pitsOf } from './live.js';
+import { teamChanged, kick, teamNotice, logEvent, liveStats, teamPenalty, pitsOf, carsOf } from './live.js';
 import { LIMITS, limitErrors } from '../src/lib/limits.js';
 import { rank, RACE_FORMATS } from '../src/lib/events.js';
 
@@ -42,10 +42,10 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id,
   ...(u.imp && { impersonatedUntil: u.impUntil }) });
 // Columnas de un evento (la fecha como texto: un date de Postgres llega como Date a medianoche local y se desplaza).
-const EVENT_COLS = `id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft, max_teams, public_code, race_format, race_target,
+const EVENT_COLS = `id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft, max_teams, public_code, race_format, race_target, video_url,
   (extract(epoch from session_started_at) * 1000)::float8 as session_started_at`;
 const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session,
-  draft: e.draft, maxTeams: e.max_teams, sessionStartedAt: e.session_started_at, raceFormat: e.race_format, raceTarget: e.race_target });
+  draft: e.draft, maxTeams: e.max_teams, sessionStartedAt: e.session_started_at, raceFormat: e.race_format, raceTarget: e.race_target, videoUrl: e.video_url });
 // ¿Se puede inscribir un equipo en este evento? (e: con id, closed, draft y max_teams)
 const ENROLL_COLS = 'id, closed, draft, max_teams';
 async function checkEnroll(e) {
@@ -159,6 +159,11 @@ const eventFields = (body) => {
     const n = body.raceTarget === '' || body.raceTarget == null ? null : Number(body.raceTarget);
     if (n != null && !(Number.isInteger(n) && n >= 1 && n <= 10000)) fail(400, 'La duración tiene que ser un número entero (minutos o vueltas), o vacío.');
     set.race_target = n;
+  }
+  if ('videoUrl' in body) {
+    const v = typeof body.videoUrl === 'string' ? body.videoUrl.trim() : '';
+    if (v && !(/^https:\/\/\S+$/.test(v) && v.length <= 300)) fail(400, 'El vídeo tiene que ser un enlace https (YouTube, Twitch, Kick…).');
+    set.video_url = v || null;
   }
   if ('maxTeams' in body) {
     const n = body.maxTeams === '' || body.maxTeams == null ? null : Number(body.maxTeams);
@@ -625,11 +630,17 @@ const routes = [
     const pits = await pitsOf(shown.map((r) => r.id));
     const best = shown.filter((r) => r.best != null).sort((a, b) => a.best - b.best)[0];
     return {
-      event: { ...eventSummary(e), now: Date.now() },
+      event: { ...eventSummary(e), now: Date.now(), track: e.track },
       rows: shown.map((r) => ({ id: r.id, pos: r.pos, dorsal: r.dorsal, team: r.name, laps: r.eff, pen: r.pen, retired: r.retired, best: r.best, last: r.last, gap: r.gap, pit: pits.has(r.id) })),
       best: best ? { team: best.name, dorsal: best.dorsal, ms: best.best, driver: best.best_driver } : null,
       comments: comments.map(({ seen, by, ...c }) => c),
     };
+  }],
+  // Coches del directo público (solo memoria: se puede pedir cada segundo).
+  ['GET', /^\/api\/public\/live\/([A-Za-z0-9]+)\/cars$/, 'none', async ({ params }) => {
+    const e = await one('select id from events where public_code = $1 and not draft', [params[0].toUpperCase()]);
+    if (!e) fail(404, 'No hay ningún evento en directo con ese enlace.');
+    return carsOf((await q('select id from teams where event_id = $1 and racing', [e.id])).map((t) => t.id));
   }],
   // Página pública de resultados (sin cuenta): solo lo publicado, sin más datos personales que el nombre del piloto.
   ['GET', /^\/api\/public\/results\/([A-Za-z0-9]+)$/, 'none', async ({ params }) => {

@@ -239,6 +239,12 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   const direct = await call(`/api/public/live/${detail.publicCode.toLowerCase()}`);
   assert.deepEqual([direct.rows[0].laps, direct.rows[0].pen, direct.rows[0].gap, direct.comments[0].reason], [1, 1, 'Vuelta 1', 'Pit corto']);
   assert.equal(direct.best.driver, 'Pepe');
+  // Retransmisión: solo enlaces https; se ve en el directo público, con el mapa de los coches.
+  assert.equal((await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { videoUrl: 'javascript:alert(1)' } })).status, 400);
+  await call(`/api/events/${ev.id}`, { token: olga.token, method: 'PATCH', body: { videoUrl: 'https://www.twitch.tv/jarama' } });
+  const direct2 = await call(`/api/public/live/${detail.publicCode}`);
+  assert.deepEqual([direct2.event.videoUrl, direct2.event.track.line], ['https://www.twitch.tv/jarama', line]);
+  assert.equal((await call(`/api/public/live/${detail.publicCode}/cars`)).status, 200);
   // «Visto» desde el equipo: lo ve la organizadora. Anularla devuelve la vuelta.
   const seenPen = next(so, 'event:penalties');
   sp.emit('penalty:seen', pen.id);

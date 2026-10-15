@@ -1,11 +1,12 @@
 // Resultados: el organizador publica el de cada sesión (una instantánea de la clasificación que ya no cambia)
 // y lo comparte con un enlace público, #tiempos/<código>, que se ve sin cuenta y se puede imprimir.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import TrackMap from './TrackMap.jsx';
 import Icon from '../icons.jsx';
 import { SESSIONS } from './Racing.jsx';
 import { Wordmark } from './Auth.jsx';
 import { api } from '../lib/session.js';
-import { RACE_FORMATS } from '../lib/events.js';
+import { RACE_FORMATS, embedUrl } from '../lib/events.js';
 import { Card, Segmented, ErrorText, btn, fmtLap, fmtDelta, downloadCsv } from './ui.jsx';
 
 const sessionName = (s) => SESSIONS.find(([v]) => v === s)?.[1] ?? s;
@@ -121,13 +122,25 @@ export function PublicResults({ code }) {
 }
 
 // Directo público (#directo/<código>, sin cuenta): la clasificación de la sesión en curso como en un apex-timing,
-// con quién está en boxes, la mejor vuelta y las sanciones. Se refresca cada 5 s.
+// con quién está en boxes, la mejor vuelta y las sanciones (cada 5 s), el mapa con los coches (cada segundo) y,
+// si el organizador la ha puesto, la retransmisión en vídeo.
 const hms = (ms) => { const t = Math.max(0, Math.floor(ms / 1000)); return [t / 3600, (t % 3600) / 60, t % 60].map((n) => String(Math.floor(n)).padStart(2, '0')).join(':'); };
 const hhmm = (ts) => new Date(ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 export function PublicLive({ code }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
+  const [cars, setCars] = useState({});
+  const trails = useRef({});
+  useEffect(() => {
+    const loadCars = () => api(`/api/public/live/${code ?? ''}/cars`).then((list) => {
+      for (const c of list) { const t = (trails.current[c.teamId] ??= []); t.push([c.gps.lat, c.gps.lng]); if (t.length > 120) t.shift(); }
+      setCars(Object.fromEntries(list.map((c) => [c.teamId, { ...c, key: c.teamId }])));
+    }).catch(() => {});
+    loadCars();
+    const c = setInterval(loadCars, 1000);
+    return () => clearInterval(c);
+  }, [code]);
   useEffect(() => {
     const load = () => api(`/api/public/live/${code ?? ''}`).then((d) => { setData({ ...d, skew: Date.now() - d.event.now }); setError(''); }).catch((e) => setError(e.message));
     load();
@@ -143,9 +156,11 @@ export function PublicLive({ code }) {
   const countdown = format === 'endurance' && ev?.raceTarget;
   const timer = elapsed == null ? '--:--:--' : countdown ? hms(ev.raceTarget * 60_000 - elapsed) : hms(elapsed);
   const comments = data?.comments ?? [];
+  const video = ev?.videoUrl && embedUrl(ev.videoUrl, location.hostname);
+  const states = Object.fromEntries(Object.values(cars).map((c) => [c.teamId, c.pit ? 'warn' : 'ok']));
   return (
     <div className="h-full overflow-y-auto bg-bg">
-      <div className="mx-auto flex max-w-[960px] flex-col gap-3 p-3 lg:p-6">
+      <div className={`mx-auto flex flex-col gap-3 p-3 lg:p-6 ${video || ev?.track ? 'max-w-[1400px]' : 'max-w-[960px]'}`}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <Wordmark className="mb-2 h-6" />
@@ -162,6 +177,19 @@ export function PublicLive({ code }) {
         </div>
         {error && <ErrorText>{error}</ErrorText>}
         {!data && !error && <p className="text-muted">Cargando…</p>}
+        <div className={`grid items-start gap-3 ${video || ev?.track ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
+        {(video || ev?.track) && (
+          <div className="flex flex-col gap-3 lg:sticky lg:top-0">
+            {video && <div className="aspect-video overflow-hidden rounded-[4px] border border-line bg-black">
+              <iframe src={video} title={`Retransmisión de ${ev.name}`} className="h-full w-full" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen
+                sandbox="allow-scripts allow-same-origin allow-presentation allow-popups" referrerPolicy="strict-origin-when-cross-origin" />
+            </div>}
+            {ev?.track && <div className="h-[340px] overflow-hidden rounded-[4px] border border-line lg:h-[420px]">
+              <TrackMap cars={cars} trails={trails.current} sel={null} states={states} focus={null} track={ev.track} />
+            </div>}
+          </div>
+        )}
+        <div className="flex min-w-0 flex-col gap-3">
         {data && (
           <div className="overflow-hidden rounded-[4px] border border-line bg-panel">
             <table className="w-full table-fixed text-[14px] sm:text-[15px]">
@@ -203,6 +231,8 @@ export function PublicLive({ code }) {
             )}
           </Card>
         )}
+        </div>
+        </div>
       </div>
     </div>
   );

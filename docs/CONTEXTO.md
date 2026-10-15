@@ -38,6 +38,9 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 - **Directo público** (`#directo/<public_code>`, sin cuenta, como apex-timing): clasificación de la sesión en curso según el
   formato, IN si está en boxes, mejor vuelta y comentarios (sanciones). Se refresca cada 5 s. Lo abren el organizador
   (Resumen, Race Control) y los equipos (botón «Clasificación» en Box y Eventos). Todos los eventos tienen `public_code`.
+  Lleva también el mapa con los coches (`/api/public/live/<código>/cars`, en memoria, cada segundo) y, si el organizador
+  pone un enlace en Ajustes → Retransmisión (`events.video_url`), el vídeo: YouTube, Twitch y Kick van a su reproductor
+  (`embedUrl` en `src/lib/events.js`); cualquier otra web https se incrusta tal cual (si esa web lo permite).
 - **Formato de carrera** (`events.race_format` + `race_target`): resistencia (minutos; Race Control y el directo cuentan lo
   que queda), a N vueltas o mejor vuelta. El entrenamiento siempre por mejor vuelta. Lo ordena `rank()` en `src/lib/events.js`.
 - **Sanciones** (`penalties`): el organizador resta N vueltas en la sesión en curso o retira a un equipo (Resumen y Race

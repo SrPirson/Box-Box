@@ -100,6 +100,15 @@ export async function pitsOf(teamIds) {
   for (const id of teamIds) if (states.has(id) && (await states.get(id)).pit?.arrived) out.add(id);
   return out;
 }
+// Última posición de cada coche del evento (de los últimos 15 s), para el mapa del directo público.
+export async function carsOf(teamIds) {
+  const out = [];
+  for (const id of teamIds) {
+    const c = states.has(id) && (await states.get(id)).summary;
+    if (c?.gps && Date.now() - c.ts < 15_000) out.push({ teamId: c.teamId, car: c.car, ts: c.ts, gps: c.gps, compass: c.compass, pit: c.pit });
+  }
+  return out;
+}
 const presence = (st) => io.to(room(st.team.id)).emit('presence', [...st.online.keys()]);
 
 // Para el resumen del admin: equipos con alguien conectado ahora y banderas activas (no verdes) por evento.
@@ -274,10 +283,11 @@ export function attachLive(server, userFromToken) {
       const last = out.at(-1);
       if (st.team.event_id && now - st.lastEvent >= EVENT_EVERY_MS) {
         st.lastEvent = now;
-        io.to(eventRoom(st.team.event_id)).emit('event:car', {
+        st.summary = {
           teamId: st.team.id, team: st.team.name, car: st.team.dorsal, driver: st.driver.name, ts: last.ts,
           gps: last.gps ?? null, compass: last.compass ?? null, lapStartedAt: last.lapStartedAt, pit: st.pit?.arrived ? st.pit.reason : null,
-        });
+        };
+        io.to(eventRoom(st.team.event_id)).emit('event:car', st.summary);
       }
     };
     socket.on('telemetry', (p) => telemetry([p], false));
