@@ -5,13 +5,13 @@ import Settings from './views/Settings.jsx';
 import Team from './views/Team.jsx';
 import Stats from './views/Stats.jsx';
 import { AdminOverview, AdminUsers, AdminTeams, AdminAudit } from './views/Admin.jsx';
-import { PublicResults } from './views/Results.jsx';
+import { PublicResults, PublicLive } from './views/Results.jsx';
 import UpdateBanner from './views/Update.jsx';
 import Profile from './views/Profile.jsx';
 import Events from './views/Events.jsx';
 import RaceControl from './views/RaceControl.jsx';
 import EventsBrowse from './views/EventsBrowse.jsx';
-import { RaceFlagBanner } from './views/RaceFlag.jsx';
+import { RaceFlagBanner, PenaltyBanner } from './views/RaceFlag.jsx';
 import { EventTodayBanner } from './views/Racing.jsx';
 import { Login, ForcedPassword, Wordmark } from './views/Auth.jsx';
 import Icon from './icons.jsx';
@@ -79,11 +79,12 @@ function Views() {
     return () => removeEventListener('hashchange', onHash);
   }, []);
   const hasTeam = !!session.team;
-  // #tiempos/<código> (resultados públicos) no depende de la sesión ni del modo.
-  const current = session.user && view !== 'tiempos' && (valid(view, mode, hasTeam) ? view : home(mode, hasTeam));
+  // #tiempos/<código> (resultados públicos) y #directo/<código> (clasificación en vivo) no dependen de la sesión ni del modo.
+  const current = session.user && view !== 'tiempos' && view !== 'directo' && (valid(view, mode, hasTeam) ? view : home(mode, hasTeam));
   useEffect(() => { if (current && current !== view) nav(current); }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (view === 'tiempos') return <PublicResults code={path[0]} />; // resultados públicos: sin cuenta
+  if (view === 'directo') return <PublicLive code={path[0]} />;
   if (!session.ready) return null;
   if (!session.user) return <Login />;
   if (session.user.mustReset) return <ForcedPassword />;
@@ -121,6 +122,7 @@ function Frame({ view, setView, mode, muted, setMuted, children }) {
     <div className="flex h-full flex-col">
       <Header view={view} setView={setView} mode={mode} muted={muted} setMuted={setMuted} />
       {mode === 'pilot' && team && <RaceFlagBanner />}
+      {mode === 'pilot' && team && <PenaltyBanner />}
       {mode === 'pilot' && team && <EventTodayBanner />}
       {/* Fila propia para volver a Piloto: se tiene que poder acertar conduciendo, con guantes y en movimiento */}
       {mode === 'pilot' && team && (

@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
-import { RacingButton } from './Racing.jsx';
+import { RacingButton, LiveButton } from './Racing.jsx';
 import { useSocket, useLive } from '../lib/store.js';
 import { api, setTeam, useSession } from '../lib/session.js';
 import { carAlarms, worst, limitsOf, lateMs, seenAt, obdSeenAt, withSkew, fmt, fmtAge, PHONE_HOT } from '../lib/limits.js';
@@ -119,7 +119,7 @@ export default function Box({ muted }) {
               // Participando en un evento la pista la pone el organizador: se ve, pero no se edita.
               onTrack={team.racing ? undefined : (track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
               toolbar={team.racing
-                ? <div className="flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Icon name="finish" size={15} className="text-accent" />Pista del evento · {team.event.name}</span><RacingButton /></div>
+                ? <div className="flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 px-1 text-[13px] font-semibold"><Icon name="finish" size={15} className="text-accent" />Pista del evento · {team.event.name}</span><RacingButton /><LiveButton /></div>
                 : <div className="flex flex-wrap items-center gap-2"><TrackPicker team={team} /><RacingButton /></div>} carIcon={team.carIcon} carIconStyle={team.carIconStyle} />
           </div>
         </section>
@@ -226,11 +226,14 @@ function TeamColumn({ team, laps, lapStartedAt, splits = [], now, onResetLap }) 
   const avg = lapAvg(laps);
   const last = laps.at(-1);
   const best = laps.reduce((b, l) => (!b || l.ms < b.ms ? l : b), null);
+  const pen = (team.penalties ?? []).reduce((n, p) => n + p.laps, 0);
   const members = [...team.members].sort((a, b) => (live.driver?.id === b.id) - (live.driver?.id === a.id) || live.online.includes(b.id) - live.online.includes(a.id));
   return (
     <aside className="flex flex-col bg-panel lg:min-h-0 lg:overflow-y-auto" aria-label="Equipo y vueltas">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Vueltas · hoy</span><span className="num text-[14px] font-semibold text-fg-2">{laps.length}</span>
+        <span className="label">Vueltas · hoy</span>
+        <span className="num text-[14px] font-semibold text-fg-2">{laps.length}{pen > 0 && <span className="text-crit" title="Vueltas de sanción en la sesión del evento"> (−{pen} sanción)</span>}
+          {team.penalties?.some((p) => p.retired) && <span className="text-crit"> · Retirado</span>}</span>
       </div>
       <div className="grid grid-cols-2 gap-px border-b border-line bg-line">
         <div className="col-span-2 bg-panel px-3 py-2.5">

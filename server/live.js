@@ -76,13 +76,30 @@ const setDriver = (st, u, by = u?.id) => {
   const prev = st.driver;
   st.driver = u && { id: u.id, name: u.name, by };
   if (prev && st.driver && prev.id !== st.driver.id) {
-    // Relevo: la vuelta del cambio no es representativa ni de uno ni de otro.
-    st.lap.restart();
+    // Relevo: la vuelta del cambio no es representativa ni de uno ni de otro. Con calle de boxes dibujada sí
+    // cuenta (en resistencia, cada vuelta suma): se cierra al salir de boxes.
+    if (!st.team.track?.pitOut) st.lap.restart();
     // El relevo solo se hace con el coche parado: si no había parada confirmada, empieza ya.
     if (!st.pit?.arrived) setPit(st, { since: Date.now(), reason: st.pit?.reason ?? 'Cambio de piloto', arrived: true });
   }
   io.to(room(st.team.id)).emit('driver', st.driver);
 };
+// Sanción sin ver más reciente del equipo (si participa en su evento), o null.
+const lastPenalty = (teamId) => one(`select p.id, p.laps, p.retired, p.reason, (extract(epoch from p.created_at) * 1000)::float8 as ts
+  from penalties p join teams t on t.id = p.team_id and t.event_id = p.event_id and t.racing
+  where p.team_id = $1 and p.seen_at is null order by p.id desc limit 1`, [teamId]).then((r) => r ?? null);
+// Sanción puesta o anulada: el equipo recarga sus vueltas y ve la pendiente; el organizador recarga la lista.
+export async function teamPenalty(eventId, teamId) {
+  io.to(room(teamId)).emit('team');
+  io.to(room(teamId)).emit('penalty', await lastPenalty(teamId));
+  io.to(eventRoom(eventId)).emit('event:penalties');
+}
+// Equipos que están ahora en boxes (parada confirmada), para el directo público.
+export async function pitsOf(teamIds) {
+  const out = new Set();
+  for (const id of teamIds) if (states.has(id) && (await states.get(id)).pit?.arrived) out.add(id);
+  return out;
+}
 const presence = (st) => io.to(room(st.team.id)).emit('presence', [...st.online.keys()]);
 
 // Para el resumen del admin: equipos con alguien conectado ahora y banderas activas (no verdes) por evento.
@@ -170,6 +187,16 @@ export function attachLive(server, userFromToken) {
     socket.emit('driver', st.driver);
     socket.emit('pit', st.pit);
     socket.emit('flag', st.team.event_id ? flagOf(st.team.event_id) : null);
+    // Sin await: los manejadores de abajo tienen que estar puestos antes de que lleguen los primeros paquetes.
+    lastPenalty(st.team.id).then((p) => socket.emit('penalty', p)).catch(() => {});
+    // Alguien del equipo ha visto la sanción: el organizador lo ve en la lista.
+    socket.on('penalty:seen', async (id) => {
+      const p = await one('update penalties set seen_at = now() where id = $1 and team_id = $2 and seen_at is null returning event_id', [Number(id), st.team.id]).catch(() => null);
+      if (!p) return;
+      logEvent(p.event_id, 'penalty.seen', { team: st.team.name, by: u.name });
+      io.to(eventRoom(p.event_id)).emit('event:penalties');
+      socket.to(r).emit('penalty', await lastPenalty(st.team.id)); // el resto del equipo deja de verla
+    });
     // Alguien del equipo ha visto la bandera: el organizador lo ve en la clasificación.
     socket.on('flag:seen', (ts) => {
       const ev = st.team.event_id;
@@ -209,12 +236,19 @@ export function attachLive(server, userFromToken) {
         const o = p.obd ?? {};
         const g = p.gps ?? {};
         const s = { ts, lat: num(g.lat), lng: num(g.lng), speed: num(g.speed), coolant: num(o.coolant), rpm: num(o.rpm), throttle: num(o.throttle), voltage: num(o.voltage) };
-        // Sale de boxes (no por datos atrasados). Mientras viene de camino va rápido: eso no la termina.
-        if (st.pit?.arrived && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null);
+        // Sale de boxes (no por datos atrasados). Mientras viene de camino va rápido: eso no la termina. Con calle
+        // de boxes dibujada, la parada la marcan sus líneas de entrada y salida.
+        const pitLane = st.team.track?.pitOut;
+        if (!pitLane && st.pit?.arrived && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null);
         const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
         s.at = loc?.at;
         const d = st.driver;
-        const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors);
+        const wasInPit = st.lap.inPit;
+        const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors, st.team.track);
+        if (pitLane && now - ts < 10_000) {
+          if (st.lap.inPit && !wasInPit && !st.pit?.arrived) setPit(st, { since: ts, reason: st.pit?.reason ?? 'Calle de boxes', arrived: true });
+          else if (!st.lap.inPit && wasInPit) setPit(st, null);
+        }
         if (lap) {
           // JSON.stringify: pg mandaría un array JS como array de Postgres, no como jsonb.
           q('insert into laps (team_id, driver_id, started_at, ms, avg_temp, max_temp, avg_rpm, max_rpm, max_speed, min_volt, sectors, track_id, event_id, kind) values ($1,$2,to_timestamp($3/1000.0),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',

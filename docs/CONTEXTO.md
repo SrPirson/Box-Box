@@ -35,6 +35,17 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
   pulsado y registro con hora exportable a CSV. Pantalla siempre encendida; sin conexión no envía banderas.
 - **Resultados**: el organizador publica una instantánea por sesión (por vueltas o por mejor vuelta); se ven sin cuenta
   en `#tiempos/<public_code>` (código propio, no el de inscripción) y se imprimen o se guardan en PDF.
+- **Directo público** (`#directo/<public_code>`, sin cuenta, como apex-timing): clasificación de la sesión en curso según el
+  formato, IN si está en boxes, mejor vuelta y comentarios (sanciones). Se refresca cada 5 s. Lo abren el organizador
+  (Resumen, Race Control) y los equipos (botón «Clasificación» en Box y Eventos). Todos los eventos tienen `public_code`.
+- **Formato de carrera** (`events.race_format` + `race_target`): resistencia (minutos; Race Control y el directo cuentan lo
+  que queda), a N vueltas o mejor vuelta. El entrenamiento siempre por mejor vuelta. Lo ordena `rank()` en `src/lib/events.js`.
+- **Sanciones** (`penalties`): el organizador resta N vueltas en la sesión en curso o retira a un equipo (Resumen y Race
+  Control, dos toques, anulables). Al equipo le llega como una bandera roja con voz hasta «Visto» (Piloto a pantalla
+  completa, franja en el resto); BOX muestra «(−N sanción)». Quedan en el registro.
+- **Calle de boxes** (`track.pitIn` / `track.pitOut`, herramienta «Boxes» del mapa): al cruzar la entrada, «En boxes»
+  automático; al cruzar la salida se cierra la vuelta (cuenta aunque la calle no cruce la meta) y termina la parada.
+  Con calle dibujada el relevo no anula la vuelta. Sin ella, todo sigue como antes (BOX confirma, ≥ 40 km/h).
 - **Dirección de carrera**: la bandera del evento llega a todos sus equipos. En Piloto sale a pantalla completa con
   voz hasta pulsar «Visto»; después queda una franja fija de su color (también en Box). La verde se anuncia
   3 s y la retira. El organizador ve en la clasificación qué equipos la han visto.

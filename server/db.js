@@ -159,5 +159,25 @@ export function SCHEMA() {
   update laps set kind = 'race' where event_id is not null and kind = 'free';
   alter table samples add column if not exists kind text not null default 'free';
   -- Pista guardada en la que se rodó (solo en libre), para filtrar la telemetría por circuito como las vueltas.
-  alter table samples add column if not exists track_id int;`;
+  alter table samples add column if not exists track_id int;
+  -- Formato de la carrera: 'endurance' (más vueltas en race_target minutos), 'laps' (a race_target vueltas) o
+  -- 'best' (mejor vuelta). El entrenamiento siempre va por mejor vuelta.
+  alter table events add column if not exists race_format text not null default 'endurance';
+  alter table events add column if not exists race_target int;
+  -- Todos los eventos tienen enlace público (directo y resultados); los de antes, también.
+  update events set public_code = upper(substr(md5(random()::text || id), 1, 10)) where public_code is null;
+  -- Sanciones de dirección de carrera: vueltas que se restan en la sesión, o retirado. seen_at: el equipo la ha visto.
+  create table if not exists penalties (
+    id serial primary key,
+    event_id int not null references events(id) on delete cascade,
+    team_id int not null references teams(id) on delete cascade,
+    session text not null,
+    laps int not null default 0,
+    retired boolean not null default false,
+    reason text not null default '',
+    by text,
+    created_at timestamptz not null default now(),
+    seen_at timestamptz
+  );
+  create index if not exists penalties_event on penalties (event_id, session);`;
 }

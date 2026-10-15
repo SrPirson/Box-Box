@@ -86,6 +86,12 @@ button:disabled { cursor: not-allowed; }
   display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
   background: var(--warn); color: #000; border: 2px solid #fff; font: 700 12px/1 var(--font-mono);
 }
+/* Calle de boxes: entrada y salida en rojo, con su etiqueta */
+.pit-line { stroke: var(--crit); }
+.pit-label {
+  display: grid; place-items: center; width: 34px; height: 18px; border-radius: 3px;
+  background: var(--crit); color: #fff; border: 2px solid #fff; font: 700 10px/1 var(--font-mono);
+}
 .car-icon { background: none; border: none; }
 .car-dot {
   display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;

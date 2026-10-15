@@ -1,8 +1,9 @@
 // API REST: cuentas, equipos con invitación, administración y estadísticas.
 import { q, one } from './db.js';
 import { hashPassword, checkPassword, sign, verify, randomCode, tempPassword } from './auth.js';
-import { teamChanged, kick, teamNotice, logEvent, liveStats } from './live.js';
+import { teamChanged, kick, teamNotice, logEvent, liveStats, teamPenalty, pitsOf } from './live.js';
 import { LIMITS, limitErrors } from '../src/lib/limits.js';
+import { rank, RACE_FORMATS } from '../src/lib/events.js';
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 
@@ -41,10 +42,10 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, mustReset: u.must_reset, teamId: u.team_id,
   ...(u.imp && { impersonatedUntil: u.impUntil }) });
 // Columnas de un evento (la fecha como texto: un date de Postgres llega como Date a medianoche local y se desplaza).
-const EVENT_COLS = `id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft, max_teams, public_code,
+const EVENT_COLS = `id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, place, organizer_id, invite_code, track, closed, private, session, draft, max_teams, public_code, race_format, race_target,
   (extract(epoch from session_started_at) * 1000)::float8 as session_started_at`;
 const eventSummary = (e) => ({ id: e.id, name: e.name, startsOn: e.starts_on, place: e.place, closed: e.closed, private: e.private, session: e.session,
-  draft: e.draft, maxTeams: e.max_teams, sessionStartedAt: e.session_started_at });
+  draft: e.draft, maxTeams: e.max_teams, sessionStartedAt: e.session_started_at, raceFormat: e.race_format, raceTarget: e.race_target });
 // ¿Se puede inscribir un equipo en este evento? (e: con id, closed, draft y max_teams)
 const ENROLL_COLS = 'id, closed, draft, max_teams';
 async function checkEnroll(e) {
@@ -69,7 +70,10 @@ async function teamPayload(teamId) {
     limits: { ...LIMITS, ...t.limits }, carIcon: t.car_icon, carIconStyle: t.car_icon_style, obd: t.obd, members,
     // Participando en un evento, la pista es la del organizador (igual para todos) y no hay pistas propias;
     // inscrito sin participar, el equipo entrena con las suyas.
-    event: ev ? eventSummary(ev) : null,
+    event: ev ? { ...eventSummary(ev), liveCode: ev.public_code } : null,
+    // Sanciones de la sesión en curso (participando): el contador de vueltas de BOX las descuenta.
+    penalties: ev && t.racing ? await q(`select id, laps, retired, reason, (extract(epoch from created_at) * 1000)::float8 as ts, seen_at is not null as seen
+      from penalties where event_id = $1 and team_id = $2 and session = $3 order by id`, [ev.id, t.id, ev.session]) : [],
     racing: !!ev && t.racing,
     track: ev && t.racing ? ev.track : t.track,
     tracks,
@@ -104,14 +108,26 @@ async function eventPayload(e) {
   return { ...eventSummary(e), inviteCode: e.invite_code, publicCode: e.public_code, track: e.track, organizerId: e.organizer_id, organizer: org?.name ?? null,
     teams: teams.map((t) => ({ id: t.id, name: t.name, dorsal: t.dorsal, inviteCode: t.invite_code, members: t.members, carIcon: t.car_icon, carIconStyle: t.car_icon_style, racing: t.racing })) };
 }
-// Clasificación de una sesión por equipo: vueltas, mejor, última y cuándo cruzó la meta por última vez
-// (desempate en resistencia), con el piloto de la mejor vuelta.
-const standingsOf = (e, s) => q(`select t.id, t.name, t.dorsal, t.racing, count(l.id)::int as laps, min(l.ms)::int as best,
-    (array_agg(l.ms order by l.started_at desc))[1] as last,
-    max(l.started_at + l.ms * interval '1 millisecond') as last_at,
-    (select u.name from laps b join users u on u.id = b.driver_id where b.team_id = t.id and b.event_id = $1 and b.kind = $2 order by b.ms limit 1) as best_driver
-  from teams t left join laps l on l.team_id = t.id and l.event_id = $1 and l.kind = $2
-  where t.event_id = $1 group by t.id order by t.created_at`, [e.id, s]);
+// Clasificación de una sesión por equipo, ya ordenada según el formato (rank): vueltas, mejor, última, vueltas de
+// sanción (pen), retirado y cuándo cruzó la meta (desempate). A N vueltas, el cruce de la vuelta N que cuenta
+// (sin las que dé de más), con el piloto de la mejor vuelta. sort: 'best' o 'laps' para forzar el orden.
+async function standingsOf(e, s, sort) {
+  const f = sort ?? (s === 'practice' ? 'best' : e.race_format);
+  const format = f === 'best' ? 'best' : s === 'race' && e.race_format === 'laps' ? 'laps' : 'endurance';
+  const target = format === 'laps' ? e.race_target : null;
+  const rows = await q(`select t.id, t.name, t.dorsal, t.racing, count(l.id)::int as laps, min(l.ms)::int as best,
+      (array_agg(l.ms order by l.started_at desc))[1] as last, coalesce(p.laps, 0)::int as pen, coalesce(p.retired, false) as retired,
+      (array_agg(l.started_at + l.ms * interval '1 millisecond' order by l.started_at))[least(count(l.id), $3::int + coalesce(p.laps, 0))] as last_at,
+      (select u.name from laps b join users u on u.id = b.driver_id where b.team_id = t.id and b.event_id = $1 and b.kind = $2 order by b.ms limit 1) as best_driver
+    from teams t left join laps l on l.team_id = t.id and l.event_id = $1 and l.kind = $2
+    left join lateral (select sum(laps) as laps, bool_or(retired) as retired from penalties where team_id = t.id and event_id = $1 and session = $2) p on true
+    where t.event_id = $1 group by t.id, p.laps, p.retired order by t.created_at`, [e.id, s, target]);
+  return rank(rows, format, target);
+}
+// Sanciones de un evento (o de una sesión), lo más reciente primero.
+const penaltiesOf = (eventId, session = null) => q(`select p.id, p.team_id as "teamId", t.name as team, t.dorsal, p.session, p.laps, p.retired, p.reason, p.by,
+    (extract(epoch from p.created_at) * 1000)::float8 as ts, p.seen_at is not null as seen
+  from penalties p join teams t on t.id = p.team_id where p.event_id = $1 and ($2::text is null or p.session = $2) order by p.id desc`, [eventId, session]);
 // Resultados publicados de un evento (entrenamiento primero) y el código de su enlace público.
 async function eventResults(eventId) {
   const [results, e] = await Promise.all([
@@ -135,6 +151,15 @@ const eventFields = (body) => {
     set.session = body.session;
   }
   if ('track' in body) { const geo = trackGeometry(body.track); set.track = Object.keys(geo).length ? geo : null; }
+  if ('raceFormat' in body) {
+    if (!RACE_FORMATS[body.raceFormat]) fail(400, 'Formato de carrera no válido.');
+    set.race_format = body.raceFormat;
+  }
+  if ('raceTarget' in body) {
+    const n = body.raceTarget === '' || body.raceTarget == null ? null : Number(body.raceTarget);
+    if (n != null && !(Number.isInteger(n) && n >= 1 && n <= 10000)) fail(400, 'La duración tiene que ser un número entero (minutos o vueltas), o vacío.');
+    set.race_target = n;
+  }
   if ('maxTeams' in body) {
     const n = body.maxTeams === '' || body.maxTeams == null ? null : Number(body.maxTeams);
     if (n != null && !(Number.isInteger(n) && n >= 1 && n <= 500)) fail(400, 'El cupo tiene que ser un número de equipos entre 1 y 500, o vacío para no tener límite.');
@@ -172,12 +197,13 @@ async function joinTeam(u, teamId) {
 
 // Geometría de una pista validada: trazado, meta y cortes de tramo (lo demás, como id y nombre, se descarta).
 function trackGeometry(t) {
-  const { line, path, sectors } = t ?? {};
+  const { line, path, sectors, pitIn, pitOut } = t ?? {};
   const pts = (a, min, max) => Array.isArray(a) && a.length >= min && a.length <= max && a.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum));
   if (line != null && !pts(line, 2, 2)) fail(400, 'La línea de meta necesita dos puntos.');
   if (path != null && !pts(path, 3, 2000)) fail(400, 'El trazado necesita entre 3 y 2000 puntos.');
   if (sectors != null && !(Array.isArray(sectors) && sectors.length <= 20 && sectors.every((s) => pts(s, 2, 2)))) fail(400, 'Hasta 20 tramos, cada corte con dos puntos.');
-  return { ...(line && { line }), ...(path && { path }), ...(sectors?.length && { sectors }) };
+  if ((pitIn != null && !pts(pitIn, 2, 2)) || (pitOut != null && !pts(pitOut, 2, 2))) fail(400, 'La entrada y la salida de boxes necesitan dos puntos cada una.');
+  return { ...(line && { line }), ...(path && { path }), ...(sectors?.length && { sectors }), ...(pitIn && pitOut && { pitIn, pitOut }) };
 }
 async function setActiveTrack(teamId, track) {
   await q('update teams set track = $1 where id = $2', [track, teamId]);
@@ -438,9 +464,9 @@ const routes = [
       order by e.starts_on ${past ? 'desc' : 'asc'} nulls last, e.created_at desc limit 100`, [String(url.searchParams.get('q') ?? '').trim().slice(0, 60)]);
   }],
   ['POST', '/api/events', 'organizer', async ({ user, body }) => {
-    const f = eventFields({ name: body.name, place: body.place ?? '', startsOn: body.startsOn });
-    const e = await one('insert into events (name, place, starts_on, organizer_id, invite_code, draft) values ($1, $2, $3, $4, $5, true) returning id',
-      [f.name, f.place, f.starts_on, user.id, await uniqueCode()]);
+    const f = eventFields({ name: body.name, place: body.place ?? '', startsOn: body.startsOn, raceFormat: body.raceFormat ?? 'endurance', raceTarget: body.raceTarget ?? null });
+    const e = await one(`insert into events (name, place, starts_on, organizer_id, invite_code, draft, public_code, race_format, race_target)
+      values ($1, $2, $3, $4, $5, true, $6, $7, $8) returning id`, [f.name, f.place, f.starts_on, user.id, await uniqueCode(), randomCode(10), f.race_format, f.race_target]);
     audit(user, 'event.create', null, { eventId: e.id, event: f.name });
     return eventPayload(await ownEvent(user, e.id));
   }],
@@ -548,9 +574,9 @@ const routes = [
     const e = await ownEvent(user, Number(params[0]));
     if (!['practice', 'race'].includes(body.session)) fail(400, 'Sesión no válida.');
     const sort = body.sort === 'laps' ? 'laps' : 'best';
-    const rows = (await standingsOf(e, body.session)).filter((r) => r.laps > 0)
-      .sort(sort === 'best' ? (a, b) => a.best - b.best : (a, b) => b.laps - a.laps || new Date(a.last_at) - new Date(b.last_at))
-      .map((r, i) => ({ pos: i + 1, dorsal: r.dorsal, team: r.name, laps: r.laps, best: r.best, last: r.last, bestDriver: r.best_driver }));
+    // Sin vueltas no sale en el resultado (van al final de la clasificación: las posiciones no cambian).
+    const rows = (await standingsOf(e, body.session, sort)).filter((r) => r.laps > 0)
+      .map((r) => ({ pos: r.pos, dorsal: r.dorsal, team: r.name, laps: r.eff, pen: r.pen, retired: r.retired, best: r.best, last: r.last, bestDriver: r.best_driver }));
     if (!rows.length) fail(409, 'Aún no hay ninguna vuelta en esa sesión.');
     // Código propio del enlace público: no es el de inscripción (en un evento privado ese no debe circular).
     if (!e.public_code) await q('update events set public_code = $1 where id = $2', [randomCode(10), e.id]);
@@ -562,6 +588,49 @@ const routes = [
     return eventResults(e.id);
   }],
   ['GET', /^\/api\/events\/(\d+)\/results$/, 'organizer', async ({ user, params }) => eventResults((await ownEvent(user, Number(params[0]))).id)],
+  // Sanciones (dirección de carrera): N vueltas que se restan en la sesión en curso, o retirar al equipo. Le llegan
+  // al equipo como una bandera (pantalla completa en Piloto hasta «Visto») y quedan en el registro.
+  ['GET', /^\/api\/events\/(\d+)\/penalties$/, 'organizer', async ({ user, params }) => penaltiesOf((await ownEvent(user, Number(params[0]))).id)],
+  ['POST', /^\/api\/events\/(\d+)\/penalties$/, 'organizer', async ({ user, params, body }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const t = await one('select id, name, dorsal from teams where id = $1 and event_id = $2', [Number(body.teamId), e.id]);
+    if (!t) fail(404, 'Ese equipo no está en el evento.');
+    const retired = !!body.retired;
+    const laps = retired ? 0 : Number(body.laps);
+    if (!retired && !(Number.isInteger(laps) && laps >= 1 && laps <= 100)) fail(400, 'La sanción tiene que ser de 1 a 100 vueltas.');
+    const reason = str(body.reason ?? '', 'Motivo', { min: 0, max: 120 });
+    const p = await one('insert into penalties (event_id, team_id, session, laps, retired, reason, by) values ($1, $2, $3, $4, $5, $6, $7) returning id',
+      [e.id, t.id, e.session, laps, retired, reason, user.name]);
+    await logEvent(e.id, 'penalty', { id: p.id, teamId: t.id, team: t.name, dorsal: t.dorsal, laps, retired, reason, session: e.session, by: user.name });
+    await teamPenalty(e.id, t.id);
+    return penaltiesOf(e.id);
+  }],
+  // Anular una sanción (puesta por error): se devuelven las vueltas o deja de estar retirado.
+  ['DELETE', /^\/api\/events\/(\d+)\/penalties\/(\d+)$/, 'organizer', async ({ user, params }) => {
+    const e = await ownEvent(user, Number(params[0]));
+    const p = await one('delete from penalties where id = $1 and event_id = $2 returning team_id, laps, retired, reason', [Number(params[1]), e.id]);
+    if (!p) fail(404, 'Esa sanción no existe.');
+    const t = await one('select name, dorsal from teams where id = $1', [p.team_id]);
+    await logEvent(e.id, 'penalty.cancel', { teamId: p.team_id, team: t?.name, dorsal: t?.dorsal, laps: p.laps, retired: p.retired, reason: p.reason, by: user.name });
+    await teamPenalty(e.id, p.team_id);
+    return penaltiesOf(e.id);
+  }],
+  // Directo público (sin cuenta, como un apex-timing): clasificación de la sesión en curso según el formato,
+  // quién está en boxes, la mejor vuelta y las sanciones. Lo abren los equipos (Clasificación) y quien tenga el enlace.
+  ['GET', /^\/api\/public\/live\/([A-Za-z0-9]+)$/, 'none', async ({ params }) => {
+    const e = await one(`select ${EVENT_COLS} from events where public_code = $1 and not draft`, [params[0].toUpperCase()]);
+    if (!e) fail(404, 'No hay ningún evento en directo con ese enlace.');
+    const [rows, comments] = await Promise.all([standingsOf(e, e.session), penaltiesOf(e.id, e.session)]);
+    const shown = rows.filter((r) => r.racing || r.laps > 0);
+    const pits = await pitsOf(shown.map((r) => r.id));
+    const best = shown.filter((r) => r.best != null).sort((a, b) => a.best - b.best)[0];
+    return {
+      event: { ...eventSummary(e), now: Date.now() },
+      rows: shown.map((r) => ({ id: r.id, pos: r.pos, dorsal: r.dorsal, team: r.name, laps: r.eff, pen: r.pen, retired: r.retired, best: r.best, last: r.last, gap: r.gap, pit: pits.has(r.id) })),
+      best: best ? { team: best.name, dorsal: best.dorsal, ms: best.best, driver: best.best_driver } : null,
+      comments: comments.map(({ seen, by, ...c }) => c),
+    };
+  }],
   // Página pública de resultados (sin cuenta): solo lo publicado, sin más datos personales que el nombre del piloto.
   ['GET', /^\/api\/public\/results\/([A-Za-z0-9]+)$/, 'none', async ({ params }) => {
     const e = await one(`select id, name, to_char(starts_on, 'YYYY-MM-DD') as "startsOn", place from events where public_code = $1`, [params[0].toUpperCase()]);

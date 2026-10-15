@@ -6,16 +6,20 @@ import { useEffect, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { SESSIONS } from './Racing.jsx';
-import { useEventLive, FlagPanel, STALE_MS } from './RaceControl.jsx';
-import { ResultsTab } from './Results.jsx';
+import { useEventLive, FlagPanel, PenaltyPanel, STALE_MS } from './RaceControl.jsx';
+import { ResultsTab, liveLink, lapsText } from './Results.jsx';
 import { api, inviteLink } from '../lib/session.js';
-import { EVENT_STATES, eventState, missingToPublish, readiness } from '../lib/events.js';
-import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, btn, fmtLap, fmtDelta } from './ui.jsx';
+import { EVENT_STATES, RACE_FORMATS, eventState, missingToPublish, readiness } from '../lib/events.js';
+import { Page, Card, Field, Segmented, ConfirmButton, Pill, ErrorText, input, btn, fmtLap } from './ui.jsx';
 
 const fmtDate = (d) => (d ? new Date(`${d}T12:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 const TABS = [['resumen', 'Resumen'], ['pista', 'Pista'], ['inscritos', 'Inscritos'], ['resultados', 'Resultados'], ['ajustes', 'Ajustes']];
 const STEPS = ['Datos', 'Pista', 'Inscripción', 'Revisar y publicar'];
 const StatePill = ({ state }) => <Pill tone={EVENT_STATES[state].tone}>{state === 'today' && <span className="pulse h-1.5 w-1.5 rounded-full bg-ok" />}{EVENT_STATES[state].label}</Pill>;
+const formatText = (ev) => {
+  const f = RACE_FORMATS[ev.raceFormat ?? 'endurance'];
+  return `${f.label}${f.unit && ev.raceTarget ? ` · ${ev.raceTarget} ${f.unit}` : ''}`;
+};
 const Check = ({ ok, optional }) => <span className={ok ? 'text-ok' : optional ? 'text-muted' : 'text-warn'}><Icon name={ok ? 'check' : 'flag'} size={16} /></span>;
 
 // admin: todos los eventos (no los crea; puede cambiarles el organizador). Si no, los del organizador.
@@ -112,7 +116,7 @@ function Wizard({ id, step, go }) {
   const saveData = async (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    const body = { name: f.get('name'), startsOn: f.get('startsOn'), place: f.get('place') };
+    const body = { name: f.get('name'), startsOn: f.get('startsOn'), place: f.get('place'), raceFormat: f.get('raceFormat'), raceTarget: f.get('raceFormat') === 'best' ? null : f.get('raceTarget') || null };
     setError('');
     if (!id) {
       try { const created = await api('/api/events', { method: 'POST', body }); go([created.id, 'asistente', 2]); } catch (err) { setError(err.message); }
@@ -157,6 +161,7 @@ function Wizard({ id, step, go }) {
                 <Field label="Fecha"><input className={input} name="startsOn" type="date" defaultValue={ev?.startsOn ?? ''} /></Field>
                 <Field label="Lugar"><input className={input} name="place" maxLength={80} defaultValue={ev?.place} placeholder="Circuito del Jarama" /></Field>
               </div>
+              <FormatFields ev={ev} />
               {footer(false, <button className={btn.primary}>Siguiente<Icon name="chevron" size={15} /></button>)}
             </form>
           )}
@@ -189,7 +194,8 @@ function Wizard({ id, step, go }) {
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14px]">
               <dt className="text-muted">Evento</dt><dd className="font-semibold">{ev.name}</dd>
               <dt className="text-muted">Fecha y lugar</dt><dd>{[fmtDate(ev.startsOn) || 'Sin fecha', ev.place].filter(Boolean).join(' · ')}</dd>
-              <dt className="text-muted">Pista</dt><dd>{ev.track?.line ? `Meta marcada${ev.track.path?.length >= 3 ? ' · con trazado' : ''}${ev.track.sectors?.length ? ` · ${ev.track.sectors.length + 1} tramos` : ''}` : 'Sin meta'}</dd>
+              <dt className="text-muted">Carrera</dt><dd>{formatText(ev)}</dd>
+              <dt className="text-muted">Pista</dt><dd>{ev.track?.line ? `Meta marcada${ev.track.path?.length >= 3 ? ' · con trazado' : ''}${ev.track.sectors?.length ? ` · ${ev.track.sectors.length + 1} tramos` : ''}${ev.track.pitOut ? ' · con calle de boxes' : ''}` : 'Sin meta'}</dd>
               <dt className="text-muted">Inscripción</dt><dd>{ev.private ? 'Privada, con código' : 'Pública'} · {ev.maxTeams ? `cupo de ${ev.maxTeams} equipos` : 'sin cupo'}</dd>
             </dl>
             {footer(true, <button disabled={missing.length > 0} onClick={() => patch({ draft: false }).then((ok) => ok && go([id]))} className={btn.primary}>Publicar evento</button>)}
@@ -227,7 +233,7 @@ function Workspace({ id, tab, admin, go, onNav }) {
   const states = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, now - p.ts > STALE_MS ? 'crit' : p.pit ? 'warn' : 'ok']));
   const map = (edit) => <TrackMap cars={mapCars} trails={L.trails.current} sel={null} states={states} focus={focus} track={ev.track}
     onTrack={edit ? (track) => L.patch({ track }) : undefined}
-    toolbar={<span className="px-1 text-[13px] text-muted">{edit ? 'La misma pista para todos los equipos: dibuja el trazado, la meta y los tramos.' : 'Coches en vivo de los equipos que participan.'}</span>} />;
+    toolbar={<span className="px-1 text-[13px] text-muted">{edit ? 'La misma pista para todos los equipos: trazado, meta, tramos y calle de boxes.' : 'Coches en vivo de los equipos que participan.'}</span>} />;
   const control = state !== 'draft' && (
     <button onClick={() => onNav(`control/${id}`)} className={state === 'today' ? btn.primary : btn.ghost}><Icon name="flag" size={15} />Race Control</button>
   );
@@ -254,6 +260,7 @@ function Workspace({ id, tab, admin, go, onNav }) {
             {/* Para dirigir la carrera, mejor Race Control (pantalla completa y atajos); aquí, a mano para probar */}
             <Card title="Dirección de carrera"><FlagPanel flag={L.flag} racing={racing} send={L.sendFlag} connected={L.connected} /></Card>
             <SessionSwitch ev={ev} onChange={L.changeSession} />
+            <Card title={`Sanciones · ${SESSIONS.find(([v]) => v === ev.session)[1]}`}><PenaltyPanel ev={ev} penalties={L.penalties} onChange={L.setPenalties} /></Card>
             <Standings rows={L.standings} ev={ev} session={L.session} setSession={L.setSession} live={L.live} now={now} flag={L.flag}
               onPick={(teamId) => setFocus(L.cars[teamId]?.gps ? { ...L.cars[teamId].gps, t: Date.now() } : null)} />
             <Card title="Coches en vivo" flush><div className="h-[520px]">{map(false)}</div></Card>
@@ -336,6 +343,8 @@ function ShareCode({ ev }) {
       <button onClick={() => navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })} className={btn.ghost}>
         <Icon name={copied ? 'check' : 'copy'} size={15} />{copied ? 'Copiado' : 'Copiar enlace'}</button>
       {navigator.share && <button onClick={() => navigator.share({ title: ev.name, text: `Inscribe tu equipo en ${ev.name} con Box Box (código ${ev.inviteCode})`, url: link }).catch(() => {})} className={btn.ghost}><Icon name="share" size={15} />Compartir</button>}
+      {ev.publicCode && <a href={liveLink(ev.publicCode)} target="_blank" rel="noreferrer" className={btn.ghost} title="Clasificación en directo, sin cuenta: para equipos y público">
+        <Icon name="chart" size={15} />Directo público</a>}
     </div>
   );
 }
@@ -357,17 +366,11 @@ function SessionSwitch({ ev, onChange }) {
   );
 }
 
-function Standings({ rows: raw, ev, session, setSession, live, now, flag, onPick }) {
-  const [order, setOrder] = useState('best');
-  const rows = [...raw].sort(order === 'best'
-    ? (a, b) => (a.best ?? Infinity) - (b.best ?? Infinity)
-    : (a, b) => b.laps - a.laps || new Date(a.last_at ?? 8.64e15) - new Date(b.last_at ?? 8.64e15));
-  const leader = rows[0];
+// Clasificación ya ordenada por el servidor según el formato (entrenamiento: mejor vuelta; carrera: el del evento).
+function Standings({ rows, ev, session, setSession, live, now, flag, onPick }) {
+  const shown = session ?? ev.session;
   return (
-    <Card title="Clasificación" flush badge={<span className="flex flex-wrap gap-2">
-      <Segmented value={session ?? ev.session} onChange={setSession} options={SESSIONS} />
-      <Segmented value={order} onChange={setOrder} options={[['best', 'Mejor vuelta'], ['laps', 'Más vueltas']]} />
-    </span>}>
+    <Card title={`Clasificación · ${shown === 'race' ? formatText(ev) : 'mejor vuelta'}`} flush badge={<Segmented value={shown} onChange={setSession} options={SESSIONS} />}>
       {rows.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">Aún no hay equipos inscritos. Comparte el código de inscripción.</p> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-[14px]">
@@ -379,15 +382,14 @@ function Standings({ rows: raw, ev, session, setSession, live, now, flag, onPick
             <tbody>
               {rows.map((r, i) => {
                 const c = live(r.id);
-                const gap = i === 0 ? null : order === 'best' ? (r.best != null && leader.best != null ? fmtDelta(r.best - leader.best) : '—') : `${r.laps - leader.laps} v`;
                 return (
                   <tr key={r.id} tabIndex={0} onClick={() => onPick(r.id)} onKeyDown={(e) => e.key === 'Enter' && onPick(r.id)}
                     className={`cursor-pointer border-t border-line hover:bg-raised ${i === 0 && (r.best || r.laps) ? 'bg-ok-soft' : ''}`}>
-                    <td className="num px-3 py-2 font-bold">{i + 1}</td>
+                    <td className="num px-3 py-2 font-bold">{r.pos ?? 'RET'}</td>
                     <td className="px-3 py-2"><span className="num mr-1.5 font-semibold text-fg-2">#{r.dorsal}</span><b>{r.name}</b>{r.best_driver && <span className="text-[13px] text-fg-2"> · mejor: {r.best_driver}</span>}</td>
-                    <td className="num px-3 py-2 text-right">{r.laps}</td>
+                    <td className="num px-3 py-2 text-right">{lapsText({ laps: r.eff, pen: r.pen })}</td>
                     <td className="num px-3 py-2 text-right font-bold">{fmtLap(r.best)}</td>
-                    <td className="num px-3 py-2 text-right text-fg-2">{gap ?? '—'}</td>
+                    <td className="num px-3 py-2 text-right text-fg-2">{r.gap || '—'}</td>
                     <td className="num px-3 py-2 text-right">{fmtLap(r.last)}</td>
                     <td className="num px-3 py-2">{c?.lapStartedAt ? fmtLap(Math.max(0, now - c.lapStartedAt)).slice(0, -2) : '—'}</td>
                     <td className="px-3 py-2"><span className="flex items-center gap-1.5">
@@ -446,6 +448,9 @@ function Settings({ ev, admin, patch, run, setError, onDeleted }) {
           <Field label="Fecha"><BlurInput type="date" value={ev.startsOn ?? ''} onSave={(startsOn) => patch({ startsOn })} /></Field>
           <Field label="Lugar"><BlurInput value={ev.place} maxLength={80} onSave={(place) => patch({ place })} /></Field>
         </div>
+      </Card>
+      <Card title="Carrera">
+        <FormatFields ev={ev} patch={patch} />
       </Card>
       <Card title="Inscripción">
         <Segmented label="Visibilidad" value={ev.private ? 'private' : 'public'} onChange={(v) => patch({ private: v === 'private' })}
@@ -524,6 +529,28 @@ function TeamRow({ team: t, eventId, onChange }) {
         </form>
       )}
     </li>
+  );
+}
+
+// Formato de la carrera y su duración (minutos) o vueltas. Con `patch`, se guarda al momento (Ajustes); sin él,
+// son campos del formulario del asistente (raceFormat, raceTarget).
+function FormatFields({ ev, patch }) {
+  const [format, setFormat] = useState(ev?.raceFormat ?? 'endurance');
+  const f = RACE_FORMATS[format];
+  const pick = (v) => { setFormat(v); if (patch) patch({ raceFormat: v, ...(v === 'best' && { raceTarget: null }) }); };
+  return (
+    <div className="flex flex-wrap items-end gap-3">
+      <input type="hidden" name="raceFormat" value={format} />
+      <Segmented label="Formato de la carrera" value={format} onChange={pick} options={Object.entries(RACE_FORMATS).map(([k, v]) => [k, v.label])} />
+      {f.unit && (
+        <Field label={f.unit === 'min' ? 'Duración (minutos)' : 'Vueltas'}>
+          <span className="block w-32">{patch
+            ? <BlurInput type="number" min={1} max={10000} inputMode="numeric" placeholder="Sin fijar" value={ev.raceTarget ?? ''} onSave={(v) => patch({ raceTarget: v === '' ? null : Number(v) })} />
+            : <input className={input} name="raceTarget" type="number" min={1} max={10000} inputMode="numeric" placeholder="Sin fijar" defaultValue={ev?.raceTarget ?? ''} />}</span>
+        </Field>
+      )}
+      <p className="basis-full text-[13px] text-muted">{f.help} El entrenamiento siempre va por mejor vuelta.{format === 'endurance' && ' Con la duración, Race Control y el directo cuentan lo que queda.'}</p>
+    </div>
   );
 }
 

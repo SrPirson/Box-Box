@@ -43,3 +43,38 @@ export function readiness(ev, { cars = {}, log = [], now = Date.now() } = {}) {
     ],
   };
 }
+
+// Formato de la carrera, que elige el organizador. El entrenamiento siempre va por mejor vuelta.
+// target: minutos (resistencia) o vueltas (a N vueltas).
+export const RACE_FORMATS = {
+  endurance: { label: 'Resistencia', unit: 'min', help: 'Gana quien más vueltas da en el tiempo; a igualdad, quien cruzó antes la meta.' },
+  laps: { label: 'A N vueltas', unit: 'vueltas', help: 'Gana quien completa antes las vueltas; después, por vueltas y quién cruzó antes.' },
+  best: { label: 'Mejor vuelta', unit: null, help: 'Clasificación por la vuelta más rápida.' },
+};
+export const formatOf = (ev, session = ev.session) => (session === 'practice' ? 'best' : ev.raceFormat ?? 'endurance');
+
+// Clasificación: filas de la sesión ({ id, laps, best, last_at, pen, retired, ... }) ordenadas según el formato.
+// eff: vueltas que cuentan (menos las de sanción; a N vueltas, como mucho N). Los retirados van al final sin
+// posición. gap: texto de la diferencia con el líder («Vuelta 96», «2 Vueltas», «+1.234»).
+export function rank(rows, format, target) {
+  const at = (r) => (r.last_at ? new Date(r.last_at).getTime() : Infinity);
+  const out = rows.map((r) => {
+    let eff = Math.max(0, r.laps - (r.pen ?? 0));
+    if (format === 'laps' && target) eff = Math.min(eff, target);
+    return { ...r, eff };
+  });
+  const byBest = (a, b) => (a.best ?? Infinity) - (b.best ?? Infinity);
+  const byLaps = (a, b) => b.eff - a.eff || at(a) - at(b);
+  out.sort((a, b) => !!a.retired - !!b.retired || (format === 'best' ? byBest : byLaps)(a, b));
+  const lead = out[0];
+  let pos = 0;
+  for (const r of out) {
+    r.pos = r.retired ? null : ++pos;
+    if (r.retired) r.gap = 'Retirado';
+    else if (r === lead) r.gap = format === 'best' ? '' : `Vuelta ${r.eff}`;
+    else if (format === 'best') r.gap = r.best != null && lead.best != null ? `+${((r.best - lead.best) / 1000).toFixed(3)}` : '';
+    else if (r.eff < lead.eff) r.gap = `${lead.eff - r.eff} Vuelta${lead.eff - r.eff === 1 ? '' : 's'}`;
+    else r.gap = Number.isFinite(at(r)) && Number.isFinite(at(lead)) ? `+${((at(r) - at(lead)) / 1000).toFixed(3)}` : '';
+  }
+  return out;
+}

@@ -229,6 +229,24 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   assert.equal(standing.racing, true);
   // Las vueltas son de la sesión actual (carrera por defecto): en la de entrenamiento no hay ninguna.
   assert.equal((await call(`/api/events/${ev.id}/standings?session=practice`, { token: olga.token }))[0].laps, 0);
+  // Sanción de 1 vuelta: llega al equipo, se descuenta en la clasificación y en el directo público (sin cuenta).
+  assert.equal((await call(`/api/events/${ev.id}/penalties`, { token: pepe.token, method: 'POST', body: { teamId: reg.team.id, laps: 1 } })).status, 403);
+  const penP = next(sp, 'penalty');
+  await call(`/api/events/${ev.id}/penalties`, { token: olga.token, method: 'POST', body: { teamId: reg.team.id, laps: 1, reason: 'Pit corto' } });
+  const pen = await penP;
+  assert.deepEqual([pen.laps, pen.reason], [1, 'Pit corto']);
+  assert.equal((await call('/api/team', { token: pepe.token })).penalties[0].laps, 1);
+  const direct = await call(`/api/public/live/${detail.publicCode.toLowerCase()}`);
+  assert.deepEqual([direct.rows[0].laps, direct.rows[0].pen, direct.rows[0].gap, direct.comments[0].reason], [1, 1, 'Vuelta 1', 'Pit corto']);
+  assert.equal(direct.best.driver, 'Pepe');
+  // «Visto» desde el equipo: lo ve la organizadora. Anularla devuelve la vuelta.
+  const seenPen = next(so, 'event:penalties');
+  sp.emit('penalty:seen', pen.id);
+  await seenPen;
+  const pens = await call(`/api/events/${ev.id}/penalties`, { token: olga.token });
+  assert.equal(pens[0].seen, true);
+  await call(`/api/events/${ev.id}/penalties/${pen.id}`, { token: olga.token, method: 'DELETE' });
+  assert.equal((await call(`/api/events/${ev.id}/standings`, { token: olga.token }))[0].eff, 2);
   const stats = await call('/api/stats?kind=race', { token: pepe.token });
   assert.equal(stats.laps.length, 2);
   assert.equal(stats.laps[0].kind, 'race');
@@ -435,9 +453,9 @@ test('cambio de piloto rápido: el móvil del coche elige quién conduce sin cor
 
   // El móvil de Carla toma el volante y, desde él mismo, elige a Dani: relevo (a boxes), pero el móvil sigue siendo el del coche.
   await new Promise((r) => setTimeout(r, 200)); // el 'driver' (null) de bienvenida
-  const first = next(sd, 'driver');
+  const first = Promise.all([next(sd, 'driver'), next(sc, 'driver')]); // los dos: si no, el de sc podría tomarse por el relevo
   sc.emit('drive');
-  assert.equal((await first).name, 'Carla');
+  assert.equal((await first)[0].name, 'Carla');
   const swap = next(sc, 'driver');
   const pitIn = next(sd, 'pit');
   sc.emit('drive', { driverId: dani.user.id });

@@ -67,6 +67,9 @@ export function createLapTimer() {
   let seen = new Set(); // sectores del trazado recorridos en la vuelta en curso
   let marks = []; // cortes de tramo cruzados en la vuelta en curso: { i, at }
   let prevAt = null;
+  let inPit = false;     // entre la línea de entrada y la de salida de boxes
+  let metaInPit = false; // ha cruzado la meta dentro de la calle (si la calle la cruza, la vuelta ya se cerró ahí)
+  let pitClosedAt = null; // la vuelta se cerró en la salida de boxes
   const reset = () => { acc = { n: 0, temp: 0, maxTemp: -Infinity, rpm: 0, maxRpm: 0, maxSpeed: 0, minVolt: Infinity }; seen = new Set(); marks = []; };
   reset();
   // Marca los sectores entre dos muestras por el arco más corto: sirve con muestreo lento y en ambos sentidos de dibujo.
@@ -80,9 +83,35 @@ export function createLapTimer() {
 
   return {
     // s: { ts, lat, lng, coolant, rpm, speed, voltage, at? }. `at`: progreso en el trazado, si lo hay.
-    // `cuts`: líneas de corte de tramo ([[A, B], ...]). Devuelve la vuelta completada o null.
-    push(s, line, cuts = []) {
+    // `cuts`: líneas de corte de tramo ([[A, B], ...]). `pit`: { pitIn, pitOut } (líneas de entrada y salida de
+    // boxes). Devuelve la vuelta completada o null.
+    push(s, line, cuts = [], pit = null) {
       let lap = null;
+      const close = (at, lapCover = true) => {
+        if (start == null) { start = at; reset(); return; }
+        if (at - start < MIN_LAP_MS || (lapCover && seen.size && seen.size < SECTORS * MIN_COVER)) return;
+        const n = acc.n || 1;
+        lap = {
+          startedAt: Math.round(start), ms: Math.round(at - start),
+          avgTemp: acc.temp / n, maxTemp: Number.isFinite(acc.maxTemp) ? acc.maxTemp : null,
+          avgRpm: acc.rpm / n, maxRpm: acc.maxRpm, maxSpeed: acc.maxSpeed,
+          minVolt: Number.isFinite(acc.minVolt) ? acc.minVolt : null,
+          sectors: splitTimes(start, at, marks, cuts.length),
+        };
+        start = at;
+        reset();
+      };
+      // Calle de boxes: al entrar empieza la parada; al salir se cierra la vuelta (cuenta, aunque la calle no
+      // cruce la meta) salvo que ya se cerrase en la meta dentro de la calle. Sin cobertura: la calle no es el trazado.
+      if (pit?.pitIn && pit.pitOut && prev && s.lat != null) {
+        const tIn = crossing(prev, s, pit.pitIn[0], pit.pitIn[1]);
+        if (tIn != null) { inPit = true; metaInPit = false; }
+        const tOut = crossing(prev, s, pit.pitOut[0], pit.pitOut[1]);
+        if (tOut != null) {
+          if (!metaInPit) { close(prev.ts + tOut * (s.ts - prev.ts), false); pitClosedAt = prev.ts + tOut * (s.ts - prev.ts); }
+          inPit = false;
+        }
+      }
       // Cortes de tramo: cuenta el primer cruce de cada uno en la vuelta (el ruido del GPS no duplica).
       if (start != null && prev && s.lat != null) {
         cuts.forEach(([A, B], i) => {
@@ -95,19 +124,10 @@ export function createLapTimer() {
         const t = crossing(prev, s, line[0], line[1]);
         if (t != null) {
           const at = prev.ts + t * (s.ts - prev.ts);
-          if (start == null) { start = at; reset(); }
-          else if (at - start >= MIN_LAP_MS && (!seen.size || seen.size >= SECTORS * MIN_COVER)) {
-            const n = acc.n || 1;
-            lap = {
-              startedAt: Math.round(start), ms: Math.round(at - start),
-              avgTemp: acc.temp / n, maxTemp: Number.isFinite(acc.maxTemp) ? acc.maxTemp : null,
-              avgRpm: acc.rpm / n, maxRpm: acc.maxRpm, maxSpeed: acc.maxSpeed,
-              minVolt: Number.isFinite(acc.minVolt) ? acc.minVolt : null,
-              sectors: splitTimes(start, at, marks, cuts.length),
-            };
-            start = at;
-            reset();
-          }
+          // ponytail: si la salida de boxes queda justo antes de la meta, el cruce que sigue se descarta solo por
+          // MIN_LAP_MS (o por cobertura); una salida a más de 20 s de la meta daría una vuelta corta.
+          if (inPit) { close(at, false); metaInPit = true; }
+          else if (pitClosedAt == null || at - pitClosedAt >= MIN_LAP_MS) close(at);
         }
       }
       if (start != null) {
@@ -125,6 +145,8 @@ export function createLapTimer() {
     get startedAt() { return start == null ? null : Math.round(start); },
     // Tiempo desde la meta en cada corte cruzado de la vuelta en curso (parciales en vivo).
     get splits() { return start == null ? [] : marks.map((m) => Math.round(m.at - start)).sort((a, b) => a - b); },
-    restart() { prev = null; prevAt = null; start = null; reset(); },
+    // Dentro de la calle de boxes (solo con entrada y salida dibujadas).
+    get inPit() { return inPit; },
+    restart() { prev = null; prevAt = null; start = null; inPit = false; metaInPit = false; pitClosedAt = null; reset(); },
   };
 }

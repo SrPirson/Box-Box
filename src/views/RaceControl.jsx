@@ -8,13 +8,20 @@ import TrackMap from './TrackMap.jsx';
 import { SESSIONS } from './Racing.jsx';
 import { api } from '../lib/session.js';
 import { useSocket, FLAG_INFO } from '../lib/store.js';
-import { Segmented, Pill, ErrorText, input, btn, fmtLap, fmtDelta, downloadCsv } from './ui.jsx';
+import { liveLink } from './Results.jsx';
+import { Segmented, Pill, ErrorText, ConfirmButton, input, btn, fmtLap, downloadCsv } from './ui.jsx';
 
 export const STALE_MS = 15000; // sin datos de un coche desde hace más: «sin señal»
 const TRAIL_MAX = 300;
 const sessionName = (s) => SESSIONS.find(([v]) => v === s)?.[1] ?? s;
 const hms = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return [s / 3600, (s % 3600) / 60, s % 60].map((n) => String(Math.floor(n)).padStart(2, '0')).join(':'); };
 const clock = (ts) => new Date(ts).toLocaleTimeString('es-ES');
+// Reloj de la sesión: en una carrera de resistencia con duración, lo que queda; si no, lo que lleva.
+export const sessionClock = (ev, now) => {
+  if (!ev.sessionStartedAt) return { label: 'Sesión', text: '--:--:--' };
+  const left = ev.session === 'race' && ev.raceFormat === 'endurance' && ev.raceTarget;
+  return left ? { label: 'Queda', text: hms(ev.raceTarget * 60_000 - (now - ev.sessionStartedAt)) } : { label: 'Sesión', text: hms(now - ev.sessionStartedAt) };
+};
 
 // Datos en vivo de un evento para su organizador: el evento, la clasificación, los coches (resumen a 1 Hz),
 // la bandera y el registro. sendFlag espera el acuse del servidor y nunca envía sin conexión.
@@ -26,10 +33,12 @@ export function useEventLive(id) {
   const trails = useRef({});
   const [flag, setFlag] = useState(null); // bandera actual y equipos que la han visto
   const [log, setLog] = useState([]); // registro, lo más reciente primero
+  const [penalties, setPenalties] = useState([]); // sanciones del evento, lo más reciente primero
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const loadEvent = () => api(`/api/events/${id}`).then(setEv).catch((e) => setError(e.message));
   const loadStandings = (s = session) => api(`/api/events/${id}/standings${s ? `?session=${s}` : ''}`).then((r) => setStandings(Object.values(r))).catch(() => {});
+  const loadPenalties = () => api(`/api/events/${id}/penalties`).then(setPenalties).catch(() => {});
   const loadLog = () => api(`/api/events/${id}/log`).then((r) => setLog(Object.values(r).filter((x) => typeof x === 'object'))).catch(() => {});
 
   const { socket, connected } = useSocket({
@@ -44,6 +53,7 @@ export function useEventLive(id) {
     'event:lap': () => loadStandings(),
     'event:flag': setFlag,
     'event:teams': loadEvent,
+    'event:penalties': () => { loadPenalties(); loadStandings(); },
     'event:log': (r) => { setLog((l) => [r, ...l]); if (r.kind === 'session') loadEvent(); },
     connect: () => { socket.emit('event:watch', id); loadLog(); }, // al reconectar, volver a la sala y ponerse al día
   });
@@ -51,6 +61,7 @@ export function useEventLive(id) {
     loadEvent();
     loadStandings();
     loadLog();
+    loadPenalties();
     socket.emit('event:watch', id);
     const t = setInterval(() => setNow(Date.now()), 1000);
     const s = setInterval(loadStandings, 30_000);
@@ -70,7 +81,7 @@ export function useEventLive(id) {
   const live = (teamId) => { const c = cars[teamId]; return c && now - c.ts < STALE_MS ? c : null; };
   const setSession = (s) => { setSessionView(s); loadStandings(s); };
   const changeSession = (s) => patch({ session: s }).then((ok) => { if (ok) setSession(null); return ok; });
-  return { ev, setEv, standings, session, setSession, changeSession, cars, trails, flag, log, error, setError, now, connected, run, patch, sendFlag, live };
+  return { ev, setEv, standings, session, setSession, changeSession, cars, trails, flag, log, penalties, setPenalties, error, setError, now, connected, run, patch, sendFlag, live };
 }
 
 // Botón que actúa al mantenerlo pulsado `ms` (con barra de progreso). Con `hotkey`, también manteniendo esa tecla.
@@ -175,12 +186,62 @@ export function FlagPanel({ flag, racing, send, connected, keys = false, big = f
   );
 }
 
+// Sanciones de la sesión en curso: N vueltas que se restan o retirar al equipo (dos toques). Le llegan al equipo
+// como una bandera; se pueden anular si fue un error.
+export function PenaltyPanel({ ev, penalties, onChange }) {
+  const [teamId, setTeamId] = useState('');
+  const [laps, setLaps] = useState('1');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const act = (p) => p.then((r) => { onChange(r); setError(''); return true; }).catch((e) => { setError(e.message); return false; });
+  const give = (retired) => act(api(`/api/events/${ev.id}/penalties`, { method: 'POST', body: { teamId: Number(teamId), laps: Number(laps), reason, retired } }))
+    .then((ok) => ok && setReason(''));
+  const now = penalties.filter((p) => p.session === ev.session);
+  const n = Number(laps);
+  return (
+    <div className="flex flex-col gap-2">
+      <ErrorText>{error}</ErrorText>
+      <select className={input} value={teamId} onChange={(e) => setTeamId(e.target.value)} aria-label="Equipo a sancionar">
+        <option value="">— Equipo —</option>
+        {ev.teams.filter((t) => t.racing).map((t) => <option key={t.id} value={t.id}>#{t.dorsal} {t.name}</option>)}
+      </select>
+      <div className="flex gap-2">
+        <input className={`${input} w-20`} type="number" min={1} max={100} inputMode="numeric" value={laps} onChange={(e) => setLaps(e.target.value)} aria-label="Vueltas de sanción" />
+        <input className={`${input} min-w-0 flex-1`} value={reason} maxLength={120} onChange={(e) => setReason(e.target.value)} placeholder="Motivo: «Saltarse la roja»" aria-label="Motivo" />
+      </div>
+      {teamId ? (
+        <div className="flex flex-wrap gap-2">
+          {Number.isInteger(n) && n >= 1 && <ConfirmButton solid label={`Sancionar · ${n} vuelta${n === 1 ? '' : 's'}`} confirm="Sí, sancionar" onConfirm={() => give(false)} />}
+          <ConfirmButton label="Retirar" confirm="Sí, retirar" onConfirm={() => give(true)} />
+        </div>
+      ) : <p className="text-[12px] text-muted">Elige el equipo: las vueltas se restan de su clasificación en esta sesión y le sale en Piloto y Box hasta que lo ve.</p>}
+      {now.length > 0 && (
+        <ul className="flex flex-col border-t border-line text-[13px]">
+          {now.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line py-1.5">
+              <span className="num text-fg-2">{clock(p.ts)}</span>
+              <b>#{p.dorsal} {p.team}</b>
+              <span className="font-semibold text-crit">{p.retired ? 'Retirado' : `−${p.laps} v`}</span>
+              {p.reason && <span className="min-w-0 truncate text-fg-2">{p.reason}</span>}
+              <span className={`ml-auto ${p.seen ? 'text-ok' : 'text-warn'}`}>{p.seen ? 'Visto' : 'Sin ver'}</span>
+              <ConfirmButton label="Anular" confirm="Sí, anular" onConfirm={() => act(api(`/api/events/${ev.id}/penalties/${p.id}`, { method: 'DELETE' }))} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // Texto de una entrada del registro.
 export function logText(l) {
   const d = l.data;
   if (l.kind === 'flag') return `${d.type === 'text' ? `Aviso «${d.text}»` : FLAG_INFO[d.type]?.label ?? d.type}${d.by ? ` · ${d.by}` : ''}`;
   if (l.kind === 'seen') return `${d.team} ha visto la bandera${d.by ? ` (${d.by})` : ''}`;
   if (l.kind === 'results') return `Resultado publicado: ${sessionName(d.session)}${d.by ? ` · ${d.by}` : ''}`;
+  if (l.kind === 'penalty') return `Sanción a #${d.dorsal} ${d.team}: ${d.retired ? 'retirado' : `${d.laps} vuelta${d.laps === 1 ? '' : 's'}`}${d.reason ? ` («${d.reason}»)` : ''}${d.by ? ` · ${d.by}` : ''}`;
+  if (l.kind === 'penalty.cancel') return `Sanción anulada a #${d.dorsal} ${d.team}${d.by ? ` · ${d.by}` : ''}`;
+  if (l.kind === 'penalty.seen') return `${d.team} ha visto la sanción${d.by ? ` (${d.by})` : ''}`;
   if (l.kind === 'session') return `${d.restart ? 'Reloj de sesión puesto a cero' : `Sesión → ${sessionName(d.session)}`}${d.by ? ` · ${d.by}` : ''}`;
   return l.kind;
 }
@@ -207,7 +268,6 @@ export default function RaceControlPage({ path = [], onNav }) {
 
 function Console({ id, onNav }) {
   const L = useEventLive(id);
-  const [order, setOrder] = useState('best');
   const [left, setLeft] = useState('tower'); // por debajo de xl: torre o mapa
   const [focus, setFocus] = useState(null);
   const [full, setFull] = useState(!!document.fullscreenElement);
@@ -217,9 +277,8 @@ function Console({ id, onNav }) {
   if (!ev) return <div className="p-6">{L.error ? <ErrorText>{L.error}</ErrorText> : <p className="text-muted">Cargando…</p>}</div>;
 
   const racing = ev.teams.filter((t) => t.racing);
-  const rows = [...L.standings].filter((r) => r.racing).sort(order === 'best'
-    ? (a, b) => (a.best ?? Infinity) - (b.best ?? Infinity)
-    : (a, b) => b.laps - a.laps || new Date(a.last_at ?? 8.64e15) - new Date(b.last_at ?? 8.64e15));
+  const rows = L.standings.filter((r) => r.racing); // ya ordenada por el servidor según el formato de la sesión
+  const timer = sessionClock(ev, now);
   const icons = Object.fromEntries(ev.teams.map((t) => [t.id, { carIcon: t.carIcon ?? null, carIconStyle: t.carIconStyle }]));
   const mapCars = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, { ...p, key: p.teamId, ...icons[p.teamId] }]));
   const states = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, now - p.ts > STALE_MS ? 'crit' : p.pit ? 'warn' : 'ok']));
@@ -233,7 +292,9 @@ function Console({ id, onNav }) {
         <span className="text-[13px] font-bold uppercase tracking-[0.08em] text-muted">Race Control</span>
         <h1 className="min-w-0 truncate text-[17px] font-bold uppercase tracking-[0.04em]">{ev.name}</h1>
         <Pill tone={ev.session === 'race' ? 'accent' : 'info'}>{sessionName(ev.session)}</Pill>
-        <span className="num text-[17px] font-bold" title="Tiempo desde que empezó la sesión">{ev.sessionStartedAt ? hms(now - ev.sessionStartedAt) : '--:--:--'}</span>
+        <span className="num text-[17px] font-bold" title={timer.label === 'Queda' ? 'Tiempo que queda de carrera' : 'Tiempo desde que empezó la sesión'}>
+          {timer.label === 'Queda' && <span className="mr-1 text-[12px] uppercase text-muted">Queda</span>}{timer.text}</span>
+        {ev.publicCode && <a href={liveLink(ev.publicCode)} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-accent underline">Directo público</a>}
         <span className="ml-auto flex items-center gap-3 text-[13px]">
           <span className={`flex items-center gap-1.5 font-semibold uppercase ${L.connected ? 'text-ok' : 'text-crit'}`}>
             <span className={`h-2 w-2 rounded-full ${L.connected ? 'bg-ok' : 'pulse bg-crit'}`} />{L.connected ? 'En línea' : 'Sin conexión'}</span>
@@ -258,33 +319,38 @@ function Console({ id, onNav }) {
             <HoldButton ms={1000} onDone={() => L.patch({ sessionStart: true })} className={`${btn.ghost} w-full`}>Reloj a cero · mantén pulsado</HoldButton>
             <p className="text-[12px] text-muted">Las vueltas siguientes cuentan en la sesión en curso.</p>
           </div>
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <span className="label">Sanciones · {sessionName(ev.session)}</span>
+            <PenaltyPanel ev={ev} penalties={L.penalties} onChange={L.setPenalties} />
+          </div>
         </section>
 
         <section className="order-2 flex min-h-[320px] flex-col overflow-hidden rounded-[4px] border border-line bg-panel lg:order-1 xl:min-h-0" aria-label="Torre de tiempos">
           <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
             <span className="xl:hidden"><Segmented value={left} onChange={setLeft} options={[['tower', 'Torre'], ['map', 'Mapa']]} /></span>
             <span className="label hidden xl:inline">Torre</span>
-            <span className="ml-auto"><Segmented value={order} onChange={setOrder} options={[['best', 'Mejor'], ['laps', 'Vueltas']]} /></span>
+            <span className="ml-auto text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">{ev.session === 'race' && ev.raceFormat !== 'best' ? 'Por vueltas' : 'Por mejor vuelta'}</span>
           </div>
           {left === 'map' ? <div className="min-h-[360px] flex-1 xl:hidden">{map}</div> : null}
           <div className={`min-h-0 flex-1 overflow-y-auto ${left === 'map' ? 'hidden xl:block' : ''}`}>
             {rows.length === 0 ? <p className="p-3 text-[14px] text-muted">Ningún equipo participa todavía.</p> : (
               <ol>
-                {rows.map((r, i) => {
+                {rows.map((r) => {
                   const c = L.live(r.id);
                   const band = !c ? 'bg-line-strong' : c.pit ? 'bg-warn-solid' : 'bg-ok-solid';
                   const notSeen = L.flag && L.flag.type !== 'green' && !L.flag.seen.includes(r.id);
-                  const gap = i === 0 ? fmtLap(r.best) : order === 'best' ? (r.best != null && rows[0].best != null ? fmtDelta(r.best - rows[0].best) : '—') : `${r.laps - rows[0].laps} v`;
+                  const gap = r.gap || fmtLap(r.best);
                   return (
                     <li key={r.id}>
                       <button onClick={() => setFocus(L.cars[r.id]?.gps ? { ...L.cars[r.id].gps, t: Date.now() } : null)}
                         className="flex w-full items-center gap-2 border-b border-line py-1.5 pr-3 text-left text-[14px] hover:bg-raised">
                         <span className={`h-8 w-1.5 shrink-0 ${band}`} title={!c ? 'Sin señal' : c.pit ? 'En boxes' : 'En pista'} />
-                        <span className="num w-6 text-right font-bold">{i + 1}</span>
+                        <span className="num w-6 text-right font-bold">{r.pos ?? 'RET'}</span>
                         <span className="num w-9 font-semibold text-fg-2">#{r.dorsal}</span>
                         <span className="min-w-0 flex-1 truncate font-semibold">{r.name}{c?.driver && <span className="text-[13px] font-medium text-fg-2"> · {c.driver}</span>}</span>
                         {notSeen && <span className="text-warn" title="No ha visto la bandera"><Icon name="flag" size={15} /><span className="sr-only">No ha visto la bandera</span></span>}
-                        <span className="num w-[72px] text-right font-bold">{gap}</span>
+                        {r.pen > 0 && <span className="num text-[12px] font-bold text-crit" title="Vueltas de sanción">−{r.pen}</span>}
+                        <span className="num w-[88px] text-right font-bold">{gap}</span>
                         <span className="num w-[68px] text-right text-fg-2">{c?.pit ? 'BOX' : fmtLap(r.last)}</span>
                       </button>
                     </li>

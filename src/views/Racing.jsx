@@ -44,6 +44,13 @@ export function RacingButton() {
   </>;
 }
 
+// Clasificación en directo del evento (la página pública, en otra pestaña).
+export function LiveButton({ className = 'flex h-8 items-center gap-1.5 rounded-[4px] border border-line px-2.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-fg-2 hover:bg-raised' }) {
+  const { team } = useSession();
+  if (!team?.event?.liveCode) return null;
+  return <a href={`/#directo/${team.event.liveCode}`} target="_blank" rel="noreferrer" className={className}><Icon name="chart" size={14} />Clasificación</a>;
+}
+
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 // El día del evento, si el equipo aún no participa: que no salga a pista sin que cuenten sus vueltas.

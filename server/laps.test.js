@@ -98,3 +98,25 @@ test('con trazado, un cruce de meta sin recorrer el circuito no es vuelta', () =
   assert.ok(timer.startedAt != null);
   assert.deepEqual(out.filter(Boolean), []);
 });
+
+test('calle de boxes: la vuelta por boxes se cierra en la salida aunque no cruce la meta', () => {
+  const line = [[0, 0.9], [0, 1.1]]; // meta en (lat 0, lng 1) del círculo de radio 1
+  // Calle por dentro (radio 0,8) entre los ángulos −0,3 y 0,3: no cruza la meta. Entrada en −0,25 y salida en 0,25.
+  const radial = (a) => [[0.75 * Math.sin(a), 0.75 * Math.cos(a)], [0.85 * Math.sin(a), 0.85 * Math.cos(a)]];
+  const pit = { pitIn: radial(-0.25), pitOut: radial(0.25) };
+  const lap = createLapTimer();
+  const laps = [];
+  const inPit = [];
+  for (let i = 1; i <= 3 * 240 + 10; i++) {
+    const a = (2 * Math.PI * i) / 240 + 0.01;
+    const r = Math.abs(a - 4 * Math.PI) < 0.3 ? 0.8 : 1; // entra en boxes al final de la 2ª vuelta
+    const done = lap.push({ ts: i * 250, lat: r * Math.sin(a), lng: r * Math.cos(a) }, line, [], pit);
+    if (done) laps.push(done);
+    if (lap.inPit) inPit.push(i);
+  }
+  const k = (0.25 / (2 * Math.PI)) * 60000; // la salida está 0,25 rad después de la meta
+  assert.equal(laps.length, 2);
+  assert.ok(Math.abs(laps[0].ms - (60000 + k)) < 50, `vuelta por boxes de ${laps[0].ms} ms`);
+  assert.ok(Math.abs(laps[1].ms - (60000 - k)) < 50, `vuelta siguiente de ${laps[1].ms} ms`);
+  assert.ok(inPit.length > 0 && inPit.length < 25, 'solo en la calle');
+});

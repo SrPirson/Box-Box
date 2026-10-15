@@ -26,7 +26,8 @@ export const useConfig = () => useSyncExternalStore((cb) => (cfgSubs.add(cb), ()
 
 // Estado en vivo del equipo. pit: null | { since, reason } mientras el coche está en boxes.
 // flag: bandera del evento ({ type, text, ts, age }); flagSeen: ts de la última que se ha marcado como vista.
-let live = { driver: null, online: [], pit: null, flag: null, flagSeen: null };
+// penalty: sanción sin ver ({ id, laps, retired, reason, ts }) o null.
+let live = { driver: null, online: [], pit: null, flag: null, flagSeen: null, penalty: null };
 const liveSubs = new Set();
 const setLive = (p) => { live = { ...live, ...p }; liveSubs.forEach((f) => f()); };
 export const getLive = () => live;
@@ -49,6 +50,14 @@ export function seeFlag() {
   if (f.type !== 'green') getSocket().emit('flag:seen', f.ts);
 }
 
+// Sanción de dirección de carrera: se anuncia como una bandera y queda hasta pulsar «Visto».
+export const penaltyText = (p) => (p.retired ? 'Retirado' : `Sanción · ${p.laps} vuelta${p.laps === 1 ? '' : 's'}`);
+export function seePenalty() {
+  if (!live.penalty) return;
+  getSocket().emit('penalty:seen', live.penalty.id);
+  setLive({ penalty: null });
+}
+
 // Un socket por sesión (token). Socket.io reconecta solo; lo emitido sin conexión (mensajes, acuses, avisos)
 // queda en su buffer y sale al reconectar. La telemetría usa su propia cola.
 let socket, socketToken;
@@ -67,6 +76,13 @@ export function getSocket() {
       const fresh = flag && flag.ts !== live.flag?.ts && flag.ts !== live.flagSeen && (flag.type !== 'green' || flag.age < 5000);
       setLive({ flag, ...(flag?.type === 'green' && !fresh && { flagSeen: flag.ts }) });
       if (fresh) { speak(flagSpeech(flag)); navigator.vibrate?.([500, 150, 500]); }
+    });
+    socket.on('penalty', (penalty) => {
+      if (penalty && penalty.id !== live.penalty?.id) {
+        speak(`Dirección de carrera. ${penaltyText(penalty)}${penalty.reason ? `. ${penalty.reason}` : ''}`);
+        navigator.vibrate?.([500, 150, 500]);
+      }
+      setLive({ penalty });
     });
     socket.on('team', () => api('/api/team').then(setTeam).catch(refresh));
     // El servidor nos echa al cambiar de equipo o de contraseña: recargar sesión y reconectar.

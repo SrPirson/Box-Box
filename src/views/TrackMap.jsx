@@ -30,9 +30,9 @@ const MAP_KEY = 'cencerro.basemap';
 const NO_CUTS = []; // estable entre renders: los cortes solo se redibujan si cambian
 const OPTIONS = [['auto', 'Auto'], ...Object.entries(BASEMAPS).map(([id, b]) => [id, b.label])];
 
-// track: pista activa { line?, path?, sectors?, id?, name? }; onTrack(nueva) la guarda. `toolbar`: selector de pistas.
+// track: pista activa { line?, path?, sectors?, pitIn?, pitOut?, id?, name? }; onTrack(nueva) la guarda. `toolbar`: selector de pistas.
 export default function TrackMap({ cars, trails, sel, states, focus, track, onTrack, toolbar, carIcon, carIconStyle }) {
-  const { line, path, sectors = NO_CUTS } = track ?? {};
+  const { line, path, sectors = NO_CUTS, pitIn, pitOut } = track ?? {};
   const theme = useTheme();
   const el = useRef(null);
   const map = useRef(null);
@@ -40,12 +40,13 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
   const layers = useRef({});
   const [choice, setChoice] = useState(() => { try { return localStorage.getItem(MAP_KEY) || 'auto'; } catch { return 'auto'; } });
   const [follow, setFollow] = useState(true);
-  const [draw, setDraw] = useState(null); // null | { mode: 'line' | 'path' | 'sector', pts: [[lat, lng], ...] }
+  const [draw, setDraw] = useState(null); // null | { mode: 'line' | 'path' | 'sector' | 'pit', pts: [[lat, lng], ...], entry? }
   const drawRef = useRef(null);
   drawRef.current = draw;
   const finish = useRef(null);
   const route = useRef(null);
   const cuts = useRef(null);
+  const pits = useRef(null);
   const [hover, setHover] = useState(null); // puntero sobre el mapa mientras se coloca la meta o un corte (vista previa)
   const geo = useMemo(() => (path?.length >= 3 ? createRoute(path) : null), [path]);
   const geoRef = useRef(geo);
@@ -68,6 +69,14 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
       if (!d) return;
       const pt = [e.latlng.lat, e.latlng.lng];
       const pts = [...d.pts, pt];
+      // Calle de boxes: dos toques para la entrada y dos para la salida (no está en el trazado: siempre a mano).
+      if (d.mode === 'pit') {
+        if (pts.length < 2) return setDraw({ ...d, pts });
+        if (!d.entry) return setDraw({ mode: 'pit', pts: [], entry: pts });
+        const { track: t, onTrack: set } = latest.current;
+        setDraw(null);
+        return set({ ...t, pitIn: d.entry, pitOut: pts });
+      }
       if (d.mode !== 'path' && (geoRef.current || pts.length === 2)) {
         const cut = geoRef.current ? geoRef.current.lineAt(pt) : pts;
         const { track: t, onTrack: set } = latest.current;
@@ -117,6 +126,18 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
     ])).addTo(map.current);
     if (placing && draw.pts.length) cuts.current.addLayer(L.circleMarker(draw.pts[0], { radius: 5, className: 'route-dot', interactive: false }));
   }, [sectors, draw, hover, geo]);
+
+  // Calle de boxes: entrada (IN) y salida (OUT), en rojo. Mientras se marca, la parte ya puesta.
+  useEffect(() => {
+    pits.current?.remove();
+    const placing = draw?.mode === 'pit';
+    const lines = placing ? [draw.entry ?? draw.pts, draw.entry && draw.pts] : [pitIn, pitOut];
+    pits.current = L.layerGroup(lines.flatMap((c, i) => (!c?.length ? [] : c.length === 1
+      ? [L.circleMarker(c[0], { radius: 5, className: 'route-dot', interactive: false })]
+      : [L.polyline(c, { className: 'pit-line', weight: 6, interactive: false }),
+        L.marker([(c[0][0] + c[1][0]) / 2, (c[0][1] + c[1][1]) / 2], { interactive: false,
+          icon: L.divIcon({ className: '', html: `<div class="pit-label">${i ? 'OUT' : 'IN'}</div>`, iconSize: [34, 18] }) })]))).addTo(map.current);
+  }, [pitIn, pitOut, draw]);
 
   // Trazado del circuito: lazo cerrado. Mientras se dibuja, abierto y con sus puntos.
   useEffect(() => {
@@ -206,6 +227,7 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
             <MapButton onClick={tool('path')} active={draw?.mode === 'path'} label="Trazado" icon="route" />
             <MapButton onClick={tool('line')} active={draw?.mode === 'line'} label="Meta" icon="finish" />
             <MapButton onClick={tool('sector')} active={draw?.mode === 'sector'} label={sectors.length ? `Tramos · ${sectors.length + 1}` : 'Tramos'} icon="timer" />
+            <MapButton onClick={tool('pit')} active={draw?.mode === 'pit'} label="Boxes" icon="wrench" />
           </span>}
         </div>
       )}
@@ -231,9 +253,13 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
       </div>
       {draw && (
         <div role="status" className="absolute inset-x-2 bottom-8 z-[1000] mx-auto flex max-w-lg flex-wrap items-center gap-x-3 gap-y-2 rounded-[4px] border border-accent bg-panel px-3 py-2 shadow-lg">
-          <Icon name={{ line: 'finish', path: 'route', sector: 'timer' }[draw.mode]} size={18} className="text-accent" />
+          <Icon name={{ line: 'finish', path: 'route', sector: 'timer', pit: 'wrench' }[draw.mode]} size={18} className="text-accent" />
           <span className="min-w-0 flex-1 text-[14px] font-semibold leading-snug">
-            {draw.mode === 'path'
+            {draw.mode === 'pit'
+              ? !draw.entry
+                ? draw.pts.length === 0 ? 'Entrada a boxes: toca un borde de la calle donde empieza la parada…' : '…y ahora el borde de enfrente.'
+                : draw.pts.length === 0 ? 'Salida de boxes: toca un borde donde la calle vuelve a la pista (después de la meta). Al cruzarla se cierra la vuelta…' : '…y ahora el borde de enfrente.'
+              : draw.mode === 'path'
               ? <>Toca el centro de la pista dando una vuelta completa, un punto en cada curva <span className="num text-muted">· {draw.pts.length} puntos</span></>
               : draw.mode === 'sector'
                 ? geo ? <>Toca el trazado azul donde termina cada tramo, en orden desde la meta. Cada toque añade un corte <span className="num text-muted">· {sectors.length + 1} tramos</span></>
@@ -251,10 +277,10 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
               </>}
               <button onClick={() => setDraw(null)} className="text-[12px] font-bold uppercase tracking-[0.06em] text-accent">Listo</button>
             </> : <>
-              {(draw.mode === 'line' ? line : path) && (
-                <ConfirmButton label={draw.mode === 'line' ? 'Borrar meta' : 'Borrar trazado'} confirm="Sí, borrar"
+              {(draw.mode === 'line' ? line : draw.mode === 'pit' ? pitOut : path) && (
+                <ConfirmButton label={{ line: 'Borrar meta', pit: 'Borrar boxes', path: 'Borrar trazado' }[draw.mode]} confirm="Sí, borrar"
                   icon={<Icon name="trash" size={14} />}
-                  onConfirm={() => { save({ [draw.mode]: null }); setDraw(null); }} />
+                  onConfirm={() => { save(draw.mode === 'pit' ? { pitIn: null, pitOut: null } : { [draw.mode]: null }); setDraw(null); }} />
               )}
               {draw.mode === 'path' && <>
                 <button onClick={() => setDraw({ ...draw, pts: draw.pts.slice(0, -1) })} disabled={!draw.pts.length} className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-fg-2 hover:text-fg disabled:opacity-40"><Icon name="undo" size={13} />Deshacer</button>

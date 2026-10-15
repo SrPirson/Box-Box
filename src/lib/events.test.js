@@ -31,3 +31,22 @@ test('checklist del evento: publicar y día de carrera', async () => {
   r = readiness(ev, { cars: { 1: { ts: now }, 2: { ts: now } }, log: [...log, { kind: 'seen', data: { flagTs: 5, teamId: 2 } }], now });
   assert.deepEqual(ok(r.raceDay), { racing: true, idle: false, signal: true, flag: true });
 });
+
+test('clasificación: resistencia con sanciones, a N vueltas, mejor vuelta y retirados', async () => {
+  const { rank } = await import('./events.js');
+  const t = (s) => `2026-10-10T16:00:${String(s).padStart(2, '0')}Z`;
+  const rows = [
+    { id: 1, laps: 96, best: 148000, last_at: t(10) },
+    { id: 2, laps: 97, best: 149000, last_at: t(5), pen: 2 }, // sancionado: 95 cuentan
+    { id: 3, laps: 96, best: 147000, last_at: t(12) },
+    { id: 4, laps: 99, best: 146000, last_at: t(1), retired: true },
+  ];
+  const e = rank(rows, 'endurance');
+  assert.deepEqual(e.map((r) => [r.id, r.pos, r.eff]), [[1, 1, 96], [3, 2, 96], [2, 3, 95], [4, null, 99]]);
+  assert.deepEqual(e.map((r) => r.gap), ['Vuelta 96', '+2.000', '1 Vuelta', 'Retirado']);
+  // A 95 vueltas: los tres han terminado; gana quien cruzó antes (sin contar vueltas de más).
+  assert.deepEqual(rank(rows, 'laps', 95).map((r) => r.id), [2, 1, 3, 4]);
+  const b = rank(rows, 'best');
+  assert.deepEqual(b.map((r) => r.id), [3, 1, 2, 4]);
+  assert.equal(b[1].gap, '+1.000');
+});
