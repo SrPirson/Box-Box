@@ -30,6 +30,8 @@ const connect = (token) => new Promise((resolve, reject) => {
   s.on('connect_error', reject);
 });
 const next = (s, ev) => new Promise((r) => s.once(ev, r));
+// El siguiente `ev` que cumpla `ok`: los avisos de bienvenida (p. ej. driver: null) pueden llegar tarde y colarse.
+const nextWhere = (s, ev, ok) => new Promise((r) => { const f = (d) => { if (ok(d)) { s.off(ev, f); r(d); } }; s.on(ev, f); });
 
 test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   // Registro y login
@@ -67,7 +69,7 @@ test('cuentas, equipos, tiempo real, vueltas y administración', async () => {
   let leaked = false;
   so.onAny((ev) => { if (['telemetry', 'telemetry:batch', 'lap', 'msg', 'ack', 'pilot'].includes(ev)) leaked = true; }); // presence/driver son de su propio equipo
 
-  const drv = next(sb, 'driver');
+  const drv = nextWhere(sb, 'driver', (d) => d);
   sa.emit('drive');
   assert.equal((await drv).name, 'Ana');
 
