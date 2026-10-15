@@ -1,6 +1,6 @@
 # Contexto del proyecto · por dónde vamos
 
-> Última actualización: 2026-10-08. Plan de negocio, precios, escalado y pagos: [`plan-negocio-y-escalado.md`](plan-negocio-y-escalado.md). Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
+> Última actualización: 2026-10-15. Plan de negocio, precios, escalado y pagos: [`plan-negocio-y-escalado.md`](plan-negocio-y-escalado.md). Léelo antes de retomar. El historial día a día está en [`daily/`](daily/).
 
 ## Qué es
 
@@ -19,8 +19,8 @@ alto; también se cambia en la cabecera) y cada modo solo muestra sus vistas (`s
 | Modo | Vistas |
 |---|---|
 | Admin | **Resumen** (métricas, en vivo, necesita atención, actividad), **Cuentas** (búsqueda y páginas en el servidor, acciones masivas, panel lateral, «Ver como» en solo lectura), **Equipos**, **Eventos** (todos: abrir, cambiar organizador, cerrar, borrar; no crea) y **Auditoría** |
-| Organizador | **Mis eventos**: lista por estado (Borrador, Inscripción, Hoy, Terminado) con el siguiente paso; **asistente** de 4 pasos para crear (datos, pista copiable, inscripción y cupo, publicar); espacio del evento con pestañas **Resumen** (código, comprobaciones del día de carrera, banderas, sesión, clasificación, mapa), **Pista**, **Inscritos**, **Resultados** (publicar por sesión, CSV, enlace público) y **Ajustes** (zona de peligro); **Race Control** a pantalla completa |
-| Piloto | **Piloto** (fila grande bajo la cabecera), **Box**, **Estadísticas**, **Eventos** (lista por fecha con buscador, próximos/pasados, inscripción; sin equipo: «Tengo un código» y «Equipo para entrenar»), **Equipo** (personas: evento, invitar, miembros, nombre, salir) y **Ajustes** (coche: dorsal, icono, con/sin OBD, teléfono del mecánico, alertas; móvil: adaptador BLE/clásico/simulador, intervalo, telemetría, permisos, APK) |
+| Organizador | **Mis eventos**: lista por estado (Borrador, Inscripción, Hoy, Terminado) con el siguiente paso; **asistente** de 4 pasos para crear (datos, pista copiable, inscripción y cupo, publicar); espacio del evento con portada (estado, inscritos, participan, con señal, formato) y pestañas **Resumen** (código, enlace al directo, comprobaciones del día de carrera, clasificación, mapa, banderas de toda la pista o por zona, sesión, sanciones), **Pista** (trazado, meta, tramos, calle de boxes), **Inscritos**, **Resultados** (publicar por sesión, CSV, enlace público) y **Ajustes** (datos, formato y duración de la carrera, retransmisión en vídeo, inscripción, zona de peligro); **Race Control** a pantalla completa |
+| Piloto | **Piloto** (fila grande bajo la cabecera), **Box** (con «Clasificación» al directo y las sanciones en el contador), **Estadísticas**, **Eventos** (botón «Clasificación»; lista por fecha con buscador, próximos/pasados, inscripción; sin equipo: «Tengo un código» y «Equipo para entrenar»), **Equipo** (personas: evento, invitar, miembros, nombre, salir) y **Ajustes** (coche: dorsal, icono, con/sin OBD, teléfono del mecánico, alertas; móvil: adaptador BLE/clásico/simulador, intervalo, telemetría, permisos, APK) |
 | Todos | **Perfil** (botón con la inicial): nombre, email (con contraseña), contraseña, modo, tema, cerrar sesión, eliminar cuenta y estadísticas personales |
 
 Sin equipo, el piloto solo ve Eventos y Perfil.
@@ -32,7 +32,8 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
   completa con voz (nativa en la APK) y respuestas OK / NO / PROBLEMA. Aviso si falta el permiso de ubicación.
 - **Race Control** (`#control/12`, `src/views/RaceControl.jsx`): torre de tiempos, mapa, banderas (G/Y/S/F dos veces o
   + Enter; roja manteniendo pulsado o la R; bandera a cuadros), reloj de sesión, cambio de sesión manteniendo
-  pulsado y registro con hora exportable a CSV. Pantalla siempre encendida; sin conexión no envía banderas.
+  pulsado y registro con hora exportable a CSV. Pantalla siempre encendida; sin conexión no envía banderas. Desde el
+  15/10: banderas por zona (minimapa), sanciones, reloj de lo que queda en resistencia y enlace al directo público.
 - **Resultados**: el organizador publica una instantánea por sesión (por vueltas o por mejor vuelta); se ven sin cuenta
   en `#tiempos/<public_code>` (código propio, no el de inscripción) y se imprimen o se guardan en PDF.
 - **Directo público** (`#directo/<public_code>`, sin cuenta, como apex-timing): clasificación de la sesión en curso según el
@@ -75,11 +76,11 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 | | |
 |---|---|
 | Repo | `https://github.com/SrPirson/Box-Box` · rama `main` |
-| Último commit | merge de `47507e2` Resultados publicados y nuevo panel de administración (05/10) con `a83db65` Box: gauges siempre pintados y sin «sin datos» por desfase de reloj (08/10). **Sin push**: lo del 05/10 no está desplegado |
+| Último commit | `eb7bfdd` Banderas por zona (15/10). Todo subido y desplegado (autodeploy de `main`); lo del 05/10 y el 08/10 ya está en producción |
 | Despliegue | **https://boxracing.onrender.com** · servicio `boxracing` `srv-db02jqad0e5s739s56gg` (Frankfurt, free, autodeploy de `main`). La antigua https://cencerro-racing.onrender.com (servicio `cencerro` `srv-davb06flk1mc739c6vlg`) sigue activa con `REDIRECT_TO`: los navegadores van a la nueva y las APK antiguas (WebView, `; wv)`) la siguen cargando para actualizarse. **Borrarla cuando todos los móviles tengan la APK v9 o posterior.** `box-box` y `boxbox` en Render estaban cogidas |
 | Base de datos | **Neon** `box-box` (Postgres 18, Frankfurt `eu-central-1`, gratis sin caducidad; creada desde la integración de Vercel). `DATABASE_URL` con `sslmode=verify-full`. Migrada desde Render el 02/10 con `server/migrate.js`. El Postgres de Render (`cencerro-racing-db`) caduca el 31/10/2026 y ya no se usa |
 | APK | Release `apk` de GitHub, **versión 13** (`cencerro.apk`; v12 trajo Bluetooth clásico y pedir ubicación, v13 la ubicación por red y el aviso de GPS apagado; la siguiente conecta el Bluetooth clásico en un hilo propio, porque bloqueaba a todos los plugins y dejaba «Conectando…» y «Comprobando…» colgados). La compila `.github/workflows/android.yml` en cada cambio de `android/`, `capacitor.config.json` o `package.json`; firma fija con el secreto `ANDROID_KEYSTORE` (CN=Cencerro Racing), verificada con apksigner antes de publicar. La app avisa de versión nueva e instala encima |
-| Tests | `npm test` → **24 en verde** (reloj del móvil desfasado, ELM327 sin «1» final, borradores y publicación, cupo, registro y resultados del evento, bandera recuperada tras reiniciar (`server/flags.test.js`), checklist del evento, administración y «Ver como», banderas, participar en eventos y tipos de vuelta, estadísticas por pista, sin OBD, ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
+| Tests | `npm test` → **38 en verde** (15/10: clasificación por formato con sanciones y retirados, calle de boxes, zonas de bandera, sanciones, directo público y vídeo, duración legible; arreglados el de ELM327, que fallaba en Windows por el reloj, y dos carreras de los tests de tiempo real con el `driver: null` de bienvenida. Antes: reloj del móvil desfasado, ELM327 sin «1» final, borradores y publicación, cupo, registro y resultados del evento, bandera recuperada tras reiniciar (`server/flags.test.js`), checklist del evento, administración y «Ver como», banderas, participar en eventos y tipos de vuelta, estadísticas por pista, sin OBD, ELM327, alertas, rumbo, cronometraje y tramos, migración, integración API + tiempo real: equipos, pistas, eventos, roles, perfil, boxes, anular vuelta) |
 
 ## Cómo arrancar
 
@@ -181,14 +182,32 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
 | «Ver como» solo lectura, con motivo y auditado | Soporte sin poder actuar en nombre de nadie |
 | Pagos con Stripe (no Paddle) | Más barato (~3,6 % con Tax), cubre suscripción, pase por evento y Connect; el IVA OSS lo declara la gestoría |
 
+## Hecho el 15/10
+
+Todo con tests y subido; lo visual se revisó con capturas de Chrome sin ventana (la extensión de Chrome no conectaba).
+
+- **Directo público** `#directo/<código>` sin cuenta (estilo apex-timing): clasificación, IN en boxes, mejor vuelta,
+  comentarios de sanciones, **mapa con los coches** (cada segundo) y **vídeo** (YouTube, Twitch, Kick u otra web https).
+  Botón «Clasificación» para los equipos (Box, Eventos) y «Directo público» para el organizador.
+- **Formato de carrera**: resistencia (en minutos u horas), a N vueltas o mejor vuelta; ordena clasificación, directo y
+  resultados publicados. Race Control y el directo cuentan lo que queda.
+- **Sanciones**: restar vueltas o retirar, con motivo y anulables; el desplegable lista todos los inscritos (también los
+  que no participan, que pueden tener vueltas). Llegan a Piloto a pantalla completa con voz hasta «Visto».
+- **Calle de boxes** en la pista: entrada = «En boxes» automático; salida = cierra la vuelta y termina la parada.
+- **Banderas por zona** (amarilla, doble amarilla, aceite) por tramos o entre dos puntos; aviso al entrar en la zona.
+- **Rediseño «motorsport vivo»** de todas las vistas: color e icono por sección, portadas, pestañas, ayudas (?),
+  selectores en color y arreglos responsive (código de inscripción en el móvil, clasificación sin scroll lateral, logo
+  estirado del directo).
+
 ## Pendiente / próximos pasos
 
 **Próximo día — empezar por aquí:**
 
-1. **Reiniciar el servidor local contra Neon** (lo dejé con el servidor de antes, a la espera de confirmación): aplica a
-   producción solo cambios que añaden (columnas `draft`, `max_teams`, `session_started_at`, `public_code` en `events`;
-   `last_seen_at` en `users`; tablas `event_log`, `event_results`, `audit_log`). Repasar en pantalla con datos reales
-   todo lo del 05/10 y, si va bien, **push** (autodeploy a Render).
+1. **Probar en pista lo del 15/10** con coches de verdad: la **calle de boxes** (la salida tiene que quedar después de
+   la meta; si queda más de 20 s antes, contaría una vuelta corta de más), las **banderas por zona** (que el marco salga
+   al entrar en el tramo correcto: si sale en el opuesto, los cortes de tramo se marcaron al revés), las sanciones en
+   Piloto y el directo público con vídeo. Ver también los tooltips (?) en un móvil (no se vieron abiertos en captura).
+   El esquema nuevo (`race_format`, `race_target`, `video_url` en `events`; tabla `penalties`) se aplica solo al arrancar.
 2. **Borrar en Render** (desde el panel; el MCP no permite borrar) el servicio antiguo `cencerro`
    (`srv-davb06flk1mc739c6vlg`) y el Postgres `cencerro-racing-db` (caduca el 31/10). Todos tienen la APK v9+.
 3. **Repasar en pantalla lo hecho el 03/10** (nada se vio en el navegador, solo tests y build):
