@@ -55,11 +55,11 @@ export function AdminOverview({ onNav }) {
     const t = setInterval(load, 30_000);
     return () => clearInterval(t);
   }, []);
-  if (!o) return <Page title="Resumen">{error ? <ErrorText>{error}</ErrorText> : <p className="text-muted">Cargando…</p>}</Page>;
+  if (!o) return <Page icon="chart" color="results" title="Resumen">{error ? <ErrorText>{error}</ErrorText> : <p className="text-muted">Cargando…</p>}</Page>;
   const c = o.counts;
   const attention = o.stalePasswords.length + o.idleToday.length;
   return (
-    <Page title="Resumen" subtitle="La plataforma de un vistazo; se actualiza cada 30 s.">
+    <Page icon="chart" color="results" title="Resumen" subtitle="La plataforma de un vistazo; se actualiza cada 30 s.">
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Tile label="Cuentas" value={c.users} sub={`+${c.usersWeek} esta semana · ${c.activeWeek} activas en 7 días`} />
@@ -67,7 +67,7 @@ export function AdminOverview({ onNav }) {
           <Tile label="Eventos" value={c.eventsToday} sub={`hoy · ${c.eventsNext} en los próximos 30 días`} />
           <Tile label="Vueltas" value={c.lapsWeek} sub="en los últimos 7 días" />
         </div>
-        <Card title="En vivo ahora">
+        <Card icon="signal" color="teams" title="En vivo ahora">
           <p className="text-[15px]"><b className="num">{o.teamsOnline}</b> equipo{o.teamsOnline === 1 ? '' : 's'} con alguien conectado.</p>
           {o.flags.length === 0 ? <p className="text-[14px] text-muted">Ningún evento con bandera activa.</p> : (
             <ul className="flex flex-col gap-1.5">
@@ -82,7 +82,7 @@ export function AdminOverview({ onNav }) {
           )}
         </Card>
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card title={`Necesita atención${attention ? ` · ${attention}` : ''}`} tone={attention ? 'border-warn' : ''}>
+          <Card icon="alert" color="results" title={`Necesita atención${attention ? ` · ${attention}` : ''}`} tone={attention ? 'border-warn' : ''}>
             {attention === 0 && <p className="text-[14px] text-muted">Nada pendiente.</p>}
             {o.idleToday.map((e) => (
               <p key={e.id} className="text-[14px]"><Icon name="alert" size={15} className="mr-1 inline text-warn" /><b>{e.name}</b> es hoy y {e.idle} equipo{e.idle === 1 ? ' no participa' : 's no participan'}.
@@ -94,7 +94,7 @@ export function AdminOverview({ onNav }) {
               </div>
             )}
           </Card>
-          <Card title="Actividad reciente" badge={<button onClick={() => onNav('auditoria')} className="text-[12px] font-semibold uppercase text-accent">Ver todo</button>}>
+          <Card icon="refresh" color="data" title="Actividad reciente" badge={<button onClick={() => onNav('auditoria')} className="text-[12px] font-semibold uppercase text-accent">Ver todo</button>}>
             {o.recent.length === 0 ? <p className="text-[14px] text-muted">Aún no hay actividad.</p> : (
               <ul className="flex flex-col gap-1 text-[13px]">
                 {o.recent.map((r) => <li key={r.id} className="flex gap-2"><span className="num shrink-0 text-muted">{time(r.ts)}</span><span><b>{r.actor ?? '—'}</b> · {auditText(r)}</span></li>)}
@@ -137,7 +137,7 @@ export function AdminUsers({ path = [], onNav }) {
   };
 
   return (
-    <Page title="Cuentas" subtitle="Busca por nombre, email o equipo; selecciona varias para cambiarlas a la vez. Todo queda en la auditoría."
+    <Page icon="users" color="teams" title="Cuentas" subtitle="Busca por nombre, email o equipo; selecciona varias para cambiarlas a la vez. Todo queda en la auditoría."
       actions={<span className="text-[13px] text-muted">{data ? `${data.total} cuenta${data.total === 1 ? '' : 's'}` : ''}</span>}>
       <div className="flex flex-col gap-3">
         <ErrorText>{error}</ErrorText>
@@ -147,7 +147,7 @@ export function AdminUsers({ path = [], onNav }) {
           <div className="max-w-full overflow-x-auto"><Segmented value={role} onChange={(r) => { setRole(r); setPage(1); }} options={[['', 'Todos'], ...Object.entries(ROLES)]} /></div>
         </div>
         {selected.size > 0 && <BulkBar count={selected.size} onAction={bulk} onClear={() => setSelected(new Set())} />}
-        <Card title="Cuentas" flush>
+        <Card icon="users" color="teams" title="Cuentas" flush>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] text-left text-[14px]">
               <thead className="bg-raised"><tr className="label">
@@ -312,11 +312,11 @@ export function AdminTeams() {
   const f = filter.trim().toLowerCase();
   const shown = teams?.filter((t) => !f || [t.name, t.owner].some((s) => s?.toLowerCase().includes(f)));
   return (
-    <Page title="Equipos" subtitle="Todos los equipos de la plataforma. Eliminar un equipo borra también sus vueltas y su telemetría.">
+    <Page icon="car" color="track" title="Equipos" subtitle="Todos los equipos de la plataforma. Eliminar un equipo borra también sus vueltas y su telemetría.">
       <div className="flex flex-col gap-3">
         <ErrorText>{error}</ErrorText>
         <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Buscar equipo o capitán" aria-label="Buscar equipo" className={`${input} max-w-sm`} />
-        <Card title={`Equipos${teams ? ` · ${teams.length}` : ''}`} flush>
+        <Card icon="car" color="track" title={`Equipos${teams ? ` · ${teams.length}` : ''}`} flush>
           {!shown ? <p className="p-4 text-muted">Cargando…</p> : shown.length === 0 ? <p className="p-4 text-[14px] text-muted">Ningún equipo.</p> : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] text-left text-[14px]">
@@ -353,9 +353,9 @@ export function AdminAudit({ onNav }) {
   useEffect(() => { api(`/api/admin/audit?page=${page}`).then(setData).catch((e) => setError(e.message)); }, [page]);
   const pages = data ? Math.max(1, Math.ceil(data.total / data.per)) : 1;
   return (
-    <Page title="Auditoría" subtitle="Quién ha cambiado qué: roles, contraseñas, bajas, eventos, resultados y cada suplantación con lo que se hizo.">
+    <Page icon="shield" color="data" title="Auditoría" subtitle="Quién ha cambiado qué: roles, contraseñas, bajas, eventos, resultados y cada suplantación con lo que se hizo.">
       <ErrorText>{error}</ErrorText>
-      <Card title={`Registro${data ? ` · ${data.total}` : ''}`} flush>
+      <Card icon="shield" color="data" title={`Registro${data ? ` · ${data.total}` : ''}`} flush>
         {!data ? <p className="p-4 text-muted">Cargando…</p> : data.rows.length === 0 ? <p className="p-4 text-[14px] text-muted">Aún no hay nada registrado.</p> : (
           <ul>
             {data.rows.map((r) => (

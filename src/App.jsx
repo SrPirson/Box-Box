@@ -16,6 +16,7 @@ import { EventTodayBanner } from './views/Racing.jsx';
 import { Login, ForcedPassword, Wordmark } from './views/Auth.jsx';
 import Icon from './icons.jsx';
 import { useSocket } from './lib/store.js';
+import { tone } from './views/ui.jsx';
 import { refresh, stopImpersonating, useSession } from './lib/session.js';
 import { useGateway } from './lib/gateway.js';
 import { toggleTheme, useTheme } from './lib/theme.js';
@@ -27,22 +28,22 @@ import { MODES, modesOf, setMode, useMode } from './lib/mode.js';
 const AdminEvents = (p) => <Events admin {...p} />;
 const MODE_VIEWS = {
   pilot: {
-    box: { label: 'Box', icon: 'flag', team: true, Page: Box },
-    stats: { label: 'Estadísticas', icon: 'chart', team: true, Page: Stats },
-    eventos: { label: 'Eventos', icon: 'finish', Page: EventsBrowse },
-    equipo: { label: 'Equipo', icon: 'users', team: true, Page: Team },
-    ajustes: { label: 'Ajustes', icon: 'sliders', team: true, Page: Settings },
+    box: { label: 'Box', icon: 'flag', color: 'race', team: true, Page: Box },
+    stats: { label: 'Estadísticas', icon: 'chart', color: 'results', team: true, Page: Stats },
+    eventos: { label: 'Eventos', icon: 'finish', color: 'race', Page: EventsBrowse },
+    equipo: { label: 'Equipo', icon: 'users', color: 'teams', team: true, Page: Team },
+    ajustes: { label: 'Ajustes', icon: 'sliders', color: 'data', team: true, Page: Settings },
   },
   organizer: {
-    eventos: { label: 'Mis eventos', icon: 'finish', Page: Events },
+    eventos: { label: 'Mis eventos', icon: 'finish', color: 'race', Page: Events },
     control: { label: 'Race Control', Page: RaceControl, hidden: true, bare: true },
   },
   admin: {
-    resumen: { label: 'Resumen', icon: 'chart', Page: AdminOverview },
-    cuentas: { label: 'Cuentas', icon: 'users', Page: AdminUsers },
-    equipos: { label: 'Equipos', icon: 'car', Page: AdminTeams },
-    eventos: { label: 'Eventos', icon: 'finish', Page: AdminEvents },
-    auditoria: { label: 'Auditoría', icon: 'shield', Page: AdminAudit },
+    resumen: { label: 'Resumen', icon: 'chart', color: 'results', Page: AdminOverview },
+    cuentas: { label: 'Cuentas', icon: 'users', color: 'teams', Page: AdminUsers },
+    equipos: { label: 'Equipos', icon: 'car', color: 'track', Page: AdminTeams },
+    eventos: { label: 'Eventos', icon: 'finish', color: 'race', Page: AdminEvents },
+    auditoria: { label: 'Auditoría', icon: 'shield', color: 'data', Page: AdminAudit },
     control: { label: 'Race Control', Page: RaceControl, hidden: true, bare: true },
   },
 };
@@ -146,7 +147,8 @@ function Header({ view, setView, mode, muted, setMuted }) {
   const live = team || mode !== 'pilot';
 
   return (
-    <header className="flex h-11 shrink-0 items-stretch gap-2 border-b border-line bg-panel px-2 sm:gap-4 sm:px-3 print:hidden">
+    <>
+    <header className="flex h-12 shrink-0 items-stretch gap-2 bg-panel px-2 sm:gap-4 sm:px-3 print:hidden">
       <div className="flex items-center gap-2 sm:pr-2">
         {/* Pantallas estrechas: solo el símbolo; anchas: el logotipo completo */}
         <img src="/icon-192.png" alt="Box Box" className="h-7 w-7 xl:hidden" />
@@ -162,9 +164,9 @@ function Header({ view, setView, mode, muted, setMuted }) {
       </div>
       <nav className="-mb-px flex min-w-0 items-stretch overflow-x-auto" aria-label="Vistas">
         {items.map(([id, v]) => (
-          <button key={id} onClick={() => setView(id)} aria-current={id === view ? 'page' : undefined} title={v.label}
-            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2 text-[13px] font-semibold uppercase tracking-[0.08em] transition-colors sm:px-3 ${id === view ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
-            <Icon name={v.icon} size={15} className="lg:hidden" />
+          <button key={id} onClick={() => setView(id)} aria-current={id === view ? 'page' : undefined} title={v.label} style={tone(v.color)}
+            className={`flex shrink-0 items-center gap-1.5 border-b-[3px] px-2.5 text-[13px] font-bold uppercase tracking-[0.08em] transition-colors sm:px-3 ${id === view ? 'border-[var(--tone,var(--accent))] text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
+            <Icon name={v.icon} size={17} className={id === view ? 'text-[var(--tone,var(--accent))]' : ''} />
             <span className="hidden lg:inline">{v.label}</span>
           </button>
         ))}
@@ -186,6 +188,8 @@ function Header({ view, setView, mode, muted, setMuted }) {
         </button>
       </div>
     </header>
+    <div className="brand-bar shrink-0 print:hidden" aria-hidden="true" />
+    </>
   );
 }
 

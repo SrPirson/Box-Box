@@ -75,7 +75,7 @@ function SessionResult({ ev, session, result, onPublish }) {
   const [sort, setSort] = useState(result?.sort ?? (session === 'race' && ev.raceFormat !== 'best' ? 'laps' : 'best'));
   const [ask, setAsk] = useState(false);
   return (
-    <Card title={`${sessionName(session)}${result ? ` · publicado ${when(result.publishedAt)}${result.publishedBy ? ` por ${result.publishedBy}` : ''}` : ' · sin publicar'}`} flush
+    <Card icon="chart" color="results" title={`${sessionName(session)}${result ? ` · publicado ${when(result.publishedAt)}${result.publishedBy ? ` por ${result.publishedBy}` : ''}` : ' · sin publicar'}`} flush
       badge={result && <button onClick={() => csv(ev.name, result)} className={`${btn.ghost} h-8`}><Icon name="download" size={14} />CSV</button>}>
       {result && <ResultsTable rows={result.rows} sort={result.sort} />}
       <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
@@ -112,7 +112,7 @@ export function PublicResults({ code }) {
         {error && <ErrorText>{error}</ErrorText>}
         {!data && !error && <p className="text-muted">Cargando…</p>}
         {data?.results.map((r) => (
-          <Card key={r.session} title={`${sessionName(r.session)} · ${r.sort === 'laps' ? 'por vueltas' : 'por mejor vuelta'} · ${when(r.publishedAt)}`} flush>
+          <Card icon="chart" color="results" key={r.session} title={`${sessionName(r.session)} · ${r.sort === 'laps' ? 'por vueltas' : 'por mejor vuelta'} · ${when(r.publishedAt)}`} flush>
             <ResultsTable rows={r.rows} sort={r.sort} />
           </Card>
         ))}
@@ -161,19 +161,24 @@ export function PublicLive({ code }) {
   return (
     <div className="h-full overflow-y-auto bg-bg">
       <div className={`mx-auto flex flex-col gap-3 p-3 lg:p-6 ${video || ev?.track ? 'max-w-[1400px]' : 'max-w-[960px]'}`}>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <Wordmark className="mb-2 h-6" />
-            <h1 className="truncate text-2xl font-bold uppercase tracking-[0.06em]">{ev?.name ?? 'Directo'}</h1>
-            {ev && <p className="text-[14px] text-muted">{[sessionName(ev.session), race && RACE_FORMATS[format]?.label, race && targetText(format, ev.raceTarget), ev.place].filter(Boolean).join(' · ')}</p>}
-          </div>
-          {ev && (
-            <div className="text-right">
-              <div className="label">{countdown ? 'Queda' : 'Sesión'}</div>
-              <div className="num text-[34px] font-bold leading-none">{timer}</div>
-              {format === 'laps' && ev.raceTarget && data.rows[0] && <div className="num text-[14px] text-fg-2">Vuelta {data.rows[0].laps} de {ev.raceTarget}</div>}
+        <Wordmark className="h-6 w-auto self-start" />
+        <div style={{ '--tone': 'var(--t-live)' }} className="rise overflow-hidden rounded-[8px] border border-line bg-panel bg-[linear-gradient(120deg,color-mix(in_srgb,var(--tone)_16%,transparent),transparent_60%)]">
+          <div className="flex flex-wrap items-end justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <span className="mb-1 inline-flex items-center gap-1.5 rounded-full bg-crit-solid px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.1em] text-on-crit">
+                <span className="pulse h-1.5 w-1.5 rounded-full bg-on-crit" />En directo</span>
+              <h1 className="truncate text-[26px] font-bold uppercase leading-tight tracking-[0.04em]">{ev?.name ?? 'Directo'}</h1>
+              {ev && <p className="text-[14px] text-fg-2">{[sessionName(ev.session), race && RACE_FORMATS[format]?.label, race && targetText(format, ev.raceTarget), ev.place].filter(Boolean).join(' · ')}</p>}
             </div>
-          )}
+            {ev && (
+              <div className="text-right">
+                <div className="label">{countdown ? 'Queda' : 'Sesión'}</div>
+                <div className="num text-[34px] font-bold leading-none text-[var(--tone)]">{timer}</div>
+                {format === 'laps' && ev.raceTarget && data.rows[0] && <div className="num text-[14px] text-fg-2">Vuelta {data.rows[0].laps} de {ev.raceTarget}</div>}
+              </div>
+            )}
+          </div>
+          <div className="kerb" aria-hidden="true" />
         </div>
         {error && <ErrorText>{error}</ErrorText>}
         {!data && !error && <p className="text-muted">Cargando…</p>}
@@ -191,7 +196,7 @@ export function PublicLive({ code }) {
         )}
         <div className="flex min-w-0 flex-col gap-3">
         {data && (
-          <div className="overflow-hidden rounded-[4px] border border-line bg-panel">
+          <div className="rise overflow-hidden rounded-[8px] border border-line border-t-4 border-t-[var(--t-results)] bg-panel">
             <table className="w-full table-fixed text-[14px] sm:text-[15px]">
               <thead className="bg-raised text-left"><tr className="label">
                 <th className="w-1.5 p-0" /><th className="w-12 px-2 py-2">Pos</th><th className="w-14 px-2 py-2">Nº</th><th className="px-2 py-2">Equipo</th>
@@ -203,7 +208,7 @@ export function PublicLive({ code }) {
                 {data.rows.map((r) => (
                   <tr key={r.id} className={`border-t border-line ${r.retired ? 'text-muted' : ''}`}>
                     <td className={`p-0 ${r.pit ? 'bg-crit-solid' : ''}`} title={r.pit ? 'En boxes' : undefined} />
-                    <td className="num px-2 py-1.5 font-bold">{r.pos ?? ''}{r.pit && <span className="ml-1 text-[11px] font-bold text-crit">IN</span>}</td>
+                    <td className="px-2 py-1.5"><span className={`num inline-grid h-6 min-w-6 place-items-center rounded-full px-1 text-[13px] font-bold ${r.pos === 1 ? 'bg-[var(--t-results)] text-panel' : ''}`}>{r.pos ?? ''}</span>{r.pit && <span className="ml-1 text-[11px] font-bold text-crit">IN</span>}</td>
                     <td className="num px-2 py-1.5 font-semibold text-fg-2">{r.dorsal}</td>
                     <td className="truncate px-2 py-1.5 font-semibold uppercase">{r.team}</td>
                     <td className="num whitespace-nowrap px-2 py-1.5 text-right">{r.gap}{r.pen ? <span className="ml-1 text-crit" title="Vueltas de sanción">−{r.pen}</span> : null}</td>
@@ -218,7 +223,7 @@ export function PublicLive({ code }) {
           </div>
         )}
         {data && (
-          <Card title="Comentarios" flush>
+          <Card icon="alert" color="danger" title="Comentarios" flush>
             {comments.length === 0 ? <p className="px-4 py-3 text-[14px] text-muted">Sin sanciones.</p> : (
               <ul>{comments.map((c) => (
                 <li key={c.id} className="flex items-baseline gap-3 border-t border-line px-3 py-1.5 text-[14px] first:border-t-0">

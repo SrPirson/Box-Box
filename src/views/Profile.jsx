@@ -21,23 +21,23 @@ function AccountSection() {
   const modes = modesOf(user.role);
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card title="Cuenta" badge={<Pill tone="accent">{ROLE_LABEL[user.role]}</Pill>}>
+      <Card icon="user" color="data" title="Cuenta" badge={<Pill tone="accent">{ROLE_LABEL[user.role]}</Pill>}>
         <NameForm user={user} />
         <EmailForm user={user} />
       </Card>
       <div className="flex min-w-0 flex-col gap-4">
         {modes.length > 1 && (
-          <Card title="Modo">
+          <Card icon="layers" color="data" title="Modo">
             <Segmented value={mode} onChange={setMode} options={modes.map((m) => [m, MODES[m]])} />
             <p className="text-[13px] text-muted">Cada modo muestra solo sus vistas. Para correr con tu equipo, usa el modo Piloto.</p>
           </Card>
         )}
-        <Card title="Apariencia">
+        <Card icon="sun" color="results" title="Apariencia">
           <Segmented value={theme} onChange={setTheme} options={[['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Oscuro']]} />
           <p className="text-[13px] text-muted">Claro para el muro a pleno sol; oscuro para noche o boxes cerrados.</p>
         </Card>
         <PasswordForm />
-        <Card title="Sesión">
+        <Card icon="logout" color="data" title="Sesión">
           <div className="flex flex-wrap gap-2">
             <button onClick={() => { stop(); logout(); }} className={btn.ghost}><Icon name="logout" size={15} />Cerrar sesión</button>
           </div>
@@ -95,7 +95,7 @@ function PasswordForm() {
     form.reset();
   });
   return (
-    <Card title="Contraseña">
+    <Card icon="key" color="data" title="Contraseña">
       <form onSubmit={f.onSubmit} className="flex flex-col gap-3">
         <Field label="Contraseña actual"><input className={input} name="current" type="password" autoComplete="current-password" required /></Field>
         <Field label="Nueva contraseña"><input className={input} name="next" type="password" autoComplete="new-password" minLength={8} required /></Field>
@@ -162,7 +162,7 @@ export default function Profile() {
   const tracks = byTrack(laps);
 
   return (
-    <Page title="Mi perfil" subtitle={`${user.email}${team ? ` · ${team.name}` : ''}`}>
+    <Page icon="user" color="data" title="Mi perfil" subtitle={`${user.email}${team ? ` · ${team.name}` : ''}`}>
       <AccountSection />
       <div className="mb-3 mt-8 flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -187,18 +187,18 @@ export default function Profile() {
           </div>
 
           {laps.length === 0 ? (
-            <Card title="Tus vueltas">
+            <Card icon="finish" color="results" title="Tus vueltas">
               <p className="flex items-start gap-3 text-[14px] leading-snug text-fg-2">
                 <Icon name="wheel" size={20} className="mt-0.5 text-muted" />
                 <span>Aún no hay vueltas tuyas en este periodo. Cuentan las que das con tu móvil al volante («Tomar el volante» en Piloto).</span>
               </p>
             </Card>
           ) : <>
-            <Card title="Tiempos por vuelta" badge={<span className="num text-[12px] text-muted">media {fmtLap(Math.round(avg))}</span>}>
+            <Card icon="timer" color="results" title="Tiempos por vuelta" badge={<span className="num text-[12px] text-muted">media {fmtLap(Math.round(avg))}</span>}>
               <LapChart laps={laps.map((l) => ({ ...l, driver: l.track ?? l.team }))} avg={avg} bestId={best.id} />
             </Card>
 
-            <Card title="Por evento y pista" flush>
+            <Card icon="route" color="track" title="Por evento y pista" flush>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] text-[14px]">
                   <thead className="bg-raised text-left"><tr className="label"><Th>Evento o pista</Th><Th right>Vueltas</Th><Th right>Mejor</Th><Th right>Media</Th><Th>Mejores tramos</Th><Th right>Vuelta ideal</Th></tr></thead>
@@ -219,7 +219,7 @@ export default function Profile() {
             </Card>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <Card title="Tus vueltas" flush>
+              <Card icon="finish" color="results" title="Tus vueltas" flush>
                 <div className="max-h-[480px] overflow-auto">
                   <table className="w-full min-w-[620px] text-[14px]">
                     <thead className="sticky top-0 bg-raised text-left"><tr className="label"><Th>Fecha</Th><Th>Evento o pista</Th><Th right>Tiempo</Th><Th right>vs tu media</Th><Th right>Temp. máx</Th><Th right>Vel. máx</Th></tr></thead>
@@ -238,7 +238,7 @@ export default function Profile() {
                   </table>
                 </div>
               </Card>
-              <Card title="Tu telemetría" flush>
+              <Card icon="thermo" color="race" title="Tu telemetría" flush>
                 <table className="w-full text-[14px]">
                   <tbody>
                     {[

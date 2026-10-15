@@ -4,7 +4,7 @@ import Icon from '../icons.jsx';
 import { api, useSession } from '../lib/session.js';
 import { useSocket } from '../lib/store.js';
 import { fmt } from '../lib/limits.js';
-import { Page, Card, Segmented, fmtLap, fmtDelta, fmtSplit } from './ui.jsx';
+import { Page, Card, Segmented, IconChip, fmtLap, fmtDelta, fmtSplit } from './ui.jsx';
 import { KINDS, KIND_OPTIONS } from './Racing.jsx';
 
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -59,7 +59,7 @@ export default function Stats() {
   const sec = sectorStats(laps, team.track);
 
   return (
-    <Page title="Estadísticas" subtitle="Vueltas cronometradas al cruzar la línea de meta y telemetría guardada cada segundo."
+    <Page icon="chart" color="results" title="Estadísticas" subtitle="Vueltas cronometradas al cruzar la línea de meta y telemetría guardada cada segundo."
       actions={<div className="flex flex-wrap gap-2">
         <Segmented value={kind} onChange={setKind} options={KIND_OPTIONS} />
         {/* Las vueltas libres se comparan por circuito: cada pista guardada del equipo */}
@@ -76,7 +76,7 @@ export default function Stats() {
       {!data ? <p className="text-muted">Cargando…</p> : (
         <div className="flex flex-col gap-4">
           {/* KPIs */}
-          <div className={`grid grid-cols-2 gap-px overflow-hidden rounded-[4px] border border-line bg-line sm:grid-cols-3 ${team.obd ? 'xl:grid-cols-6' : 'xl:grid-cols-4'}`}>
+          <div className={`rise grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-line bg-line sm:grid-cols-3 ${team.obd ? 'xl:grid-cols-6' : 'xl:grid-cols-4'}`}>
             <Kpi label="Vueltas" value={laps.length} />
             <Kpi label="Mejor vuelta" value={fmtLap(best?.ms)} sub={best?.driver} />
             <Kpi label="Media de vuelta" value={fmtLap(avg && Math.round(avg))} />
@@ -86,7 +86,7 @@ export default function Stats() {
           </div>
 
           {laps.length === 0 ? (
-            <Card title="Tiempos por vuelta">
+            <Card icon="timer" color="results" title="Tiempos por vuelta">
               <p className="flex items-start gap-3 text-[14px] leading-snug text-fg-2">
                 <Icon name="finish" size={20} className="mt-0.5 text-muted" />
                 <span>Sin vueltas en este periodo. Para cronometrarlas, define la línea de meta en el mapa de <b className="text-fg">BOX</b> («Meta»): cada cruce cierra una vuelta. La primera solo abre el cronómetro.</span>
@@ -94,7 +94,7 @@ export default function Stats() {
             </Card>
           ) : (
             <>
-              <Card title="Tiempos por vuelta" badge={<span className="num text-[13px] font-semibold text-fg-2">media {fmtLap(Math.round(avg))}</span>}>
+              <Card icon="timer" color="results" title="Tiempos por vuelta" badge={<span className="num text-[13px] font-semibold text-fg-2">media {fmtLap(Math.round(avg))}</span>}>
                 <LapChart laps={laps} avg={avg} bestId={best.id} />
               </Card>
               <SectorsCard sec={sec} bestLap={sec.laps.length ? Math.min(...sec.laps.map((l) => l.ms)) : null} />
@@ -112,9 +112,12 @@ export default function Stats() {
   );
 }
 
+// Icono y color de cada indicador, por lo que mide.
+const KPI_LOOK = { Vueltas: ['finish', 'results'], 'Mejor vuelta': ['timer', 'results'], 'Media de vuelta': ['chart', 'data'], 'Temp. media': ['thermo', 'race'],
+  'Batería mínima': ['battery', 'teams'], 'Velocidad máx.': ['car', 'track'], 'Al volante': ['wheel', 'race'], Recorrido: ['route', 'track'] };
 export const Kpi = ({ label, value, sub }) => (
   <div className="flex flex-col gap-1 bg-panel px-4 py-3">
-    <span className="label">{label}</span>
+    <span className="flex items-center gap-2">{KPI_LOOK[label] && <IconChip icon={KPI_LOOK[label][0]} color={KPI_LOOK[label][1]} size="h-6 w-6" iconSize={13} />}<span className="label">{label}</span></span>
     <span className="num text-[24px] font-bold leading-none">{value}</span>
     <span className="min-h-4 truncate text-[13px] font-semibold text-fg-2">{sub || ''}</span>
   </div>
@@ -187,7 +190,7 @@ export const Th = ({ children, right }) => <th className={`px-4 py-2 font-semibo
 
 function DriversTable({ drivers, teamAvg }) {
   return (
-    <Card title="Pilotos" flush>
+    <Card icon="users" color="teams" title="Pilotos" flush>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[460px] text-[14px]">
           <thead className="bg-raised text-left"><tr className="label"><Th>Piloto</Th><Th right>Vueltas</Th><Th right>Mejor</Th><Th right>Media</Th><Th right>vs equipo</Th></tr></thead>
@@ -210,21 +213,21 @@ function DriversTable({ drivers, teamAvg }) {
 
 function SectorsCard({ sec, bestLap }) {
   if (!sec.n) return (
-    <Card title="Tramos">
+    <Card icon="route" color="track" title="Tramos">
       <p className="flex items-start gap-3 text-[14px] leading-snug text-fg-2">
         <Icon name="timer" size={20} className="mt-0.5 text-muted" />
         <span>Divide la pista en tramos desde el mapa de <b className="text-fg">BOX</b> («Tramos»): verás el tiempo de cada tramo, el mejor, la media y la vuelta ideal.</span>
       </p>
     </Card>
   );
-  if (!sec.laps.length) return <Card title={`Tramos · ${sec.n}`}><p className="text-[14px] text-fg-2">Sin vueltas completas con estos tramos en este periodo.</p></Card>;
+  if (!sec.laps.length) return <Card icon="route" color="track" title={`Tramos · ${sec.n}`}><p className="text-[14px] text-fg-2">Sin vueltas completas con estos tramos en este periodo.</p></Card>;
   // Mejor parcial de cada piloto en cada tramo.
   const drivers = [...new Set(sec.laps.map((l) => l.driver ?? '—'))].map((name) => {
     const own = sec.laps.filter((l) => (l.driver ?? '—') === name);
     return { name, best: sec.per.map((_, i) => Math.min(...own.map((l) => l.sectors[i]))) };
   });
   return (
-    <Card title={`Tramos · ${sec.n}`} flush
+    <Card icon="route" color="track" title={`Tramos · ${sec.n}`} flush
       badge={<span className="num text-[13px] text-fg-2">vuelta ideal <b className="text-fg">{fmtLap(sec.ideal)}</b>{bestLap && <> · {fmtDelta(sec.ideal - bestLap)} vs mejor vuelta</>}</span>}>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-[14px]">
@@ -276,7 +279,7 @@ function MetricsTable({ m, obd }) {
     obd && ['Acelerador', m.avg_throttle, 0, '%'],
   ].filter(Boolean);
   return (
-    <Card title="Telemetría" badge={<span className="num text-[13px] text-fg-2">{fmt(m.samples ?? 0)} muestras</span>} flush>
+    <Card icon="thermo" color="race" title="Telemetría" badge={<span className="num text-[13px] text-fg-2">{fmt(m.samples ?? 0)} muestras</span>} flush>
       <table className="w-full text-[14px]">
         <thead className="bg-raised text-left"><tr className="label"><Th>Métrica</Th><Th right>Media</Th><Th right>Extremo</Th></tr></thead>
         <tbody>
@@ -295,7 +298,7 @@ function MetricsTable({ m, obd }) {
 
 function LapsTable({ laps, avg, bestId, sec, obd }) {
   return (
-    <Card title="Vueltas" flush>
+    <Card icon="finish" color="results" title="Vueltas" flush>
       <div className="max-h-[480px] overflow-auto">
         <table className="w-full min-w-[720px] text-[14px]">
           <thead className="sticky top-0 bg-raised text-left"><tr className="label">

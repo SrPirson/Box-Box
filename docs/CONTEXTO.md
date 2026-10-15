@@ -140,7 +140,13 @@ Móvil piloto ──WebSocket──▶ server (Node) ──▶ sala "team:<id>" 
   abrir; pantalla siempre encendida.
 - **Mapa**: Esri + OpenStreetMap sin API key. Icono propio del coche (foto en círculo o silueta que gira con
   el rumbo: GPS en marcha, brújula parado). En eventos, cada coche se identifica por su equipo (`p.key`).
-- **Diseño**: tokens en `src/index.css`, Barlow Condensed + JetBrains Mono. Logotipo e iconos generados del
+- **Diseño** (16/10, «motorsport vivo»): cada sección tiene color e icono (tokens `--t-race`, `--t-track`, `--t-teams`,
+  `--t-results`, `--t-live`, `--t-data`, `--t-danger` en `src/index.css`). En `src/views/ui.jsx`: `Page` con portada
+  (icono, `hero`, pianos `.kerb`, `nav`), `Card` con `color`/`icon`/`subtitle`/`tip`, `Tabs`, `Tip` (ayuda «?»: ratón o
+  toque), `Empty`, `IconChip`; `Field` pasa la ayuda larga (> 70 caracteres) a un `Tip`. Selectores con la opción en el
+  acento. Sustituye al «90 % neutro» de `investigacion-ux-ui.md` en las vistas de gestión; Piloto mantiene el máximo
+  contraste (botones con tinte de su color). Capturas sin navegador: Chrome sin ventana por CDP (script en la sesión).
+  Tokens base en `src/index.css`, Barlow Condensed + JetBrains Mono. Logotipo e iconos generados del
   PNG del usuario (`public/logo-*.png`, `icon-*.png`, mipmaps de Android).
 
 ## Decisiones tomadas (y por qué)

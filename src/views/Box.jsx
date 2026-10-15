@@ -7,7 +7,7 @@ import { useSocket, useLive } from '../lib/store.js';
 import { api, setTeam, useSession } from '../lib/session.js';
 import { carAlarms, worst, limitsOf, lateMs, seenAt, obdSeenAt, withSkew, fmt, fmtAge, PHONE_HOT } from '../lib/limits.js';
 import { useStats, lapAvg, sectorStats } from './Stats.jsx';
-import { fmtLap, fmtDelta, fmtSplit, ConfirmButton } from './ui.jsx';
+import { fmtLap, fmtDelta, fmtSplit, ConfirmButton, tone } from './ui.jsx';
 
 const NO_ACK_MS = 10000; // acuse pendiente → «sin respuesta»
 const TRAIL_MAX = 600; // ~2,5 min a 4 Hz
@@ -231,7 +231,7 @@ function TeamColumn({ team, laps, lapStartedAt, splits = [], now, onResetLap }) 
   return (
     <aside className="flex flex-col bg-panel lg:min-h-0 lg:overflow-y-auto" aria-label="Equipo y vueltas">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Vueltas · hoy</span>
+        <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-fg" style={tone('results')}><Icon name="finish" size={14} className="text-[var(--tone)]" />Vueltas · hoy</span>
         <span className="num text-[14px] font-semibold text-fg-2">{laps.length}{pen > 0 && <span className="text-crit" title="Vueltas de sanción en la sesión del evento"> (−{pen} sanción)</span>}
           {team.penalties?.some((p) => p.retired) && <span className="text-crit"> · Retirado</span>}</span>
       </div>
@@ -281,7 +281,7 @@ function TeamColumn({ team, laps, lapStartedAt, splits = [], now, onResetLap }) 
         </ol>
       )}
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Equipo</span><span className="num text-[14px] font-semibold text-fg-2">{live.online.length}/{team.members.length}</span>
+        <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-fg" style={tone('teams')}><Icon name="users" size={14} className="text-[var(--tone)]" />Equipo</span><span className="num text-[14px] font-semibold text-fg-2">{live.online.length}/{team.members.length}</span>
       </div>
       <ul className="flex overflow-x-auto lg:flex-col">
         {members.map((m) => {
@@ -505,7 +505,7 @@ function Readout({ label, unit, value, digits = 0, state = 'ok', stale, bar, com
 function EmptyTelemetry() {
   return (
     <div className="flex flex-col items-start gap-2 bg-panel px-6 py-8">
-      <span className="label">Esperando telemetría</span>
+      <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-fg" style={tone('track')}><Icon name="signal" size={14} className="text-[var(--tone)]" />Esperando telemetría</span>
       <p className="max-w-xl text-[15px] leading-snug text-fg-2">
         Abre la vista <b className="text-fg">Piloto</b> en el móvil del coche y pulsa <b className="text-fg">SIM</b>, <b className="text-fg">OBD</b> o <b className="text-fg">GPS</b>.
         Los coches del mismo canal aparecerán en la lista de coches.
@@ -530,7 +530,7 @@ function Messages({ dorsal, log, now, send }) {
 
   return (
     <aside className="flex flex-col bg-panel lg:min-h-0" aria-label="Mensajes al piloto">
-      <div className="flex h-9 shrink-0 items-center border-b border-line px-3"><span className="label">Mensajes al piloto</span></div>
+      <div className="flex h-9 shrink-0 items-center border-b border-line px-3"><span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-fg" style={tone('race')}><Icon name="message" size={14} className="text-[var(--tone)]" />Mensajes al piloto</span></div>
       <div className="flex flex-col gap-3 border-b border-line p-3">
         <div className="flex items-center gap-2 text-[14px]">
           <span className="label">Para</span>
@@ -562,7 +562,7 @@ function Messages({ dorsal, log, now, send }) {
       </div>
 
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3">
-        <span className="label">Registro</span><span className="num text-[14px] font-semibold text-fg-2">{log.length}</span>
+        <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-fg" style={tone('data')}><Icon name="refresh" size={14} className="text-[var(--tone)]" />Registro</span><span className="num text-[14px] font-semibold text-fg-2">{log.length}</span>
       </div>
       <ol className="min-h-40 flex-1 lg:overflow-y-auto">
         {log.length === 0 && <li className="px-4 py-8 text-center text-[13px] text-muted">Sin mensajes. Lo que envíes al piloto y sus avisos aparecerán aquí.</li>}

@@ -25,7 +25,7 @@ export default function Team({ onNav }) {
   const { error, setError, save } = useTeamSave();
 
   return (
-    <Page title={team.name} subtitle={owner ? 'Eres el capitán: gestionas invitaciones, miembros y la inscripción en eventos.' : 'El coche se configura en Ajustes; cualquier miembro puede hacerlo.'}>
+    <Page icon="users" color="teams" title={team.name} subtitle={owner ? 'Eres el capitán: gestionas invitaciones, miembros y la inscripción en eventos.' : 'El coche se configura en Ajustes; cualquier miembro puede hacerlo.'}>
       <ErrorText>{error}</ErrorText>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-4">
@@ -46,7 +46,7 @@ export default function Team({ onNav }) {
 function EventCard({ team, owner, setError, onNav }) {
   const ev = team.event;
   return (
-    <Card title="Evento">
+    <Card icon="finish" color="race" title="Evento">
       {ev ? <>
         <div className="flex items-center gap-3">
           <Icon name="finish" size={22} className="text-accent" />
@@ -77,7 +77,7 @@ function SavedInput({ value, onSave, className = '', ...p }) {
 
 export function CarCard({ team, save }) {
   return (
-    <Card title="Coche">
+    <Card icon="car" color="track" title="Coche">
       <div className="grid gap-4 sm:grid-cols-[140px_1fr]">
         <Field label="Dorsal"><SavedInput className="num text-lg font-bold" inputMode="numeric" maxLength={6} value={team.dorsal} onSave={(dorsal) => save({ dorsal })} /></Field>
         <Field label="Teléfono del mecánico" help="Se marca cuando el piloto pulsa AVERÍA.">
@@ -180,7 +180,7 @@ export function AlertsCard({ team, save }) {
   const dirty = JSON.stringify(draft) !== JSON.stringify(team.limits);
   const isDefault = Object.keys(LIMITS).every((k) => draft[k] === LIMITS[k]);
   return (
-    <Card title="Alertas del coche" badge={!isDefault && <button onClick={() => setDraft(LIMITS)} className="text-[12px] font-semibold uppercase tracking-[0.06em] text-accent hover:underline">Valores por defecto</button>}>
+    <Card icon="alert" color="results" title="Alertas del coche" badge={!isDefault && <button onClick={() => setDraft(LIMITS)} className="text-[12px] font-semibold uppercase tracking-[0.06em] text-accent hover:underline">Valores por defecto</button>}>
       <p className="-mt-1 text-[13px] leading-snug text-muted">
         Cuándo avisa BOX. <span className="text-warn">Aviso</span>: indicación ámbar y un tono.{' '}
         <span className="text-crit">Crítico</span>: banner rojo y pitido hasta que alguien lo reconoce.
@@ -227,7 +227,7 @@ function InviteCard({ team, owner, setError }) {
   ];
   const regen = async () => { try { setTeam(await api('/api/team/invite', { method: 'POST' })); } catch (e) { setError(e.message); } };
   return (
-    <Card title="Invitar pilotos">
+    <Card icon="mail" color="teams" title="Invitar pilotos">
       <div className="flex items-center gap-3">
         <span className="num flex-1 rounded-[4px] bg-sunken py-3 text-center text-3xl font-bold tracking-[0.25em]">{team.inviteCode}</span>
         <button onClick={() => copy('code', team.inviteCode)} className={btn.ghost} aria-label="Copiar código"><Icon name={copied === 'code' ? 'check' : 'copy'} size={15} /></button>
@@ -251,7 +251,7 @@ function MembersCard({ team, user, owner, setError }) {
   const live = useLive();
   const remove = async (id) => { try { setTeam(await api(`/api/team/members/${id}`, { method: 'DELETE' })); } catch (e) { setError(e.message); } };
   return (
-    <Card title="Miembros" badge={<span className="num text-[14px] font-semibold text-fg-2">{team.members.length}</span>} flush>
+    <Card icon="users" color="teams" title="Miembros" badge={<span className="num text-[14px] font-semibold text-fg-2">{team.members.length}</span>} flush>
       <ul>
         {team.members.map((m) => {
           const online = live.online.includes(m.id);
@@ -280,7 +280,7 @@ function MembersCard({ team, user, owner, setError }) {
 
 function RenameCard({ team, save }) {
   return (
-    <Card title="Nombre del equipo">
+    <Card icon="sliders" color="data" title="Nombre del equipo">
       <SavedInput maxLength={60} value={team.name} onSave={(name) => save({ name })} />
     </Card>
   );
@@ -289,7 +289,7 @@ function RenameCard({ team, save }) {
 function LeaveCard({ team }) {
   const last = team.members.length === 1;
   return (
-    <Card title="Salir del equipo" tone="border-crit/40">
+    <Card icon="logout" color="danger" title="Salir del equipo">
       <p className="text-[13px] text-muted">
         {last ? 'Eres el último miembro: si sales, el equipo se elimina. Cada piloto conserva sus vueltas en su perfil.' : 'Podrás volver a entrar con una invitación.'}
       </p>

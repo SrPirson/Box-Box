@@ -26,13 +26,13 @@ export default function Settings() {
   const simulating = cfg.source === 'sim' && Object.values(faults).some(Boolean);
 
   return (
-    <Page title="Ajustes" subtitle="El coche con el que corres (lo comparte todo el equipo) y este móvil (solo este dispositivo).">
+    <Page icon="sliders" color="data" title="Ajustes" subtitle="El coche con el que corres (lo comparte todo el equipo) y este móvil (solo este dispositivo).">
       <ErrorText>{error}</ErrorText>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-4">
           <CarCard team={team} save={save} />
           <AlertsCard team={team} save={save} />
-          <Card title="Sensor OBD2">
+          <Card icon="bluetooth" color="track" title="Sensor OBD2">
             {/* Con OBD: el tipo de adaptador de este móvil. Sin OBD (lo dice el coche): solo GPS o el simulador. */}
             <Segmented label={team.obd ? 'Adaptador' : 'Origen de los datos'} value={team.obd || cfg.source === 'sim' ? cfg.source : 'gps'} disabled={running} onChange={(v) => setConfig({ source: v })}
               options={team.obd ? [['ble', 'Bluetooth BLE'], ['classic', 'Bluetooth clásico'], ['sim', 'Simulador']] : [['gps', 'Solo GPS'], ['sim', 'Simulador']]} />
@@ -58,7 +58,7 @@ export default function Settings() {
             </Field>
           </Card>
 
-          {team.obd && <Card title="Simulador · fallos" badge={simulating && <Pill>Simulando fallos</Pill>}>
+          {team.obd && <Card icon="wrench" color="results" title="Simulador · fallos" badge={simulating && <Pill>Simulando fallos</Pill>}>
             <div className="-mx-3 -my-1 flex flex-col">
               <Switch label="Sobrecalentamiento" help="El refrigerante sube hasta ~112 °C." on={faults.overheat} onToggle={() => toggle('overheat')} disabled={cfg.source !== 'sim'} />
               <Switch label="Fallo de alternador" help="La tensión cae a ~11,7 V." on={faults.lowVolt} onToggle={() => toggle('lowVolt')} disabled={cfg.source !== 'sim'} />
@@ -114,7 +114,7 @@ function PermissionsCard() {
     return () => removeEventListener('visibilitychange', check);
   }, []);
   return (
-    <Card title="Ubicación" badge={s && (!s.granted ? <Pill tone="crit">Sin permiso</Pill> : !s.enabled ? <Pill tone="crit">Apagada</Pill> : <Pill tone="ok">Permiso concedido</Pill>)}>
+    <Card icon="pin" color="track" title="Ubicación" badge={s && (!s.granted ? <Pill tone="crit">Sin permiso</Pill> : !s.enabled ? <Pill tone="crit">Apagada</Pill> : <Pill tone="ok">Permiso concedido</Pill>)}>
       <p className="text-[13px] leading-snug text-muted">
         {!s ? 'Comprobando…'
           : !s.granted ? 'Sin permiso de ubicación BOX no ve el coche en el mapa y no se cronometran vueltas. Elige «Permitir mientras se usa la app» y ubicación precisa.'
@@ -146,7 +146,7 @@ function TelemetryCard() {
   }[gw.obd];
 
   return (
-    <Card title="Telemetría de este móvil">
+    <Card icon="signal" color="data" title="Telemetría de este móvil">
       <div className={`flex items-center gap-2 text-[15px] font-semibold ${status[0]}`}>
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${status[1]}`} />{status[2]}
         {gw.queued > 0 && <span className="num ml-auto text-[13px] text-warn">{gw.queued} en cola</span>}
@@ -193,7 +193,7 @@ function TelemetryCard() {
 
 function AppCard() {
   return (
-    <Card title="App Android">
+    <Card icon="download" color="teams" title="App Android">
       <p className="text-[13px] text-muted">El móvil del coche necesita la app para mandar la temperatura del teléfono. Al instalarla, Android pedirá permitir apps de origen desconocido.</p>
       <a href={APK_URL} className={btn.primary}><Icon name="download" size={16} />Descargar APK</a>
     </Card>

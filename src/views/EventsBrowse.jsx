@@ -40,9 +40,9 @@ export default function EventsBrowse() {
   };
 
   return (
-    <Page title="Eventos" subtitle={team ? `Tu equipo: ${team.name}${team.event ? ` · inscrito en ${team.event.name}` : ' · de entrenamiento'}` : 'Inscríbete en un evento o únete a un equipo para correr.'}>
+    <Page icon="finish" color="race" title="Eventos" subtitle={team ? `Tu equipo: ${team.name}${team.event ? ` · inscrito en ${team.event.name}` : ' · de entrenamiento'}` : 'Inscríbete en un evento o únete a un equipo para correr.'}>
       {!team && <NoTeam />}
-      {team?.event && <Card title={team.event.name} badge={<LiveButton />}><RacingToggle /></Card>}
+      {team?.event && <Card icon="flag" color="race" title={team.event.name} badge={<LiveButton />}><RacingToggle /></Card>}
       {team && owner && <EventCode />}
       <div className="mb-3 mt-6 flex flex-wrap items-center gap-3">
         <label className="flex min-w-0 flex-1 items-center gap-2 rounded-[4px] border border-line-strong bg-sunken px-3">
@@ -54,7 +54,7 @@ export default function EventsBrowse() {
       </div>
       <ErrorText>{act.error}</ErrorText>
       {!list ? <p className="text-muted">Cargando…</p> : list.length === 0 ? (
-        <Card title={tab === 'next' ? 'Próximos eventos' : 'Eventos pasados'}>
+        <Card icon="finish" color="race" title={tab === 'next' ? 'Próximos eventos' : 'Eventos pasados'}>
           <p className="text-[14px] text-muted">{q ? 'Ningún evento coincide con la búsqueda.' : tab === 'next' ? 'No hay eventos abiertos ahora mismo. Si te han dado un código, úsalo arriba.' : 'Aún no hay eventos pasados.'}</p>
         </Card>
       ) : (
@@ -62,7 +62,7 @@ export default function EventsBrowse() {
           {list.map((e) => {
             const mine = team?.event?.id === e.id;
             return (
-              <Card key={e.id} title={fmtDate(e.startsOn)} badge={mine ? <Pill tone="ok">Inscrito</Pill> : e.closed ? <Pill tone="muted">Cerrado</Pill> : null}>
+              <Card icon="timer" color="race" key={e.id} title={fmtDate(e.startsOn)} badge={mine ? <Pill tone="ok">Inscrito</Pill> : e.closed ? <Pill tone="muted">Cerrado</Pill> : null}>
                 <div>
                   <div className="text-[18px] font-bold uppercase leading-tight tracking-[0.03em]">{e.name}</div>
                   <div className="text-[13px] text-muted">{[e.place, e.organizer && `organiza ${e.organizer}`].filter(Boolean).join(' · ')}</div>
@@ -134,7 +134,7 @@ function NoTeam() {
   const ev = found?.event;
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card title={ev ? 'Inscribir mi equipo' : 'Tengo un código'}>
+      <Card icon="key" color="teams" title={ev ? 'Inscribir mi equipo' : 'Tengo un código'}>
         {ev ? (
           <form onSubmit={enroll} className="flex flex-col gap-3">
             <div className="rounded-[4px] bg-sunken px-3 py-2.5">
@@ -156,7 +156,7 @@ function NoTeam() {
           </form>
         )}
       </Card>
-      <Card title="Equipo para entrenar">
+      <Card icon="wheel" color="track" title="Equipo para entrenar">
         <form onSubmit={create} className="flex flex-col gap-3">
           <p className="text-[13px] text-muted">Sin evento: tus propias pistas y tus vueltas. Serás el capitán y podrás invitar pilotos, e inscribirlo en un evento cuando quieras.</p>
           <Field label="Nombre del equipo"><input className={input} name="name" required maxLength={60} placeholder="Mi equipo Racing" /></Field>

@@ -25,9 +25,10 @@ export const Shell = ({ children, wide }) => (
 );
 
 const Panel = ({ title, children }) => (
-  <section className="rounded-[4px] border border-line bg-panel">
-    {title && <header className="flex h-10 items-center border-b border-line px-4"><h2 className="label">{title}</h2></header>}
+  <section className="rise overflow-hidden rounded-[8px] border border-line bg-panel shadow-[0_20px_60px_-30px_var(--accent)]">
+    {title && <header className="flex h-11 items-center border-b border-line px-4"><h2 className="text-[14px] font-bold uppercase tracking-[0.08em]">{title}</h2></header>}
     <div className="flex flex-col gap-4 p-4">{children}</div>
+    <div className="kerb" aria-hidden="true" />
   </section>
 );
 

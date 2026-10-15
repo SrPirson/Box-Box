@@ -18,9 +18,9 @@ const VIEW_KEY = 'cencerro.pilotView';
 // Cada acción tiene un color fijo para memoria muscular. Solo AVERÍA va rellena: es la única que llama.
 const ACTIONS = [
   { type: 'breakdown', label: 'Avería · llamar mecánico', icon: 'wrench', critical: true, cls: 'bg-crit-solid text-on-crit border-crit-solid' },
-  { type: 'pit', label: 'Salgo a box', icon: 'pitIn', cls: 'text-ok border-ok' },
-  { type: 'fuel', label: 'Repostar y cambio', icon: 'fuel', cls: 'text-info border-info' },
-  { type: 'damage', label: 'Pinchazo / daño', icon: 'damage', cls: 'text-crit border-crit' },
+  { type: 'pit', label: 'Salgo a box', icon: 'pitIn', cls: 'text-ok border-ok bg-ok-soft' },
+  { type: 'fuel', label: 'Repostar y cambio', icon: 'fuel', cls: 'text-info border-info bg-info-soft' },
+  { type: 'damage', label: 'Pinchazo / daño', icon: 'damage', cls: 'text-crit border-crit bg-crit-soft' },
 ];
 
 export default function Pilot({ onNav }) {
