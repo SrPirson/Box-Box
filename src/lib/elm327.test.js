@@ -91,9 +91,12 @@ test('si la ECU deja de dar RPM, reinicia el chip cada cierto tiempo hasta que v
   await elm.init();
   assert.equal((await elm.read()).rpm, 1000);
   ecu = false;
+  // Hasta ver la inicial y dos reintentos, sin ventana fija: en Windows cada setTimeout(1) tarda hasta ~15 ms y
+  // un reinicio entero no cabía dos veces en 100 ms. El tope solo evita colgarse si dejara de reintentar.
+  const resets = () => sent.filter((c) => c === 'ATZ').length;
   const t0 = Date.now();
-  while (Date.now() - t0 < 100) assert.deepEqual(await elm.read(), { rpm: null, voltage: 12.4 });
-  assert.ok(sent.filter((c) => c === 'ATZ').length >= 3); // la inicial y al menos dos reintentos
+  while (resets() < 3 && Date.now() - t0 < 5000) assert.deepEqual(await elm.read(), { rpm: null, voltage: 12.4 });
+  assert.ok(resets() >= 3, `${resets()} ATZ`); // la inicial y al menos dos reintentos
   ecu = true;
   assert.equal((await elm.read()).rpm, 1000);
 });
