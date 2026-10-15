@@ -206,7 +206,8 @@ export function PenaltyPanel({ ev, penalties, onChange }) {
       <label className="flex flex-col gap-1"><span className="label">Equipo</span>
         <select className={input} value={teamId} onChange={(e) => setTeamId(e.target.value)}>
           <option value="">— Elige el equipo —</option>
-          {ev.teams.filter((t) => t.racing).map((t) => <option key={t.id} value={t.id}>#{t.dorsal} {t.name}</option>)}
+          {/* Todos los inscritos: uno que ya no participa puede tener vueltas en la clasificación */}
+          {ev.teams.map((t) => <option key={t.id} value={t.id}>#{t.dorsal} {t.name}{t.racing ? '' : ' · no participa'}</option>)}
         </select>
       </label>
       <div className="flex gap-2">
