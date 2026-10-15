@@ -190,7 +190,7 @@ export function PublicLive({ code }) {
                 sandbox="allow-scripts allow-same-origin allow-presentation allow-popups" referrerPolicy="strict-origin-when-cross-origin" />
             </div>}
             {ev?.track && <div className="h-[340px] overflow-hidden rounded-[4px] border border-line lg:h-[420px]">
-              <TrackMap cars={cars} trails={trails.current} sel={null} states={states} focus={null} track={ev.track} />
+              <TrackMap cars={cars} trails={trails.current} sel={null} states={states} focus={null} track={ev.track} zones={data?.zones} />
             </div>}
           </div>
         )}

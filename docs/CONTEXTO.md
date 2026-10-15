@@ -49,6 +49,12 @@ Sin equipo, el piloto solo ve Eventos y Perfil.
 - **Calle de boxes** (`track.pitIn` / `track.pitOut`, herramienta «Boxes» del mapa): al cruzar la entrada, «En boxes»
   automático; al cruzar la salida se cierra la vuelta (cuenta aunque la calle no cruce la meta) y termina la parada.
   Con calle dibujada el relevo no anula la vuelta. Sin ella, todo sigue como antes (BOX confirma, ≥ 40 km/h).
+- **Banderas por zona** (`src/lib/zones.js`, `zones` en `live.js`): amarilla, doble amarilla o aceite en un trozo del
+  trazado (progreso 0-1 de `from` a `to` en el sentido de la marcha, `dir`, sacado del orden de los cortes de tramo). Se
+  eligen por tramos (T3, T3–T5) o con dos toques en un minimapa; varias a la vez; en `event_log` (`zone`, `zone.clear`) y
+  se recuperan al reiniciar. Hace falta el trazado. Al equipo: franja con voz al darla; al entrar en la zona (el servidor
+  lo calcula con el GPS) `zone:here` → marco del color de la bandera en Piloto, sin tapar los botones. Se pintan en los
+  mapas de organizador, Race Control, Box y directo. Safety car, roja y cuadros siguen siendo de toda la pista.
 - **Dirección de carrera**: la bandera del evento llega a todos sus equipos. En Piloto sale a pantalla completa con
   voz hasta pulsar «Visto»; después queda una franja fija de su color (también en Box). La verde se anuncia
   3 s y la retira. El organizador ve en la clasificación qué equipos la han visto.

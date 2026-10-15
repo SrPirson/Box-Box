@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import Icon from '../icons.jsx';
 import { useLive, seeFlag, seePenalty, penaltyText, FLAG_INFO, speak } from '../lib/store.js';
+import { ZONE_TYPES, zoneText } from '../lib/zones.js';
 
 const title = (f) => (f.type === 'text' ? f.text : FLAG_INFO[f.type].label);
 
@@ -82,6 +83,30 @@ export function PenaltyBanner() {
       <Icon name="flag" size={20} stroke={2.5} />
       <span className="min-w-0 flex-1 truncate">{penaltyText(p)}{p.reason && ` · ${p.reason}`}</span>
       <button onClick={seePenalty} className="h-8 rounded-md border-2 border-current px-3 text-base font-bold uppercase">Visto</button>
+    </div>
+  );
+}
+
+// Banderas locales activas: una franja por zona (en Piloto, más alta). No hay que confirmarlas.
+export function ZoneBanner({ big = false }) {
+  const { zones } = useLive();
+  if (!zones.length) return null;
+  return zones.map((z) => (
+    <div key={z.id} role="status" className={`flex shrink-0 items-center gap-3 px-3 font-bold uppercase ${ZONE_TYPES[z.type]?.cls} ${big ? 'h-12 text-xl' : 'h-9 text-[15px]'}`}>
+      <Icon name="flag" size={big ? 24 : 18} stroke={2.5} /><span className="min-w-0 flex-1 truncate">{zoneText(z)}</span>
+    </div>
+  ));
+}
+
+// El coche está dentro de una zona con bandera: marco grueso del color de la bandera y el aviso arriba. No tapa
+// los botones (no recibe toques) y se quita solo al salir de la zona.
+export function ZoneHere() {
+  const { zoneHere: z } = useLive();
+  if (!z) return null;
+  const t = ZONE_TYPES[z.type];
+  return (
+    <div aria-live="assertive" className="safe pointer-events-none fixed inset-0 z-[1900] border-[14px]" style={{ borderColor: t?.color }}>
+      <div className={`mx-auto mt-2 w-fit rounded-[6px] px-5 py-2 text-center text-[clamp(28px,8vmin,64px)] font-bold uppercase leading-none shadow-2xl ${t?.cls}`}>{t?.label}</div>
     </div>
   );
 }

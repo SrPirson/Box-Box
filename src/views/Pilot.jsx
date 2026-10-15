@@ -8,7 +8,7 @@ import { useGateway, usePhone, start, stop, lastGps, locationStatus, locationOk,
 import { getConfig } from '../lib/store.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
 import { PHONE_HOT } from '../lib/limits.js';
-import { RaceFlagScreen, RaceFlagBanner, PenaltyScreen } from './RaceFlag.jsx';
+import { RaceFlagScreen, RaceFlagBanner, PenaltyScreen, ZoneBanner, ZoneHere } from './RaceFlag.jsx';
 import { EventTodayBanner } from './Racing.jsx';
 import DriverPicker from './DriverPicker.jsx';
 import PilotTimes from './PilotTimes.jsx';
@@ -127,6 +127,7 @@ export default function Pilot({ onNav }) {
         </div>
       </div>
       <RaceFlagBanner big />
+      <ZoneBanner big />
       <EventTodayBanner big />
       {noLocation && (
         <div role="alert" className="flex flex-wrap items-center gap-3 bg-crit-solid px-3 py-2 text-on-crit">
@@ -187,6 +188,7 @@ export default function Pilot({ onNav }) {
       {/* Dirección de carrera: por encima de todo, también de los mensajes de BOX */}
       <RaceFlagScreen />
       <PenaltyScreen />
+      <ZoneHere />
 
       {/* Interrupción prioritaria de BOX */}
       {inbox[0] && (

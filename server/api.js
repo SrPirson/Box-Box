@@ -1,7 +1,7 @@
 // API REST: cuentas, equipos con invitación, administración y estadísticas.
 import { q, one } from './db.js';
 import { hashPassword, checkPassword, sign, verify, randomCode, tempPassword } from './auth.js';
-import { teamChanged, kick, teamNotice, logEvent, liveStats, teamPenalty, pitsOf, carsOf } from './live.js';
+import { teamChanged, kick, teamNotice, logEvent, liveStats, teamPenalty, pitsOf, carsOf, zonesOf } from './live.js';
 import { LIMITS, limitErrors } from '../src/lib/limits.js';
 import { rank, RACE_FORMATS } from '../src/lib/events.js';
 
@@ -634,6 +634,7 @@ const routes = [
       rows: shown.map((r) => ({ id: r.id, pos: r.pos, dorsal: r.dorsal, team: r.name, laps: r.eff, pen: r.pen, retired: r.retired, best: r.best, last: r.last, gap: r.gap, pit: pits.has(r.id) })),
       best: best ? { team: best.name, dorsal: best.dorsal, ms: best.best, driver: best.best_driver } : null,
       comments: comments.map(({ seen, by, ...c }) => c),
+      zones: zonesOf(e.id).map(({ by, ...z }) => z),
     };
   }],
   // Coches del directo público (solo memoria: se puede pedir cada segundo).

@@ -2,12 +2,14 @@
 // banderas con atajos de teclado y registro con hora. No hay nada editable ni destructivo: preparar el evento
 // se hace en su espacio (#eventos/12). También exporta lo que comparten las dos pantallas: los datos en vivo del
 // evento (useEventLive) y el panel de banderas.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import TrackMap from './TrackMap.jsx';
 import { SESSIONS } from './Racing.jsx';
 import { api } from '../lib/session.js';
 import { useSocket, FLAG_INFO } from '../lib/store.js';
+import { createRoute } from '../../server/laps.js';
+import { ZONE_TYPES, sectorsZone, pointsZone, zoneText } from '../lib/zones.js';
 import { liveLink } from './Results.jsx';
 import { Segmented, Pill, ErrorText, ConfirmButton, input, btn, fmtLap, downloadCsv } from './ui.jsx';
 
@@ -34,6 +36,7 @@ export function useEventLive(id) {
   const [flag, setFlag] = useState(null); // bandera actual y equipos que la han visto
   const [log, setLog] = useState([]); // registro, lo más reciente primero
   const [penalties, setPenalties] = useState([]); // sanciones del evento, lo más reciente primero
+  const [zones, setZones] = useState([]); // banderas locales activas
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const loadEvent = () => api(`/api/events/${id}`).then(setEv).catch((e) => setError(e.message));
@@ -52,6 +55,7 @@ export function useEventLive(id) {
     },
     'event:lap': () => loadStandings(),
     'event:flag': setFlag,
+    'event:zones': setZones,
     'event:teams': loadEvent,
     'event:penalties': () => { loadPenalties(); loadStandings(); },
     'event:log': (r) => { setLog((l) => [r, ...l]); if (r.kind === 'session') loadEvent(); },
@@ -78,10 +82,17 @@ export function useEventLive(id) {
       .catch(() => { throw new Error('El servidor no ha confirmado la bandera: puede que no haya llegado.'); });
     if (!r?.ok) throw new Error('El servidor no ha aceptado la bandera.');
   };
+  // Bandera local: { action: 'set', type, from, to, dir, label } o { action: 'clear', id? }. Como las banderas: con acuse.
+  const sendZone = async (d) => {
+    if (!connected) throw new Error('Sin conexión: la bandera NO se ha dado.');
+    const r = await socket.timeout(3000).emitWithAck('event:zone', { eventId: id, ...d })
+      .catch(() => { throw new Error('El servidor no ha confirmado la bandera: puede que no haya llegado.'); });
+    if (!r?.ok) throw new Error('El servidor no ha aceptado la bandera.');
+  };
   const live = (teamId) => { const c = cars[teamId]; return c && now - c.ts < STALE_MS ? c : null; };
   const setSession = (s) => { setSessionView(s); loadStandings(s); };
   const changeSession = (s) => patch({ session: s }).then((ok) => { if (ok) setSession(null); return ok; });
-  return { ev, setEv, standings, session, setSession, changeSession, cars, trails, flag, log, penalties, setPenalties, error, setError, now, connected, run, patch, sendFlag, live };
+  return { ev, setEv, standings, session, setSession, changeSession, cars, trails, flag, zones, sendZone, log, penalties, setPenalties, error, setError, now, connected, run, patch, sendFlag, live };
 }
 
 // Botón que actúa al mantenerlo pulsado `ms` (con barra de progreso). Con `hotkey`, también manteniendo esa tecla.
@@ -113,7 +124,8 @@ const typing = (e) => ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)
 // Roja: mantener pulsado (o mantener la R). El servidor confirma cada una: si no, se dice y se puede reintentar.
 const ARMED = ['green', 'yellow', 'sc', 'chequered'];
 const KEYS = { g: 'green', y: 'yellow', s: 'sc', f: 'chequered' };
-export function FlagPanel({ flag, racing, send, connected, keys = false, big = false }) {
+export function FlagPanel({ flag, racing, send, connected, keys = false, big = false, track, zones = [], sendZone }) {
+  const [scope, setScope] = useState('all');
   const [armed, setArmed] = useState(null);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(null); // { type, error? }
@@ -153,6 +165,9 @@ export function FlagPanel({ flag, racing, send, connected, keys = false, big = f
   );
   return (
     <div className="flex flex-col gap-3">
+      {sendZone && <Segmented full value={scope} onChange={setScope} options={[['all', 'Toda la pista'], ['zone', `Por zona${zones.length ? ` · ${zones.length}` : ''}`]]}
+        tip="Toda la pista: la bandera llega a todos a pantalla completa. Por zona: amarilla, doble amarilla o aceite solo en un tramo; el piloto la oye al darla y se le marca en grande al entrar en la zona." />}
+      {scope === 'zone' && sendZone ? <ZonePanel track={track} zones={zones} send={sendZone} connected={connected} /> : <>
       <div aria-live="polite" className={`rounded-[4px] px-3 py-2 ${active ? FLAG_INFO[flag.type].cls : 'bg-ok-soft text-ok'}`}>
         <div className="flex flex-wrap items-baseline gap-x-2 text-[16px] font-bold uppercase">
           {active ? <>{flag.type === 'text' ? 'Aviso' : FLAG_INFO[flag.type].label}<span className="num text-[13px] font-semibold">desde {clock(flag.ts)}</span></> : 'Pista libre'}
@@ -182,6 +197,66 @@ export function FlagPanel({ flag, racing, send, connected, keys = false, big = f
       )}
       {sending && !sending.error && <p role="status" className="text-[13px] font-semibold text-fg-2">Dando {nameOf(sending.type).toLowerCase()}…</p>}
       {keys && <p className="hidden text-[12px] text-muted lg:block">Teclas: G, Y, S, F y otra vez (o Enter) para dar la bandera; Esc cancela; mantén R para la roja.</p>}
+      </>}
+      {scope === 'all' && zones.length > 0 && <p className="text-[13px] font-semibold text-warn">Hay {zones.length} bandera{zones.length === 1 ? '' : 's'} por zona activa{zones.length === 1 ? '' : 's'}: {zones.map(zoneText).join(', ')}.</p>}
+    </div>
+  );
+}
+
+// Banderas locales: tipo, zona (tramos o dos toques en el mapa, en el sentido de la marcha) y las activas.
+function ZonePanel({ track, zones, send, connected }) {
+  const route = useMemo(() => (track?.path?.length >= 3 ? createRoute(track.path) : null), [track?.path]);
+  const [type, setType] = useState('yellow');
+  const [pick, setPick] = useState([]); // tramos (números) o puntos del mapa elegidos
+  const [mode, setMode] = useState('sectors');
+  const [state, setState] = useState(null); // { busy } | { error }
+  const n = (track?.sectors?.length ?? 0) + 1;
+  if (!route) return <p className="rounded-[4px] bg-warn-soft px-3 py-2 text-[14px] font-semibold text-warn">Para dar banderas por zona, dibuja el trazado de la pista (pestaña Pista → Trazado). Con tramos marcados, se eligen con un toque.</p>;
+  const zone = mode === 'sectors'
+    ? pick.length && sectorsZone(route, track, pick[0], pick[1] ?? pick[0])
+    : pick.length === 2 && pointsZone(route, track, pick[0], pick[1]);
+  const tapSector = (i) => setPick((p) => (p.length === 1 && p[0] !== i ? [p[0], i] : [i]));
+  const run = (p) => { setState({ busy: true }); return p.then(() => setState(null), (e) => setState({ error: e.message })); };
+  const give = () => run(send({ action: 'set', type, ...zone })).then(() => setPick([]));
+  const inRange = (i) => pick.length === 2 ? (pick[0] <= pick[1] ? i >= pick[0] && i <= pick[1] : i >= pick[0] || i <= pick[1]) : pick[0] === i;
+  return (
+    <div className="flex flex-col gap-3">
+      <Segmented label="Bandera" value={type} onChange={setType} options={Object.entries(ZONE_TYPES).map(([k, v]) => [k, v.label])} />
+      <Segmented label="Zona" value={n > 1 ? mode : 'map'} onChange={(m) => { setMode(m); setPick([]); }}
+        options={n > 1 ? [['sectors', 'Por tramos'], ['map', 'Desde – hasta en el mapa']] : [['map', 'Desde – hasta en el mapa']]} />
+      {mode === 'sectors' && n > 1 ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
+            {Array.from({ length: n }, (_, k) => k + 1).map((i) => (
+              <button key={i} type="button" onClick={() => tapSector(i)} aria-pressed={inRange(i)}
+                className={`num h-9 min-w-11 rounded-[6px] border px-2 text-[14px] font-bold ${inRange(i) ? 'border-warn-solid bg-warn-solid text-on-warn' : 'border-line-strong hover:border-warn'}`}>T{i}</button>
+            ))}
+          </div>
+          <p className="text-[12px] text-muted">Toca un tramo; para varios seguidos, el primero y el último.</p>
+        </div>
+      ) : <p className="text-[12px] text-muted">Toca en el mapa el inicio y después el final de la zona, en el sentido de la marcha.{pick.length === 1 && ' Ahora, el final.'}</p>}
+      <div className="h-56 overflow-hidden rounded-[6px] border border-line">
+        <TrackMap compact cars={{}} trails={{}} sel={null} states={{}} track={track}
+          zones={[...zones, ...(zone ? [{ ...zone, type, preview: true }] : [])]}
+          onPick={mode === 'map' || n === 1 ? (pt) => setPick((p) => (p.length === 1 ? [p[0], pt] : [pt])) : undefined} />
+      </div>
+      <button type="button" disabled={!zone || !connected || state?.busy} onClick={give}
+        className={`flex h-12 items-center justify-center gap-2 rounded-[6px] font-bold uppercase disabled:opacity-40 ${ZONE_TYPES[type].cls}`}>
+        <Icon name="flag" size={16} />{zone ? `Dar ${ZONE_TYPES[type].label.toLowerCase()} en ${zone.label === 'Zona' ? 'la zona' : zone.label}` : 'Elige la zona'}
+      </button>
+      {state?.error && <p role="alert" className="rounded-[4px] bg-crit-soft px-3 py-2 text-[14px] font-bold text-crit">{state.error}</p>}
+      {zones.length > 0 && (
+        <ul className="flex flex-col border-t border-line text-[14px]">
+          {zones.map((z) => (
+            <li key={z.id} className="flex items-center gap-2 border-b border-line py-1.5">
+              <span className={`rounded-[3px] px-1.5 text-[12px] font-bold uppercase ${ZONE_TYPES[z.type].cls}`}>{ZONE_TYPES[z.type].label}</span>
+              <b>{z.label}</b><span className="num text-[12px] text-fg-2">{clock(z.ts)}</span>
+              <button type="button" disabled={!connected} onClick={() => run(send({ action: 'clear', id: z.id }))} className={`${btn.ghost} ml-auto h-8`}>Retirar</button>
+            </li>
+          ))}
+          {zones.length > 1 && <li className="pt-2"><button type="button" disabled={!connected} onClick={() => run(send({ action: 'clear' }))} className={`${btn.ghost} w-full`}>Retirar todas · pista libre</button></li>}
+        </ul>
+      )}
     </div>
   );
 }
@@ -246,6 +321,8 @@ export function logText(l) {
   if (l.kind === 'flag') return `${d.type === 'text' ? `Aviso «${d.text}»` : FLAG_INFO[d.type]?.label ?? d.type}${d.by ? ` · ${d.by}` : ''}`;
   if (l.kind === 'seen') return `${d.team} ha visto la bandera${d.by ? ` (${d.by})` : ''}`;
   if (l.kind === 'results') return `Resultado publicado: ${sessionName(d.session)}${d.by ? ` · ${d.by}` : ''}`;
+  if (l.kind === 'zone') return `${ZONE_TYPES[d.type]?.label ?? 'Bandera'} en ${d.label}${d.by ? ` · ${d.by}` : ''}`;
+  if (l.kind === 'zone.clear') return `${d.label ? `Retirada: ${ZONE_TYPES[d.type]?.label ?? 'bandera'} en ${d.label}` : 'Retiradas todas las banderas por zona'}${d.by ? ` · ${d.by}` : ''}`;
   if (l.kind === 'penalty') return `Sanción a #${d.dorsal} ${d.team}: ${d.retired ? 'retirado' : `${d.laps} vuelta${d.laps === 1 ? '' : 's'}`}${d.reason ? ` («${d.reason}»)` : ''}${d.by ? ` · ${d.by}` : ''}`;
   if (l.kind === 'penalty.cancel') return `Sanción anulada a #${d.dorsal} ${d.team}${d.by ? ` · ${d.by}` : ''}`;
   if (l.kind === 'penalty.seen') return `${d.team} ha visto la sanción${d.by ? ` (${d.by})` : ''}`;
@@ -289,7 +366,7 @@ function Console({ id, onNav }) {
   const icons = Object.fromEntries(ev.teams.map((t) => [t.id, { carIcon: t.carIcon ?? null, carIconStyle: t.carIconStyle }]));
   const mapCars = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, { ...p, key: p.teamId, ...icons[p.teamId] }]));
   const states = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, now - p.ts > STALE_MS ? 'crit' : p.pit ? 'warn' : 'ok']));
-  const map = <TrackMap cars={mapCars} trails={L.trails.current} sel={null} states={states} focus={focus} track={ev.track} />;
+  const map = <TrackMap cars={mapCars} trails={L.trails.current} sel={null} states={states} focus={focus} track={ev.track} zones={L.zones} />;
   const other = ev.session === 'race' ? 'practice' : 'race';
   const exit = () => { if (document.fullscreenElement) document.exitFullscreen(); onNav(`eventos/${id}`); };
 
@@ -319,7 +396,7 @@ function Console({ id, onNav }) {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[minmax(0,1fr)_auto] lg:overflow-hidden xl:grid-cols-[400px_minmax(0,1fr)_380px]">
         {/* Banderas: lo primero en el móvil; a la derecha en pantallas grandes */}
         <section className="order-1 flex flex-col gap-3 rounded-[4px] border border-line bg-panel p-3 lg:order-3 lg:overflow-y-auto" aria-label="Banderas">
-          <FlagPanel flag={L.flag} racing={racing} send={L.sendFlag} connected={L.connected} keys big />
+          <FlagPanel flag={L.flag} racing={racing} send={L.sendFlag} connected={L.connected} keys big track={ev.track} zones={L.zones} sendZone={L.sendZone} />
           <div className="flex flex-col gap-2 border-t border-line pt-3">
             <span className="label">Sesión</span>
             <HoldButton ms={1000} onDone={() => L.changeSession(other)} className={`${btn.ghost} h-11 w-full`}>Pasar a {sessionName(other)} · mantén pulsado</HoldButton>

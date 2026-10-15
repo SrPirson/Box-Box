@@ -238,7 +238,7 @@ function Workspace({ id, tab, admin, go, onNav }) {
   const icons = Object.fromEntries(ev.teams.map((t) => [t.id, { carIcon: t.carIcon ?? null, carIconStyle: t.carIconStyle }]));
   const mapCars = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, { ...p, key: p.teamId, ...icons[p.teamId] }]));
   const states = Object.fromEntries(Object.values(L.cars).map((p) => [p.teamId, now - p.ts > STALE_MS ? 'crit' : p.pit ? 'warn' : 'ok']));
-  const map = (edit) => <TrackMap cars={mapCars} trails={L.trails.current} sel={null} states={states} focus={focus} track={ev.track}
+  const map = (edit) => <TrackMap cars={mapCars} trails={L.trails.current} sel={null} states={states} focus={focus} track={ev.track} zones={edit ? undefined : L.zones}
     onTrack={edit ? (track) => L.patch({ track }) : undefined}
     toolbar={<span className="px-1 text-[13px] text-muted">{edit ? 'La misma pista para todos los equipos: trazado, meta, tramos y calle de boxes.' : 'Coches en vivo de los equipos que participan.'}</span>} />;
   const control = state !== 'draft' && (
@@ -268,7 +268,7 @@ function Workspace({ id, tab, admin, go, onNav }) {
               <div className="flex min-w-0 flex-col gap-4">
                 {/* Para dirigir la carrera, mejor Race Control (pantalla completa y atajos); aquí, a mano para probar */}
                 <Card title="Dirección de carrera" icon="flag" color="race" tip="Las banderas llegan al instante a todos los equipos que participan: a pantalla completa y con voz en Piloto. Para el día de carrera, mejor Race Control (pantalla completa y atajos de teclado).">
-                  <FlagPanel flag={L.flag} racing={racing} send={L.sendFlag} connected={L.connected} />
+                  <FlagPanel flag={L.flag} racing={racing} send={L.sendFlag} connected={L.connected} track={ev.track} zones={L.zones} sendZone={L.sendZone} />
                 </Card>
                 <Card title="Sesión" icon="timer" color="results"><SessionSwitch ev={ev} onChange={L.changeSession} /></Card>
                 <Card title="Sanciones a equipos" icon="alert" color="danger"><PenaltyPanel ev={ev} penalties={L.penalties} onChange={L.setPenalties} /></Card>

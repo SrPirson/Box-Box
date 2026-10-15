@@ -247,6 +247,15 @@ test('eventos: organizador, inscripción de equipos, pista común, seguimiento e
   const direct2 = await call(`/api/public/live/${detail.publicCode}`);
   assert.deepEqual([direct2.event.videoUrl, direct2.event.track.line], ['https://www.twitch.tv/jarama', line]);
   assert.equal((await call(`/api/public/live/${detail.publicCode}/cars`)).status, 200);
+  // Bandera local (amarilla en el T2): llega a los equipos y al directo; un piloto no puede darla; se retira.
+  assert.deepEqual(await sp.timeout(2000).emitWithAck('event:zone', { eventId: ev.id, action: 'set', type: 'yellow', from: 0.2, to: 0.4, dir: 1, label: 'T2' }), { ok: false });
+  const zonesP = nextWhere(sp, 'zones', (l) => l.length === 1);
+  assert.deepEqual(await so.timeout(2000).emitWithAck('event:zone', { eventId: ev.id, action: 'set', type: 'yellow', from: 0.2, to: 0.4, dir: 1, label: 'T2' }), { ok: true });
+  assert.deepEqual((await zonesP).map((z) => [z.type, z.label]), [['yellow', 'T2']]);
+  assert.equal((await call(`/api/public/live/${detail.publicCode}`)).zones[0].label, 'T2');
+  const cleared = nextWhere(sp, 'zones', (l) => l.length === 0);
+  assert.deepEqual(await so.timeout(2000).emitWithAck('event:zone', { eventId: ev.id, action: 'clear' }), { ok: true });
+  await cleared;
   // «Visto» desde el equipo: lo ve la organizadora. Anularla devuelve la vuelta.
   const seenPen = next(so, 'event:penalties');
   sp.emit('penalty:seen', pen.id);

@@ -41,6 +41,14 @@ export function createRoute(path) {
       }
       return best;
     },
+    // Punto [lat, lng] del trazado en el progreso `at` (0-1).
+    pointAt(at) {
+      const d = (((at % 1) + 1) % 1) * total;
+      let i = 1;
+      while (i < P.length - 1 && cum[i] < d) i++;
+      const t = (d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1);
+      return ll([P[i - 1][0] + t * (P[i][0] - P[i - 1][0]), P[i - 1][1] + t * (P[i][1] - P[i - 1][1])]);
+    },
     // Línea de meta en el punto del trazado más cercano a `pt`: perpendicular a la pista, 15 m a cada lado.
     lineAt(pt) {
       const { p, dir: [sx, sy] } = route.locate(pt);

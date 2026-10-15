@@ -3,6 +3,7 @@
 import { q, one } from './db.js';
 import { createLapTimer, createRoute } from './laps.js';
 import { LIMITS } from '../src/lib/limits.js';
+import { ZONE_TYPES, inZone } from '../src/lib/zones.js';
 
 let io;
 const states = new Map(); // teamId → Promise<estado>
@@ -44,6 +45,42 @@ async function restoreFlags() {
     flags.set(ev, { type: f.type, text: f.text, ts: f.ts, seen: new Set(seen.map((s) => Number(s.t))) });
   }
 }
+// Banderas locales (zonas del trazado): varias a la vez por evento, en memoria y en event_log. Llegan a los
+// equipos que participan ('zones') y al organizador ('event:zones'); cada coche sabe cuándo entra en una ('zone:here').
+const zones = new Map(); // eventId → Map<id, { id, type, from, to, dir, label, ts, by }>
+export const zonesOf = (eventId) => [...(zones.get(eventId)?.values() ?? [])];
+async function restoreZones() {
+  const rows = await q(`select event_id, kind, data from event_log where kind in ('zone', 'zone.clear') and ts > now() - interval '1 day' order by id`);
+  for (const { event_id: ev, kind, data } of rows) {
+    if (!zones.has(ev)) zones.set(ev, new Map());
+    if (kind === 'zone') zones.get(ev).set(data.id, data);
+    else if (data.id == null) zones.get(ev).clear();
+    else zones.get(ev).delete(data.id);
+  }
+}
+async function zonesChanged(eventId) {
+  for (const t of await q('select id from teams where event_id = $1 and racing', [eventId])) io.to(room(t.id)).emit('zones', zonesOf(eventId));
+  io.to(eventRoom(eventId)).emit('event:zones', zonesOf(eventId));
+}
+const num01 = (v) => typeof v === 'number' && v >= 0 && v <= 1;
+async function setZone(eventId, d, by) {
+  if (!ZONE_TYPES[d?.type] || !num01(d.from) || !num01(d.to) || ![1, -1].includes(d.dir)) return false;
+  const z = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, type: d.type, from: d.from, to: d.to, dir: d.dir,
+    label: String(d.label ?? 'Zona').slice(0, 20), ts: Date.now(), by };
+  if (!zones.has(eventId)) zones.set(eventId, new Map());
+  zones.get(eventId).set(z.id, z);
+  await logEvent(eventId, 'zone', z);
+  await zonesChanged(eventId);
+  return true;
+}
+async function clearZone(eventId, id, by) {
+  const z = id == null ? null : zones.get(eventId)?.get(id);
+  if (id == null) zones.get(eventId)?.clear(); else if (!z) return false; else zones.get(eventId).delete(id);
+  await logEvent(eventId, 'zone.clear', { id: id ?? null, type: z?.type, label: z?.label, by });
+  await zonesChanged(eventId);
+  return true;
+}
+
 async function setFlag(eventId, type, text, by) {
   const ts = Date.now();
   flags.set(eventId, { type, text, ts, seen: new Set() });
@@ -133,6 +170,7 @@ export async function teamChanged(teamId) {
   // Entra en un evento (o empieza a participar) o sale de él: su bandera, o ninguna.
   const t = await one('select event_id, racing from teams where id = $1', [teamId]);
   io.to(room(teamId)).emit('flag', t?.event_id && t.racing ? flagOf(t.event_id) : null);
+  io.to(room(teamId)).emit('zones', t?.event_id && t.racing ? zonesOf(t.event_id) : []);
   if (t?.event_id) io.to(eventRoom(t.event_id)).emit('event:teams'); // el organizador recarga equipos e iconos
 }
 
@@ -157,7 +195,7 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 export function attachLive(server, userFromToken) {
   io = server;
   // Nadie entra hasta tener recuperadas las banderas: quien conecta tras un reinicio recibe la que hay.
-  const restored = restoreFlags().catch((e) => console.error('banderas', e.message));
+  const restored = Promise.all([restoreFlags(), restoreZones()]).catch((e) => console.error('banderas', e.message));
   // Entran los miembros de un equipo y, aunque no tengan equipo, los organizadores (para seguir sus eventos).
   io.use(async (socket, next) => {
     await restored;
@@ -175,6 +213,7 @@ export function attachLive(server, userFromToken) {
       if (!canRun(u, e)) return;
       socket.join(eventRoom(e.id));
       socket.emit('event:flag', flagStatus(e.id));
+      socket.emit('event:zones', zonesOf(e.id));
     });
     // ack: el panel sabe si la bandera ha llegado al servidor (sin acuse, avisa de que no se ha enviado).
     socket.on('event:flag', async (d, ack) => {
@@ -183,6 +222,12 @@ export function attachLive(server, userFromToken) {
       const ok = canRun(u, e) && FLAGS.includes(d?.type) && (d.type !== 'text' || !!text);
       if (ok) await setFlag(e.id, d.type, d.type === 'text' ? text : null, u.name);
       if (typeof ack === 'function') ack({ ok });
+    });
+    // Bandera local: { eventId, action: 'set', type, from, to, dir, label } o { eventId, action: 'clear', id? } (sin id: todas).
+    socket.on('event:zone', async (d, ack) => {
+      const e = await one('select id, organizer_id from events where id = $1', [Number(d?.eventId)]).catch(() => null);
+      const ok = canRun(u, e) && (d?.action === 'clear' ? await clearZone(e.id, d.id ?? null, u.name) : await setZone(e.id, d, u.name));
+      if (typeof ack === 'function') ack({ ok: !!ok });
     });
     socket.on('event:unwatch', (eventId) => socket.leave(eventRoom(Number(eventId))));
     if (!u.team_id) return;
@@ -196,6 +241,7 @@ export function attachLive(server, userFromToken) {
     socket.emit('driver', st.driver);
     socket.emit('pit', st.pit);
     socket.emit('flag', st.team.event_id ? flagOf(st.team.event_id) : null);
+    socket.emit('zones', st.team.event_id ? zonesOf(st.team.event_id) : []);
     // Sin await: los manejadores de abajo tienen que estar puestos antes de que lleguen los primeros paquetes.
     lastPenalty(st.team.id).then((p) => socket.emit('penalty', p)).catch(() => {});
     // Alguien del equipo ha visto la sanción: el organizador lo ve en la lista.
@@ -251,6 +297,11 @@ export function attachLive(server, userFromToken) {
         if (!pitLane && st.pit?.arrived && s.speed >= PIT_EXIT_KMH && now - ts < 10_000) setPit(st, null);
         const loc = st.team.route && s.lat != null ? st.team.route.locate([s.lat, s.lng]) : null;
         s.at = loc?.at;
+        // Bandera local: avisa al equipo al entrar en una zona y al salir (solo con datos en vivo).
+        if (st.team.event_id && loc && now - ts < 10_000) {
+          const here = zonesOf(st.team.event_id).find((z) => inZone(z, loc.at)) ?? null;
+          if ((here?.id ?? null) !== (st.zoneHere ?? null)) { st.zoneHere = here?.id ?? null; io.to(r).emit('zone:here', here); }
+        }
         const d = st.driver;
         const wasInPit = st.lap.inPit;
         const lap = st.lap.push(s, st.team.track?.line ?? st.team.route?.line, st.team.track?.sectors, st.team.track);

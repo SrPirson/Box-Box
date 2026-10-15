@@ -4,6 +4,7 @@ import { io } from 'socket.io-client';
 import { Capacitor } from '@capacitor/core';
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { api, getSession, refresh, setTeam, useSession } from './session.js';
+import { ZONE_TYPES, zoneText } from './zones.js';
 
 const KEY = 'cencerro.config';
 export const DEFAULTS = {
@@ -27,7 +28,8 @@ export const useConfig = () => useSyncExternalStore((cb) => (cfgSubs.add(cb), ()
 // Estado en vivo del equipo. pit: null | { since, reason } mientras el coche está en boxes.
 // flag: bandera del evento ({ type, text, ts, age }); flagSeen: ts de la última que se ha marcado como vista.
 // penalty: sanción sin ver ({ id, laps, retired, reason, ts }) o null.
-let live = { driver: null, online: [], pit: null, flag: null, flagSeen: null, penalty: null };
+// zones: banderas locales del evento; zoneHere: la zona en la que está ahora el coche (o null).
+let live = { driver: null, online: [], pit: null, flag: null, flagSeen: null, penalty: null, zones: [], zoneHere: null };
 const liveSubs = new Set();
 const setLive = (p) => { live = { ...live, ...p }; liveSubs.forEach((f) => f()); };
 export const getLive = () => live;
@@ -83,6 +85,15 @@ export function getSocket() {
         navigator.vibrate?.([500, 150, 500]);
       }
       setLive({ penalty });
+    });
+    socket.on('zones', (zones) => {
+      const fresh = zones.filter((z) => !live.zones.some((o) => o.id === z.id) && Date.now() - z.ts < 10_000);
+      if (fresh.length) speak(`Dirección de carrera. ${fresh.map(zoneText).join('. ')}`);
+      setLive({ zones, ...(live.zoneHere && !zones.some((z) => z.id === live.zoneHere.id) && { zoneHere: null }) });
+    });
+    socket.on('zone:here', (zoneHere) => {
+      if (zoneHere) { speak(ZONE_TYPES[zoneHere.type]?.say ?? ''); navigator.vibrate?.([300, 100, 300]); }
+      setLive({ zoneHere });
     });
     socket.on('team', () => api('/api/team').then(setTeam).catch(refresh));
     // El servidor nos echa al cambiar de equipo o de contraseña: recargar sesión y reconectar.

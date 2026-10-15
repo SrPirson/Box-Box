@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import Icon from '../icons.jsx';
 import { useTheme } from '../lib/theme.js';
 import { createRoute } from '../../server/laps.js';
+import { ZONE_TYPES, zonePoints } from '../lib/zones.js';
 import { ConfirmButton } from './ui.jsx';
 
 // Ninguna plantilla requiere API key (CARTO ya la exige desde el navegador): Esri + OpenStreetMap.
@@ -31,7 +32,9 @@ const NO_CUTS = []; // estable entre renders: los cortes solo se redibujan si ca
 const OPTIONS = [['auto', 'Auto'], ...Object.entries(BASEMAPS).map(([id, b]) => [id, b.label])];
 
 // track: pista activa { line?, path?, sectors?, pitIn?, pitOut?, id?, name? }; onTrack(nueva) la guarda. `toolbar`: selector de pistas.
-export default function TrackMap({ cars, trails, sel, states, focus, track, onTrack, toolbar, carIcon, carIconStyle }) {
+// zones: banderas locales ({ type, from, to, dir }) pintadas sobre el trazado. onPick([lat, lng]): un toque en el mapa
+// (para elegir una zona); mientras tanto no se dibuja la pista.
+export default function TrackMap({ cars, trails, sel, states, focus, track, onTrack, toolbar, carIcon, carIconStyle, zones = NO_CUTS, onPick, compact }) {
   const { line, path, sectors = NO_CUTS, pitIn, pitOut } = track ?? {};
   const theme = useTheme();
   const el = useRef(null);
@@ -47,6 +50,9 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
   const route = useRef(null);
   const cuts = useRef(null);
   const pits = useRef(null);
+  const zoneLayer = useRef(null);
+  const pickRef = useRef(onPick);
+  pickRef.current = onPick;
   const [hover, setHover] = useState(null); // puntero sobre el mapa mientras se coloca la meta o un corte (vista previa)
   const geo = useMemo(() => (path?.length >= 3 ? createRoute(path) : null), [path]);
   const geoRef = useRef(geo);
@@ -65,6 +71,7 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
     // sin trazado, un toque en cada borde. Los cortes se encadenan hasta pulsar Listo.
     // Trazado: tantos toques como haga falta hasta pulsar Guardar.
     map.current.on('click', (e) => {
+      if (pickRef.current) return pickRef.current([e.latlng.lat, e.latlng.lng]);
       const d = drawRef.current;
       if (!d) return;
       const pt = [e.latlng.lat, e.latlng.lng];
@@ -138,6 +145,21 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
         L.marker([(c[0][0] + c[1][0]) / 2, (c[0][1] + c[1][1]) / 2], { interactive: false,
           icon: L.divIcon({ className: '', html: `<div class="pit-label">${i ? 'OUT' : 'IN'}</div>`, iconSize: [34, 18] }) })]))).addTo(map.current);
   }, [pitIn, pitOut, draw]);
+
+  // Banderas locales: la zona del trazado en el color de su bandera (aceite: rayas rojas y amarillas).
+  useEffect(() => {
+    zoneLayer.current?.remove();
+    if (!geo || !zones.length) return;
+    zoneLayer.current = L.layerGroup(zones.flatMap((z) => {
+      const pts = zonePoints(geo, z);
+      const c = ZONE_TYPES[z.type]?.color ?? '#f5b81c';
+      return [
+        L.polyline(pts, { pane: 'route', color: z.type === 'oil' ? '#f5b81c' : c, weight: z.type === 'dyellow' ? 16 : 11, opacity: z.preview ? 0.55 : 0.9, lineCap: 'round', interactive: false }),
+        ...(z.type === 'oil' ? [L.polyline(pts, { pane: 'route', color: c, weight: 11, dashArray: '10 10', interactive: false })] : []),
+        ...(z.type === 'dyellow' ? [L.polyline(pts, { pane: 'route', color: '#000', weight: 2, interactive: false })] : []),
+      ];
+    })).addTo(map.current);
+  }, [zones, geo]);
 
   // Trazado del circuito: lazo cerrado. Mientras se dibuja, abierto y con sus puntos.
   useEffect(() => {
@@ -233,7 +255,7 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
       )}
     <div className="relative min-h-64 flex-1">
       <div ref={el} className="absolute inset-0" />
-      <div className="absolute left-2 top-2 z-[1000]">
+      {!compact && <div className="absolute left-2 top-2 z-[1000]">
         <div role="radiogroup" aria-label="Plantilla de mapa" className="hidden overflow-hidden rounded-[4px] border border-line bg-panel/95 shadow-sm xl:flex">
           <span className="grid place-items-center pl-2 pr-1 text-muted"><Icon name="layers" size={15} /></span>
           {OPTIONS.map(([id, label]) => (
@@ -250,7 +272,7 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
             {OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
         </label>
-      </div>
+      </div>}
       {draw && (
         <div role="status" className="absolute inset-x-2 bottom-8 z-[1000] mx-auto flex max-w-lg flex-wrap items-center gap-x-3 gap-y-2 rounded-[4px] border border-accent bg-panel px-3 py-2 shadow-lg">
           <Icon name={{ line: 'finish', path: 'route', sector: 'timer', pit: 'wrench' }[draw.mode]} size={18} className="text-accent" />
@@ -291,10 +313,10 @@ export default function TrackMap({ cars, trails, sel, states, focus, track, onTr
           </span>
         </div>
       )}
-      <div className="absolute right-2 top-2 z-[1000] flex gap-2">
+      {!compact && <div className="absolute right-2 top-2 z-[1000] flex gap-2">
         <MapButton onClick={() => setFollow(!follow)} active={follow} label={follow ? 'Siguiendo coche' : 'Seguir coche'} icon="crosshair" />
         <MapButton onClick={fitAll} label="Encuadrar todos" icon="fit" />
-      </div>
+      </div>}
     </div>
     </div>
   );

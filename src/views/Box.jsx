@@ -28,6 +28,7 @@ export default function Box({ muted }) {
   const [now, setNow] = useState(Date.now());
   const { team } = useSession();
   const today = useStats('today');   // vueltas de hoy
+  const { zones } = useLive();       // banderas locales del evento, pintadas en el mapa
   const month = useStats('month');   // medias de referencia (30 días)
 
   const ingest = (raw, live) => {
@@ -115,7 +116,7 @@ export default function Box({ muted }) {
             </>
           ) : <EmptyTelemetry />}
           <div className="min-h-[320px] flex-1 bg-panel">
-            <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus} track={team.track}
+            <TrackMap cars={cars} trails={trails.current} sel={sel} states={states} focus={focus} track={team.track} zones={zones}
               // Participando en un evento la pista la pone el organizador: se ve, pero no se edita.
               onTrack={team.racing ? undefined : (track) => api('/api/team', { method: 'PATCH', body: { track } }).then(setTeam)}
               toolbar={team.racing
