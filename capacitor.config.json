@@ -3,7 +3,7 @@
   "appName": "Box Box",
   "webDir": "dist",
   "server": {
-    "url": "https://boxracing.onrender.com",
+    "url": "https://boxracing.pirson.dev",
     "cleartext": false
   }
 }
