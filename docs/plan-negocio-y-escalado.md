@@ -30,8 +30,8 @@
 4. **Modelo: pase por evento + suscripción anual de temporada. Nada de «forever» para organizadores.** El coste de
    servidor por evento es de céntimos a 1–2 €, el margen bruto ~90–96 %.
 5. **Pagos con Stripe** (Checkout + Billing + Customer Portal + Stripe Tax; Connect más adelante para inscripciones).
-6. **Antes de cobrar a nadie** hay cuatro bloqueos: servidor de pago y **dominio propio** (la APK tiene fijado
-   `boxracing.onrender.com`), banderas con **acuse** y persistidas, prueba en un **evento real** con 20+ móviles, y
+6. **Antes de cobrar a nadie** hay cuatro bloqueos: servidor de pago (el **dominio propio** ya está: la APK del 30/10 carga
+   `boxracing.pirson.dev`), banderas con **acuse** y persistidas, prueba en un **evento real** con 20+ móviles, y
    la parte legal mínima (privacidad/RGPD de ubicación, condiciones que digan que las banderas de la app no
    sustituyen a los comisarios, seguro de RC).
 7. **Escalar técnicamente no es el problema ahora**: un proceso Node aguanta ~1.000 coches a 4 Hz en local
@@ -1224,7 +1224,7 @@ Cliente y evento · Situación antes · Qué se hizo (montaje en X min, N equipo
 |---|---|---|
 | `plan: free`, `numInstances: 1` | `render.yaml:7-8` | 0,1 CPU y 512 MB. Se duerme a los 15 min sin tráfico (≈ 1 min en despertar). Render **puede reiniciarlo en cualquier momento** y **suspender** servicios gratuitos con "un volumen de tráfico saliente inusualmente alto" hacia bases de datos externas, que es justo lo que hacen las escrituras a Neon |
 | Health check en `/` | `render.yaml:11` | Comprueba que se sirve `index.html`, no que la BD o el bucle de eventos respondan |
-| La APK carga la web remota | `capacitor.config.json` (`server.url`) | El dominio `boxracing.onrender.com` queda fijado en cada APK. Cambiar de host sin un **dominio propio** obliga a publicar otra APK y a mantener una redirección, como ya pasó con `cencerro-racing` |
+| La APK carga la web remota | `capacitor.config.json` (`server.url`) | **Resuelto el 30/10:** desde esa APK el dominio fijado es `boxracing.pirson.dev` (propio), así que cambiar de host ya solo es cambiar el CNAME en Cloudflare. Las APK anteriores siguen fijadas a `boxracing.onrender.com` |
 | CI | `.github/workflows/android.yml` | Solo compila la APK. **Ningún workflow ejecuta `npm test`** antes de que el autodeploy de `main` llegue a producción (`render.yaml:12`) |
 | APK de depuración | `android.yml` (`assembleDebug`, alias `androiddebugkey`) | Sirve para instalar a mano, pero **no vale para Play Store**, que pide un AAB de release y Play App Signing |
 | Teselas Esri sin cuenta | `README.md` («Esri sin cuenta solo cubre uso no comercial») | **Bloqueante legal en cuanto se cobre.** Hace falta una cuenta Esri/ArcGIS o MapTiler/Stadia |
